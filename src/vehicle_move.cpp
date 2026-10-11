@@ -1105,6 +1105,9 @@ veh_collision vehicle::part_collision( map &here, int part, const tripoint_abs_m
             part_dmg = dmg * k / 100.0f;
             add_msg_debug( debugmode::DF_VEHICLE_MOVE, "Part collision damage: %.2f", part_dmg );
         }
+        if( ret.type == veh_coll_bashable ) {
+            part_dmg *= 0.2; // MOD: decrease damage when smashing through terrain/foliage
+        }
         // Damage for object
         const float obj_dmg = dmg * ( 100.0f - k ) / 100.0f;
 
@@ -1388,6 +1391,8 @@ static void apply_wheel_faults( vehicle_part *vp_wheel, std::vector<std::string>
 void vehicle::damage_wheel_on_item( vehicle_part *vp_wheel, const item &it,
                                     std::vector<std::string> *messages ) const
 {
+    return; // disable damage bcz its broken, waiting a fix
+
     if( !it.has_flag( json_flag_PUNCTURE_VEHICLE_WHEELS ) ) {
         return;
     }

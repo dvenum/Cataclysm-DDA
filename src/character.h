@@ -2130,7 +2130,7 @@ class Character : public Creature, public visitable
         int  amount_worn( const itype_id &id ) const;
 
         /** Returns the amount of software `type' that are in the inventory */
-        int count_softwares( const itype_id &id );
+        int count_softwares( const itype_id &id ) const;
 
         /** Returns whether the character has software on a device with a desired number of charges */
         bool has_software( const itype_id &software_id, int min_charges = 0,
@@ -4084,6 +4084,8 @@ class Character : public Creature, public visitable
         item &best_unreserved_item_with_quality( const quality_id &qid );
         int max_quality( const quality_id &qual ) const override;
         int max_quality( const quality_id &qual, int radius ) const;
+        VisitResponse visit_carried( const std::function<VisitResponse( const item_location & )> &func )
+        const;
         VisitResponse visit_items( const std::function<VisitResponse( const item_location & )> &func ) const
         override;
         std::list<item> remove_items_with( const std::function<bool( const item & )> &filter,

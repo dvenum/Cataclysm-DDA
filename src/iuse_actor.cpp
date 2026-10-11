@@ -3167,6 +3167,11 @@ bool repair_item_actor::handle_components( Character &pl, const item &fix,
         return false;
     }
 
+    // a bare check never reads the counts below, so skip walking the crafting inventory
+    if( just_check && !check_consumed_available ) {
+        return true;
+    }
+
     const temp_crafting_inventory &crafting_inv = pl.crafting_inventory();
 
     // Repairing or modifying items requires at least 1 repair item,
@@ -3361,7 +3366,6 @@ std::pair<float, float> repair_item_actor::repair_chance(
             action_difficulty = material_difficulty;
             break;
         default:
-            // 5 is obsoleted reinforcing, remove after 0.H
             action_difficulty = 1000000; // ensure failure
             break;
     }

@@ -951,7 +951,7 @@ class npc : public Character
         int print_info( const catacurses::window &w, int line, int vLines, int column ) const override;
         std::string opinion_text() const;
         std::string describe_mission() const;
-        std::string display_name( bool possessive = false ) const;
+        std::string display_name() const;
         std::string name_and_activity() const;
         std::string name_and_maybe_activity() const override;
         /// Returns current status (Sleeping, Guarding, In Combat, etc.), or current activity
@@ -1375,6 +1375,12 @@ class npc : public Character
         void find_item();
         // Move to, or grab, our targeted item
         void pick_up_item();
+        /** Whether this NPC can empty an open container where it lies, then take it. */
+        bool can_empty_for_pickup( const item &it );
+        /** One step of emptying wanted_item where it lies; false if no step is possible. */
+        bool empty_before_pickup();
+        /** Whether a drink from a container on the ground may start or go on here. */
+        bool may_drink_here() const;
         /** Picks up items and returns a list of them. */
         std::list<item> pick_up_item_map( const tripoint_bub_ms &where );
         std::list<item> pick_up_item_vehicle( vehicle &veh, int part_index );

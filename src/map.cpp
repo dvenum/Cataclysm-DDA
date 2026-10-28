@@ -3130,8 +3130,9 @@ bool map::has_floor_or_support( const tripoint_bub_ms &p ) const
 
 bool map::has_vehicle_floor( const tripoint_bub_ms &p ) const
 {
-    return veh_at( p ).part_with_feature( "BOARDABLE", false ) ||
-           veh_at( p ).part_with_feature( "OBSTACLE", false );
+    const optional_vpart_position vp = veh_at( p );
+    return vp.part_with_feature( "BOARDABLE", false ) ||
+           vp.part_with_feature( "OBSTACLE", false );
 }
 
 void map::drop_everything( const tripoint_bub_ms &p )

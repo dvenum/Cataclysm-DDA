@@ -8,6 +8,7 @@
 #include <list>
 #include <map>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -67,7 +68,7 @@ static std::map<efftype_id, effect_migration> effect_migrations;
 
 namespace
 {
-std::map<efftype_id, effect_type> effect_types;
+std::unordered_map<efftype_id, effect_type> effect_types;
 
 // Abstract effect types: "copy-from" can name them, but nothing can apply them.
 std::map<std::string, effect_type> effect_type_abstracts;
@@ -2183,7 +2184,7 @@ void reset_effect_types()
     inline_enchantment_counts.clear();
 }
 
-const std::map<efftype_id, effect_type> &get_effect_types()
+const std::unordered_map<efftype_id, effect_type> &get_effect_types()
 {
     return effect_types;
 }

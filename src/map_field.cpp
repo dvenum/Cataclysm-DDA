@@ -1892,7 +1892,7 @@ void map::monster_in_field( monster &z )
         // How much damage does this field do?
         // Resets on every iteration through the list, otherwise the damage stacks.
         int dam = 0;
-        const field_type_id cur_field_type = cur.get_field_type();
+        const field_type_str_id cur_field_type = cur.get_field_type().id();
         if( cur_field_type == fd_acid ) {
             if( !z.flies() ) {
                 const int d = rng( cur.get_field_intensity(), cur.get_field_intensity() * 3 );

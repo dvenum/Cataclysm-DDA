@@ -4,6 +4,7 @@
 #include <cmath>
 #include <map>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "bodypart.h"
@@ -57,7 +58,7 @@ static std::map<efftype_id, effect_migration> effect_migrations;
 
 namespace
 {
-std::map<efftype_id, effect_type> effect_types;
+std::unordered_map<efftype_id, effect_type> effect_types;
 } // namespace
 
 void vitamin_rate_effect::load( const JsonObject &jo )
@@ -1688,7 +1689,7 @@ void reset_effect_types()
     effect_types.clear();
 }
 
-const std::map<efftype_id, effect_type> &get_effect_types()
+const std::unordered_map<efftype_id, effect_type> &get_effect_types()
 {
     return effect_types;
 }

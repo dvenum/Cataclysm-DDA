@@ -485,7 +485,7 @@ class effect_migration
 
 void load_effect_type( const JsonObject &jo, std::string_view src );
 void reset_effect_types();
-const std::map<efftype_id, effect_type> &get_effect_types();
+const std::unordered_map<efftype_id, effect_type> &get_effect_types();
 
 std::string texitify_base_healing_power( float power );
 std::string texitify_healing_power( int power );

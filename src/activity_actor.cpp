@@ -7088,7 +7088,7 @@ bool craft_activity_actor::unattended_craft_step( player_activity &act, Characte
             * since no actor runs for those modes. */
         if( craft_item->get_pause_started_at() == calendar::before_time_starts ) {
             craft_actualize_scheduled( *craft_item, item_wakeup_kind::env_check,
-                                        calendar::turn, craft_item );
+                                       calendar::turn, craft_item );
         }
         crafter.set_moves( 0 );
         return true;

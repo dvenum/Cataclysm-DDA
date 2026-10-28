@@ -519,6 +519,7 @@ struct oter_t {
 
     public:
         oter_str_id id;         // definitive identifier.
+        std::string id_no_dir_or_connections;
         std::vector < std::pair < oter_str_id, mod_id>> src;
 
         oter_t();

@@ -33,6 +33,34 @@ using oter_type_str_id = string_id<oter_type_t>;
 
 ////////////////
 static oter_id ot_null;
+static const std::array<std::string, 4> suffixes = {{
+        "_north", "_west", "_south", "_east"
+    }
+};
+
+static std::string normalize_oter_id( std::string_view base_oter_id )
+{
+    for( const std::string &suffix : suffixes ) {
+        if( string_ends_with( base_oter_id, suffix ) ) {
+            base_oter_id = base_oter_id.substr( 0, base_oter_id.size() - suffix.size() );
+        }
+    }
+
+    for( const std::string &suffix : om_lines::mapgen_suffixes ) {
+        if( string_ends_with( base_oter_id, suffix ) ) {
+            base_oter_id = base_oter_id.substr( 0, base_oter_id.size() - suffix.size() );
+        }
+    }
+
+    for( const auto &connection_type : om_lines::all ) {
+        if( string_ends_with( base_oter_id, connection_type.suffix ) ) {
+            base_oter_id = base_oter_id.substr(
+                               0, base_oter_id.size() - connection_type.suffix.size() );
+        }
+    }
+
+    return std::string( base_oter_id );
+}
 
 const oter_type_t oter_type_t::null_type{};
 
@@ -748,12 +776,14 @@ oter_t::oter_t() : oter_t( oter_type_t::null_type ) {}
 oter_t::oter_t( const oter_type_t &type ) :
     type( &type ),
     id( type.id.str() ),
+    id_no_dir_or_connections( normalize_oter_id( id.str() ) ),
     symbol( type.symbol ),
     symbol_alt( type.land_use_code ? type.land_use_code->symbol : symbol ) {}
 
 oter_t::oter_t( const oter_type_t &type, om_direction::type dir ) :
     type( &type ),
     id( type.id.str() + "_" + io::enum_to_string( dir ) ),
+    id_no_dir_or_connections( normalize_oter_id( id.str() ) ),
     dir( dir ),
     symbol( om_direction::rotate_symbol( type.symbol, dir ) ),
     symbol_alt( om_direction::rotate_symbol( type.land_use_code ? type.land_use_code->symbol :
@@ -763,6 +793,7 @@ oter_t::oter_t( const oter_type_t &type, om_direction::type dir ) :
 oter_t::oter_t( const oter_type_t &type, size_t line ) :
     type( &type ),
     id( type.id.str() + om_lines::all[line].suffix ),
+    id_no_dir_or_connections( normalize_oter_id( id.str() ) ),
     symbol( om_lines::all[line].symbol ),
     symbol_alt( om_lines::all[line].symbol ),
     line( line ) {}
@@ -993,8 +1024,6 @@ std::string enum_to_string<oter_type_t::see_costs>( oter_type_t::see_costs data 
 }
 } // namespace io
 
-static const std::array<std::string, 4> suffixes = {{ "_north", "_west", "_south", "_east" }};
-
 std::string_view oter_no_dir( const oter_id &oter )
 {
     std::string_view base_oter_id = oter.id().str();
@@ -1008,18 +1037,7 @@ std::string_view oter_no_dir( const oter_id &oter )
 
 std::string_view oter_no_dir_or_connections( const oter_id &oter )
 {
-    std::string_view base_oter_id = oter_no_dir( oter );
-    for( const std::string &suffix : om_lines::mapgen_suffixes ) {
-        if( string_ends_with( base_oter_id, suffix ) ) {
-            base_oter_id = base_oter_id.substr( 0, base_oter_id.size() - suffix.size() );
-        }
-    }
-    for( const auto &connection_type : om_lines::all ) {
-        if( string_ends_with( base_oter_id, connection_type.suffix ) ) {
-            base_oter_id = base_oter_id.substr( 0, base_oter_id.size() - connection_type.suffix.size() );
-        }
-    }
-    return base_oter_id;
+    return oter->id_no_dir_or_connections;
 }
 
 int oter_get_rotation( const oter_id &oter )

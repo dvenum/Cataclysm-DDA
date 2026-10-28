@@ -157,15 +157,18 @@ static bool z_is_valid( int z )
 
 bool monster::will_move_to( map *here, const tripoint_bub_ms &p ) const
 {
-    const std::vector<field_type_id> impassable_field_ids =
-        here->get_impassable_field_type_ids_at( p );
-
+    std::vector<field_type_id> impassable_field_ids;
     for( const std::pair<const int_id<field_type>, field_entry> &pair :
-         here->field_at( p ) ) {
+        here->field_at( p ) ) {
         const field_type_id &fid = pair.first;
         const field_type &ft = fid.obj();
+
         if( ft.block_mtypes.count( type->id ) > 0 ) {
             return false;
+        }
+
+        if( ft.get_intensity_level( pair.second.get_field_intensity() - 1 ).move_cost < 0 ) {
+            impassable_field_ids.emplace_back( fid );
         }
     }
 
@@ -2247,8 +2250,6 @@ bool monster::move_to( const tripoint_bub_ms &p, bool force,
     // Allows climbing monsters to move on terrain with movecost <= 0
     Creature *critter =
         get_creature_tracker().creature_at( destination, is_hallucination() );
-    const std::vector<field_type_id> impassable_field_ids =
-        here.get_impassable_field_type_ids_at( destination );
 
     // Check for permanent blockers. Includes terrain, impassable fieldeffects,
     // traps and other.

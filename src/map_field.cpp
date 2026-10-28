@@ -2312,7 +2312,7 @@ void map::monster_in_field( monster &z )
         // How much damage does this field do?
         // Resets on every iteration through the list, otherwise the damage stacks.
         int dam = 0;
-        const field_type_id cur_field_type = cur.get_field_type();
+        const field_type_str_id cur_field_type = cur.get_field_type().id();
         bool skip_field = false;
         for( const field_contact_type contact : cur_field_type->contact_processors ) {
             const contact_result result = monster_contact( contact, *this, z, cur, dam );

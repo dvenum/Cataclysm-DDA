@@ -52,6 +52,17 @@ class creature_tracker
         template <typename FactionPredicateFn, typename CreaturePredicateFn>
         Creature *find_reachable( const Creature &origin, FactionPredicateFn &&faction_fn,
                                   CreaturePredicateFn &&creature_fn );
+
+        /**
+         * Returns the first reachable creature matching the given predicates.
+         * The prefilter is evaluated before the relatively expensive presence check.
+         * Entries rejected by the prefilter are left in the zone cache until its rebuild.
+         */
+        template <typename FactionPredicateFn, typename CreaturePreFilterFn, typename CreaturePredicateFn>
+        Creature *find_reachable( const Creature &origin, FactionPredicateFn &&faction_fn,
+                                  CreaturePreFilterFn &&prefilter_fn,
+                                  CreaturePredicateFn &&creature_fn );
+
         /**
          * Visits all reachable creatures using the given functor.
          *  - VisitFn: void(Creature*)
@@ -180,19 +191,42 @@ Creature *creature_tracker::find_reachable( const Creature &origin, PredicateFn 
 }
 
 template <typename FactionPredicateFn, typename CreaturePredicateFn>
-Creature *creature_tracker::find_reachable( const Creature &origin, FactionPredicateFn &&faction_fn,
+Creature *creature_tracker::find_reachable( const Creature &origin,
+        FactionPredicateFn &&faction_fn,
+        CreaturePredicateFn &&creature_fn )
+{
+    return find_reachable( origin,
+                           std::forward<FactionPredicateFn>( faction_fn ),
+    []( Creature * ) {
+        return true;
+    },
+    std::forward<CreaturePredicateFn>( creature_fn ) );
+}
+
+template <typename FactionPredicateFn, typename CreaturePreFilterFn, typename CreaturePredicateFn>
+Creature *creature_tracker::find_reachable( const Creature &origin,
+        FactionPredicateFn &&faction_fn,
+        CreaturePreFilterFn &&prefilter_fn,
         CreaturePredicateFn &&creature_fn )
 {
     flood_fill_zone( origin );
 
     const auto map_iter = creatures_by_zone_and_faction_.find( origin.get_reachable_zone() );
     if( map_iter != creatures_by_zone_and_faction_.end() ) {
-        for( auto& [faction, creatures] : map_iter->second ) {
+        for( auto &[faction, creatures] : map_iter->second ) {
             if( !faction_fn( faction ) ) {
                 continue;
             }
+
             for( std::size_t i = 0; i < creatures.size(); ) {
-                if( Creature *other = creatures[i].get(); is_present( other ) ) {
+                Creature *other = creatures[i].get();
+
+                if( other != nullptr && !prefilter_fn( other ) ) {
+                    ++i;
+                    continue;
+                }
+
+                if( is_present( other ) ) {
                     if( creature_fn( other ) ) {
                         return other;
                     }

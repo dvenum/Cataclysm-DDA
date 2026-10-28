@@ -3422,8 +3422,30 @@ bool mattack::parrot_at_danger( monster *parrot )
 {
     const map &here = get_map();
 
-    Creature *other = get_creature_tracker().find_reachable( *parrot, [parrot,
-    &here]( Creature * creature ) {
+    Creature *other = get_creature_tracker().find_reachable(
+                          *parrot,
+    []( const mfaction_id & ) {
+        return true;
+    },
+    [parrot]( Creature * creature ) {
+        // Characters use Character::attitude_to(), which does not necessarily
+        // correspond to their monster faction. Keep them on the original path.
+        if( !creature->is_monster() ) {
+            return true;
+        }
+        if( creature->is_hallucination() ) {
+            return false;
+        }
+
+        const monster *other_monster = creature->as_monster();
+        const mf_attitude attitude =
+            other_monster->faction->attitude( parrot->faction );
+
+        return attitude == mf_attitude::MFA_HATE ||
+               ( other_monster->anger > 0 &&
+                 attitude == mf_attitude::MFA_BY_MOOD );
+    },
+    [parrot, &here]( Creature * creature ) {
         if( !creature->is_hallucination() && one_in( 20 ) ) {
             if( creature->is_avatar() || creature->is_npc() ) {
                 Character *character = creature->as_character();

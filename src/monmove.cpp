@@ -47,6 +47,8 @@
 #include "scent_map.h"
 #include "sounds.h"
 #include "string_formatter.h"
+#include "submap.h"
+#include "tileray.h"
 #include "tileray.h"
 #include "translations.h"
 #include "trap.h"
@@ -157,9 +159,17 @@ static bool z_is_valid( int z )
 
 bool monster::will_move_to( map *here, const tripoint_bub_ms &p ) const
 {
+    const maptile tile = here->maptile_at( p );
+    const ter_t &terrain = tile.get_ter_t();
+    const furn_t &furniture = tile.get_furn_t();
+
+    const auto has_ter_furn_flag = [&terrain, &furniture]( ter_furn_flag flag ) {
+        return terrain.has_flag( flag ) || furniture.has_flag( flag );
+    };
+
     std::vector<field_type_id> impassable_field_ids;
     for( const std::pair<const int_id<field_type>, field_entry> &pair :
-        here->field_at( p ) ) {
+         tile.get_field() ) {
         const field_type_id &fid = pair.first;
         const field_type &ft = fid.obj();
 
@@ -172,39 +182,39 @@ bool monster::will_move_to( map *here, const tripoint_bub_ms &p ) const
         }
     }
 
-    if( here->has_flag( ter_furn_flag::TFLAG_MON_AVOID_STRICT, p ) ) {
+    if( has_ter_furn_flag( ter_furn_flag::TFLAG_MON_AVOID_STRICT ) ) {
         return false;
     }
 
     if( !here->passable_skip_fields( p ) ||
-        here->has_flag( ter_furn_flag::TFLAG_CLIMBABLE, p ) ||
+        has_ter_furn_flag( ter_furn_flag::TFLAG_CLIMBABLE ) ||
         ( !impassable_field_ids.empty() &&
           !is_immune_fields( impassable_field_ids ) ) ) {
         if( digging() ) {
-            if( !here->has_flag( ter_furn_flag::TFLAG_BURROWABLE, p ) ) {
+            if( !has_ter_furn_flag( ter_furn_flag::TFLAG_BURROWABLE ) ) {
                 return false;
             }
         } else if( !( can_climb() &&
-                      here->has_flag( ter_furn_flag::TFLAG_CLIMBABLE, p ) ) ) {
+                      has_ter_furn_flag( ter_furn_flag::TFLAG_CLIMBABLE ) ) ) {
             return false;
         }
     }
 
     if( !here->has_vehicle_floor( p ) ) {
         if( !can_submerge() && !flies() &&
-            here->has_flag( ter_furn_flag::TFLAG_DEEP_WATER, p ) ) {
+            has_ter_furn_flag( ter_furn_flag::TFLAG_DEEP_WATER ) ) {
             return false;
         }
     }
 
     // digging monster can ONLY move underground?
-    if( digs() && !here->has_flag( ter_furn_flag::TFLAG_DIGGABLE, p ) &&
-        !here->has_flag( ter_furn_flag::TFLAG_BURROWABLE, p ) ) {
+    if( digs() && !has_ter_furn_flag( ter_furn_flag::TFLAG_DIGGABLE ) &&
+        !has_ter_furn_flag( ter_furn_flag::TFLAG_BURROWABLE ) ) {
         return false;
     }
     // one dimensional creatures can ONLY move in their home dimension
     if( has_flag( mon_flag_ONE_DIMENSIONAL_X ) &&
-        ( !here->has_flag( ter_furn_flag::TFLAG_ONE_DIMENSIONAL_X, p ) ||
+        ( !has_ter_furn_flag( ter_furn_flag::TFLAG_ONE_DIMENSIONAL_X ) ||
           // In the off chance a multidimensional vehicle enters a one dimensional
           // tile
           ( here->veh_at( p ) && !here->veh_at( pos_bub() ) ) ) ) {
@@ -212,14 +222,15 @@ bool monster::will_move_to( map *here, const tripoint_bub_ms &p ) const
     }
 
     if( has_flag( mon_flag_ONE_DIMENSIONAL_Y ) &&
-        ( !here->has_flag( ter_furn_flag::TFLAG_ONE_DIMENSIONAL_Y, p ) ||
+
+        ( !has_ter_furn_flag( ter_furn_flag::TFLAG_ONE_DIMENSIONAL_Y ) ||
           // In the off chance a multidimensional vehicle enters a one dimensional
           // tile
           ( here->veh_at( p ) && !here->veh_at( pos_bub() ) ) ) ) {
         return false;
     }
     if( has_flag( mon_flag_ONE_DIMENSIONAL_Z ) &&
-        ( !here->has_flag( ter_furn_flag::TFLAG_ONE_DIMENSIONAL_Z, p ) ||
+        ( !has_ter_furn_flag( ter_furn_flag::TFLAG_ONE_DIMENSIONAL_Z ) ||
           // In the off chance a multidimensional vehicle enters a one dimensional
           // tile
           ( here->veh_at( p ) && !here->veh_at( pos_bub() ) ) ) ) {
@@ -227,8 +238,8 @@ bool monster::will_move_to( map *here, const tripoint_bub_ms &p ) const
     }
 
     if( has_flag( mon_flag_AQUATIC ) &&
-        ( !( here->has_flag( ter_furn_flag::TFLAG_SWIMMABLE, p ) ||
-             here->has_flag( ter_furn_flag::TFLAG_SWIM_UNDER, p ) ) ||
+        ( !( has_ter_furn_flag( ter_furn_flag::TFLAG_SWIMMABLE ) ||
+             has_ter_furn_flag( ter_furn_flag::TFLAG_SWIM_UNDER ) ) ||
           // AQUATIC (confined to water) monster avoid vehicles, unless they are
           // already underneath one
           ( here->veh_at( p ) && !here->veh_at( pos_bub() ) ) ) ) {
@@ -240,7 +251,7 @@ bool monster::will_move_to( map *here, const tripoint_bub_ms &p ) const
     }
 
     if( get_size() > creature_size::medium &&
-        here->has_flag_ter( ter_furn_flag::TFLAG_SMALL_PASSAGE, p ) ) {
+        terrain.has_flag( ter_furn_flag::TFLAG_SMALL_PASSAGE ) ) {
         return false; // if a large critter, can't move through tight passages
     }
 

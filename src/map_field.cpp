@@ -12,6 +12,7 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -2183,7 +2184,7 @@ void map::propagate_field( const tripoint_bub_ms &center, const field_type_id &t
 {
     using gas_blast = std::pair<float, tripoint_bub_ms>;
     std::priority_queue<gas_blast, std::vector<gas_blast>, pair_greater_cmp_first> open;
-    std::set<tripoint_bub_ms> closed;
+    std::unordered_set<tripoint_bub_ms> closed;
     open.emplace( 0.0f, center );
 
     const bool not_gas = type.obj().phase != phase_id::GAS;
@@ -2195,7 +2196,8 @@ void map::propagate_field( const tripoint_bub_ms &center, const field_type_id &t
         }
 
         // All points with equal gas intensity should propagate at the same time
-        std::list<gas_blast> gas_front;
+        std::vector<gas_blast> gas_front;
+        gas_front.reserve( 9 );
         gas_front.push_back( open.top() );
         const int cur_intensity = get_field_intensity( open.top().second, type );
         open.pop();

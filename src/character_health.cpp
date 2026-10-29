@@ -2722,7 +2722,15 @@ void Character::apply_random_wound( bodypart_id bp, const damage_instance &d )
     }
 
     if( !possible_wounds.empty() ) {
-        apply_wound( bp, *possible_wounds.pick() );
+        const wound_type_id selected = *possible_wounds.pick();
+
+        // LOCAL BALANCE: light scratches are one-third less frequent.
+        static const wound_type_id scratch_small( "scratch_small" );
+        if( selected == scratch_small && one_in( 3 ) ) {
+            return;
+        }
+
+        apply_wound( bp, selected );
     }
 }
 
@@ -3407,14 +3415,34 @@ bool Character::immune_to( const bodypart_id &bp, damage_unit dam ) const
 
 int Character::get_pain() const
 {
+    // LOCAL BALANCE: superficial wounds have separate global pain caps
+    static const std::set<wound_type_id> minor_scratch_types = {
+        wound_type_id( "scratch_small" ),
+        wound_type_id( "clean_scratch_small" ),
+        wound_type_id( "bandaged_scratch_small" )
+    };
+    static const wound_type_id bruise_small( "bruise_small" );
+
     int p = 0;
+    int minor_scratch_pain = 0;
+    int minor_bruise_pain = 0;
+
     for( const std::pair<const bodypart_str_id, bodypart> &bp : get_body() ) {
         for( const wound &wd : bp.second.get_wounds() ) {
-            p += wd.get_pain();
+            const int wound_pain = wd.get_pain();
+
+            if( minor_scratch_types.count( wd.type ) > 0 ) {
+                minor_scratch_pain += wound_pain;
+            } else if( wd.type == bruise_small ) {
+                minor_bruise_pain += wound_pain;
+            } else {
+                p += wound_pain;
+            }
         }
     }
 
-    return p + Creature::get_pain();
+    return p + std::min( minor_scratch_pain, 12 ) +
+           std::min( minor_bruise_pain, 12 ) + Creature::get_pain();
 }
 
 int Character::mod_pain( int npain, const bodypart_id bp )

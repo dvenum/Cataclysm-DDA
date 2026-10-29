@@ -213,7 +213,7 @@ class body_status_ui : public tabbed_listinfo_ui
 
         std::shared_ptr<uilist> get_tab_uilist( body_status_tab tab );
 
-        bool display();
+        bool display( int initial_selected_index = -1 );
 };
 
 class body_status_ui_impl : public cataimgui::window

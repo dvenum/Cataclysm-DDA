@@ -31,6 +31,7 @@
 #include "avatar_action.h"
 #include "basecamp.h"
 #include "bionics.h"
+#include "body_status_ui.h"
 #include "bodypart.h"
 #include "butchery.h"
 #include "butchery_requirements.h"
@@ -11330,6 +11331,17 @@ void fix_wound_activity_actor::finish( player_activity &act, Character &who )
     }
 
     add_msg( m_good, fix.success_msg.translated() );
+
+    if( who.is_avatar() ) {
+        const std::vector<bodypart_id> bodyparts =
+            who.get_all_body_parts( get_body_part_flags::sorted );
+        const auto selected = std::find( bodyparts.begin(), bodyparts.end(), healed_bp );
+        const int selected_index = selected == bodyparts.end() ? 0 :
+                                   static_cast<int>( std::distance( bodyparts.begin(), selected ) );
+
+        body_status_ui bsui( who, body_status_tab::BS_TAB_MEDICAL );
+        bsui.display( selected_index );
+    }
 }
 
 void fix_wound_activity_actor::serialize( JsonOut &jsout ) const

@@ -197,7 +197,7 @@ void body_status_ui::setup_input_context( input_context &bs_ictxt )
     }
 }
 
-bool body_status_ui::display()
+bool body_status_ui::display( int initial_selected_index )
 {
 
     body_status_ui_impl bsui( this );
@@ -218,6 +218,17 @@ bool body_status_ui::display()
     // set first tab
     upon_switching_tab();
 
+        // set first tab
+    upon_switching_tab();
+
+    std::shared_ptr<uilist> initial_uilist = get_current_tab_uilist();
+    if( initial_selected_index >= 0 &&
+        initial_selected_index < static_cast<int>( initial_uilist->entries.size() ) ) {
+        initial_uilist->set_selected( initial_selected_index );
+        bs_uistate.update_selected( initial_selected_index );
+    }
+
+    ui_manager::invalidate_all_ui_adaptors();
     ui_manager::invalidate_all_ui_adaptors();
 
     while( !bs_uistate.quit_menu ) {

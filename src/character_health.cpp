@@ -2733,7 +2733,7 @@ bool Character::is_within_wound_limit_for_bp( const bodypart_id bp, wound_type_i
     return amount < wound_id->get_limit();
 }
 
-void Character::apply_random_wound( bodypart_id bp, const damage_instance &d )
+void Character::apply_random_wound( bodypart_id bp, const dealt_damage_instance &d )
 {
     if( x_in_y( 1.0f - get_option<float>( "WOUND_CHANCE" ), 1.0f ) ) {
         return;
@@ -2741,11 +2741,12 @@ void Character::apply_random_wound( bodypart_id bp, const damage_instance &d )
 
     weighted_int_list<wound_type_id> possible_wounds;
     for( const auto &[potential_wound, wound_weight] : bp->potential_wounds ) {
-        for( const damage_unit &du : d.damage_units ) {
-            const bool damage_within_limits = du.amount >= potential_wound.damage_required.first &&
-                                              du.amount <= potential_wound.damage_required.second;
+        for( const auto &[dt, amount] : d.dealt_dams ) {
+            const bool damage_within_limits = amount >= potential_wound.damage_required.first &&
+                                              amount <= potential_wound.damage_required.second;
             const bool damage_type_matches = std::find( potential_wound.damage_type.begin(),
-                                             potential_wound.damage_type.end(), du.type ) != potential_wound.damage_type.end();
+                                             potential_wound.damage_type.end(), dt ) !=
+                                             potential_wound.damage_type.end();
             const bool iwwlfb = is_within_wound_limit_for_bp( bp, potential_wound.id );
 
             if( damage_within_limits && damage_type_matches && iwwlfb ) {
@@ -2874,7 +2875,7 @@ dealt_damage_instance Character::deal_damage( Creature *source, bodypart_id bp,
         }
     }
 
-    apply_random_wound( bp, d );
+    apply_random_wound( bp, dealt_dams );
 
     on_hurt( source );
     return dealt_dams;

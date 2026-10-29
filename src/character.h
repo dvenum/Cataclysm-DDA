@@ -1332,7 +1332,7 @@ class Character : public Creature, public visitable
         // checks if amount of specific wounds on bodypart is not higher than `limit`
         // return false if more than limit
         bool is_within_wound_limit_for_bp( bodypart_id bp, wound_type_id wound_id ) const;
-        void apply_random_wound( bodypart_id bp, const damage_instance &d );
+        void apply_random_wound( bodypart_id bp, const dealt_damage_instance &d );
         /** Calls Creature::deal_damage and handles damaged effects (waking up, etc.) */
         dealt_damage_instance deal_damage( Creature *source, bodypart_id bp,
                                            const damage_instance &d,

@@ -11014,38 +11014,52 @@ void map::build_map_cache( const int zlev, bool skip_lightmap )
     const float eye = inbounds( p ) ? eye_level( u ) : 0.0f;
     std::vector<int> vision_parts = inbounds( p ) ? vision_parts_key( get_bub( p ), sr ) :
                                     std::vector<int>();
-    seen_cache_dirty |= avatar_fov_pos != p || sr != avatar_fov_range || eye != avatar_fov_eye_level ||
-                        vision_parts != avatar_fov_vision_parts || camera_cache_dirty;
-    if( seen_cache_dirty ) {
-        // avatar cast writes vehicle cameras, all cameras merge into what's
-        // left, so nothing an old camera saw may survive
+    // Moving a monster camera does not invalidate the avatar's own FOV.
+    // With vehicle vision parts the old combined rebuild is still required,
+    // because the avatar pass also writes vehicle camera visibility.
+    seen_cache_dirty |= avatar_fov_pos != p || sr != avatar_fov_range ||
+                        eye != avatar_fov_eye_level ||
+                        vision_parts != avatar_fov_vision_parts;
+
+    const bool camera_only_dirty = camera_cache_dirty && !seen_cache_dirty &&
+                                   vision_parts.empty();
+
+    if( camera_cache_dirty && !camera_only_dirty ) {
+        seen_cache_dirty = true;
+    }
+    if( seen_cache_dirty || camera_only_dirty ) {
         for( int z = -OVERMAP_DEPTH; z <= OVERMAP_HEIGHT; z++ ) {
-            level_cache &ch = get_cache( z );
+            level_cache &cache = get_cache( z );
             if( camera_levels_written[z + OVERMAP_DEPTH] ) {
-                ch.camera_cache.fill( LIGHT_TRANSPARENCY_SOLID );
+                cache.camera_cache.fill( LIGHT_TRANSPARENCY_SOLID );
             }
-            for( std::bitset<MAPSIZE_Y> &row : ch.ledge_hidden ) {
-                row.reset();
+            if( seen_cache_dirty ) {
+                for( std::bitset<MAPSIZE_Y> &row : cache.ledge_hidden ) {
+                    row.reset();
+                }
             }
         }
         camera_levels_written.reset();
         seen_cache_generation = next_cache_generation();
+    }
+
+    if( seen_cache_dirty ) {
         if( inbounds( p ) ) {
-            // avatar's own level, whichever level the caller asked for
             build_seen_cache( get_bub( p ), p.z(), sr, false, 0, eye );
         }
         avatar_fov_pos = p;
         avatar_fov_range = sr;
         avatar_fov_eye_level = eye;
         avatar_fov_vision_parts = std::move( vision_parts );
+
         camera_cache_dirty = true;
-#if defined(TILES)
-        if( !test_mode ) {
-            // Mark cata_tiles draw caches as dirty
-            tilecontext->set_draw_cache_dirty();
-        }
-#endif
     }
+
+#if defined(TILES)
+    if( ( seen_cache_dirty || camera_cache_dirty ) && !test_mode ) {
+        tilecontext->set_draw_cache_dirty();
+    }
+#endif
     if( camera_cache_dirty ) {
         camera_fov_moncams = std::move( moncams );
         for( Character::cached_moncam const &mon : mcache ) {
@@ -11134,7 +11148,7 @@ void map::build_map_cache( const int zlev, bool skip_lightmap )
         }
     }
 
-    if( seen_cache_dirty ) {
+    if( seen_cache_dirty || camera_cache_dirty ) {
         refresh_vision_levels();
     }
     if( !skip_lightmap ) {

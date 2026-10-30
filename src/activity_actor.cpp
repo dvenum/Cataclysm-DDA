@@ -9905,8 +9905,14 @@ void prying_activity_actor::start( player_activity &act, Character &who )
     act.moves_left = act.moves_total;
 }
 
-void prying_activity_actor::do_turn( player_activity &/*act*/, Character &who )
+void prying_activity_actor::do_turn( player_activity &act, Character &who )
 {
+    if( !tool ) {
+        debugmsg( "Prying activity lost its tool; canceling activity" );
+        act.set_to_null();
+        return;
+    }
+
     map &here = get_map();
 
     std::string method = "CROWBAR";

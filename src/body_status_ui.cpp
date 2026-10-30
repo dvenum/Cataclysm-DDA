@@ -218,7 +218,7 @@ bool body_status_ui::display( int initial_selected_index )
     // set first tab
     upon_switching_tab();
 
-        // set first tab
+    // set first tab
     upon_switching_tab();
 
     std::shared_ptr<uilist> initial_uilist = get_current_tab_uilist();

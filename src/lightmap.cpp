@@ -1388,8 +1388,9 @@ castLightAll<fragment_cloud, fragment_cloud, shrapnel_calc, shrapnel_check,
  * @param penalty distance added to the cast, shortening a camera's range
  * @param eye_level height of the observer's eyes, for ledges
  */
-void map::build_seen_cache( const tripoint_bub_ms &origin, const int target_z, int extension_range,
-                            bool camera, int penalty, const float eye_level )
+void map::build_seen_cache( const tripoint_bub_ms &origin, const int target_z,
+                            int extension_range, bool camera, int penalty,
+                            const float eye_level, camera_fov_grids *camera_output )
 {
     level_cache &map_cache = get_cache( target_z );
     using mdarray = cata::mdarray<float, point_bub_ms>;
@@ -1403,7 +1404,9 @@ void map::build_seen_cache( const tripoint_bub_ms &origin, const int target_z, i
     // one camera's ledges never hide what another sees
     static const std::unique_ptr<std::array<mdarray, OVERMAP_LAYERS>> camera_scratch_storage =
                 std::make_unique<std::array<mdarray, OVERMAP_LAYERS>>();
-    std::array<mdarray, OVERMAP_LAYERS> &camera_scratch = *camera_scratch_storage;
+
+    std::array<mdarray, OVERMAP_LAYERS> &camera_scratch =
+        camera && camera_output != nullptr ? *camera_output : *camera_scratch_storage;
 
     // Cache the caches (pointers to them)
     array_of_grids_of<const float> transparency_caches;

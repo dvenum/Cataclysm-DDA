@@ -11061,13 +11061,56 @@ void map::build_map_cache( const int zlev, bool skip_lightmap )
     }
 #endif
     if( camera_cache_dirty ) {
-        camera_fov_moncams = std::move( moncams );
-        for( Character::cached_moncam const &mon : mcache ) {
-            if( inbounds( mon.second ) ) {
-                int const range = mon.first->type->vision_day;
-                build_seen_cache( get_bub( mon.second ), mon.second.z(), range, true,
-                                  std::max( MAX_VIEW_DISTANCE - range, 0 ), eye_level( *mon.first ) );
+        camera_fov_moncams = moncams;
+
+        // The shared max-merged cache has already been cleared. Restore the
+        // contributions of cameras whose own casts are still valid.
+        const auto merge_saved_camera = [this]( const camera_fov_output & output ) {
+            for( int z = -OVERMAP_DEPTH; z <= OVERMAP_HEIGHT; z++ ) {
+                cata::mdarray<float, point_bub_ms> &merged = get_cache( z ).camera_cache;
+                const cata::mdarray<float, point_bub_ms> &cast =
+                    output.grids[z + OVERMAP_DEPTH];
+                bool wrote = false;
+
+                for( int x = 0; x < MAPSIZE_X; ++x ) {
+                    for( int y = 0; y < MAPSIZE_Y; ++y ) {
+                        wrote |= cast[x][y] > LIGHT_TRANSPARENCY_SOLID;
+                        merged[x][y] = std::max( merged[x][y], cast[x][y] );
+                    }
+                }
+
+                if( wrote ) {
+                    camera_levels_written.set( z + OVERMAP_DEPTH );
+                }
             }
+        };
+
+        decltype( camera_fov_outputs ) old_outputs = std::move( camera_fov_outputs );
+        camera_fov_outputs.clear();
+
+        for( const camera_fov_input &mon : moncams ) {
+            if( !inbounds( mon.pos ) ) {
+                continue;
+            }
+
+            auto old = old_outputs.find( mon.mon );
+
+            // A scene rebuild invalidates every cast. On camera_only_dirty,
+            // unchanged positions can reuse their previous results.
+            if( !seen_cache_dirty && old != old_outputs.end() &&
+                old->second.input == mon ) {
+                auto inserted = camera_fov_outputs.emplace(
+                                    mon.mon, std::move( old->second ) );
+                merge_saved_camera( inserted.first->second );
+                continue;
+            }
+
+            camera_fov_output &output = camera_fov_outputs[mon.mon];
+            output.input = mon;
+
+            build_seen_cache( get_bub( mon.pos ), mon.pos.z(), mon.range, true,
+                              std::max( MAX_VIEW_DISTANCE - mon.range, 0 ),
+                              eye_level( *mon.mon ), &output.grids );
         }
     }
     // Light sources that change with no notice to the lightmap: characters,

@@ -2166,10 +2166,14 @@ class map
 
     protected:
         void generate_lightmap( int zlev );
+        using camera_fov_grids =
+            std::array<cata::mdarray<float, point_bub_ms>, OVERMAP_LAYERS>;
+
         // casts avatar view into seen_cache, or camera view (max-merged) into
         // camera_cache; eye_level feeds the ledge pass
         void build_seen_cache( const tripoint_bub_ms &origin, int target_z, int extension_range,
-                               bool camera, int penalty, float eye_level );
+                               bool camera, int penalty, float eye_level,
+                               camera_fov_grids *camera_output = nullptr );
         void apply_character_light( Character &p );
 
         int my_MAPSIZE;
@@ -2469,6 +2473,13 @@ class map
             }
         };
         std::vector<camera_fov_input> camera_fov_moncams;
+        struct camera_fov_output {
+            camera_fov_input input;
+            camera_fov_grids grids;
+        };
+
+        // Individual results let unchanged cameras survive another camera's movement.
+        std::map<const monster *, camera_fov_output> camera_fov_outputs;
         // what the last sunlight pass read
         std::vector<float> sunlight_natural_light;
         std::vector<uint64_t> sunlight_scene_revisions;

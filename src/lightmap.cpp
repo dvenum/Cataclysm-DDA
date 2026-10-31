@@ -1114,7 +1114,7 @@ lit_level map::apparent_light_at( const tripoint_bub_ms &p,
     if( cache.u_clairvoyance > 0 && dist <= cache.u_clairvoyance ) {
         return lit_level::BRIGHT;
     }
-    if( cache.clairvoyance_field && field_at( p ).find_field( *cache.clairvoyance_field ) ) {
+    if( cache.clairvoyance_field && get_field( p, *cache.clairvoyance_field ) ) {
         return lit_level::BRIGHT;
     }
     const level_cache &map_cache = get_cache_ref( p.z() );

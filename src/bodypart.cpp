@@ -1141,6 +1141,12 @@ void bodypart::add_or_worsen_wound( const wound &wd )
             if( x_in_y( wdp.chance, 100 ) ) {
 
                 const wound *old_wound = get_wound( wd.type );
+                if( old_wound == nullptr ) {
+                    debugmsg( "Wound %s disappeared during progression on bodypart %s",
+                            wd.type.str(), id.str() );
+                    break;
+                }
+
                 wound new_wound = wound( wdp.id );
                 new_wound += *old_wound;
 
@@ -1157,6 +1163,10 @@ void bodypart::add_or_worsen_wound( const wound &wd )
 
                 remove_wound( *old_wound );
                 add_wound( new_wound );
+
+                // The original wound has been replaced; later progression entries
+                // must not try to transform it again during the same call.
+                break;
             }
         }
 

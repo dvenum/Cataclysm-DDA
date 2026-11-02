@@ -1118,6 +1118,29 @@ lit_level map::apparent_light_at( const tripoint_bub_ms &p,
         return lit_level::BRIGHT;
     }
     const level_cache &map_cache = get_cache_ref( p.z() );
+
+    const float seen = map_cache.seen_cache[p.x()][p.y()];
+    const float camera = map_cache.camera_cache[p.x()][p.y()];
+    const float abs_vis = std::max( seen, camera );
+
+    // Outside the avatar's range and without a camera, the helper's result is
+    // only used to distinguish a visible light source from a blank tile.
+    // While aiming, cant_see() participates too, so retain the old path then.
+    if( dist > player_character.unimpaired_range() && camera == 0.0f &&
+        get_avatar().recoil >= MAX_RECOIL ) {
+        if( abs_vis > LIGHT_TRANSPARENCY_SOLID + 0.1f &&
+            map_cache.sm[p.x()][p.y()] > 0.0f ) {
+            return lit_level::BRIGHT_ONLY;
+        }
+        return lit_level::BLANK;
+    }
+
+    // With no contribution from either cast, apparent_light_helper() computes
+    // zero light and every path below returns BLANK.
+    if( abs_vis <= LIGHT_TRANSPARENCY_SOLID ) {
+        return lit_level::BLANK;
+    }
+
     const apparent_light_info a = apparent_light_helper( map_cache, p );
 
     // Unimpaired range is an override to strictly limit vision range based on various conditions,

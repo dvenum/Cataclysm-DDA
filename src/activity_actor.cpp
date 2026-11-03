@@ -1355,6 +1355,12 @@ static void tool_out_of_charges( Character &who, const std::string &tool_name )
 
 void hacksaw_activity_actor::do_turn( player_activity &act, Character &who )
 {
+    if( !veh_pos.has_value() && !tool ) {
+        debugmsg( "Hacksaw activity lost its tool; canceling activity" );
+        act.set_to_null();
+        return;
+    }
+
     moves_left = act.moves_left;
     map &here = get_map();
 
@@ -1470,11 +1476,17 @@ void hacksaw_activity_actor::finish( player_activity &act, Character &who )
 
 float hacksaw_activity_actor::exertion_level() const
 {
-    if( tool->needs_charges_to_use() ) {
-        return LIGHT_EXERCISE;
-    } else {
+    // A broken item_location can survive save/load.  do_turn() will cancel
+    // the handheld activity, but this function is called before it.
+    if( !tool ) {
         return get_type()->exertion_level();
     }
+
+    if( tool->needs_charges_to_use() ) {
+        return LIGHT_EXERCISE;
+    }
+
+    return get_type()->exertion_level();
 }
 
 int hacksaw_activity_actor::get_tool_quality() const

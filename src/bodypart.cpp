@@ -1143,7 +1143,7 @@ void bodypart::add_or_worsen_wound( const wound &wd )
                 const wound *old_wound = get_wound( wd.type );
                 if( old_wound == nullptr ) {
                     debugmsg( "Wound %s disappeared during progression on bodypart %s",
-                            wd.type.str(), id.str() );
+                              wd.type.str(), id.str() );
                     break;
                 }
 

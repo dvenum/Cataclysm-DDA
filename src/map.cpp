@@ -9022,7 +9022,8 @@ void map::load( const tripoint_abs_sm &w, const bool update_vehicle,
                             : reconcile_scope::additive );
 }
 
-void map::reconcile_loaded_items(const reconcile_scope scope, const std::vector<tripoint_rel_sm> *only_grids )
+void map::reconcile_loaded_items( const reconcile_scope scope,
+                                  const std::vector<tripoint_rel_sm> *only_grids )
 {
     item_wakeup_manager &wakeups = get_item_wakeups();
     craft_reservation_index &index = get_craft_reservations();
@@ -9088,7 +9089,7 @@ void map::reconcile_loaded_items(const reconcile_scope scope, const std::vector<
         for( int sx = 0; sx < SEEX; ++sx ) {
             for( int sy = 0; sy < SEEY; ++sy ) {
                 const tripoint_bub_ms p( sx + grid.x() * SEEX,
-                                        sy + grid.y() * SEEY, grid.z() );
+                                         sy + grid.y() * SEEY, grid.z() );
                 const map_cursor cur( this, p );
 
                 // Pull items out rather than visiting the map_cursor:
@@ -9316,7 +9317,7 @@ void map::shift( const point_rel_sm &sp )
     if( !loaded_grids.empty() ) {
         // A shift walks the bubble it now has, so the crafts it scrolled away from are
         // not seen and must keep the claims their leases still cover.
-        reconcile_loaded_items( reconcile_scope::additive, &loaded_grids);
+        reconcile_loaded_items( reconcile_scope::additive, &loaded_grids );
     }
 }
 

@@ -2062,7 +2062,8 @@ class map
          * back into range, so both re-arm from authoritative item state.  One walk rather
          * than two, since both duties visit the same locations.
          */
-        void reconcile_loaded_items(const reconcile_scope scope, const std::vector<tripoint_rel_sm> *only_grids = nullptr );
+        void reconcile_loaded_items( const reconcile_scope scope,
+                                     const std::vector<tripoint_rel_sm> *only_grids = nullptr );
         /**
          * Fast forward a submap that has just been loading into this map.
          * This is used to rot and remove rotten items, grow plants, fill funnels etc.

@@ -85,6 +85,7 @@
 #include "units.h"
 #include "units_utility.h"
 #include "value_ptr.h"
+#include "veh_type.h"
 #include "vehicle.h"
 #include "vpart_position.h"
 #include "weakpoint.h"
@@ -244,6 +245,8 @@ class target_ui
         turret_data *turret = nullptr;
         // Turrets being fired (via vehicle controls)
         const std::vector<vehicle_part *> *vturrets = nullptr;
+        // Allow cycling between all turrets and a single manually selected turret
+        bool allow_manual_turret_selection = false;
         // Vehicle that turrets belong to
         vehicle *veh = nullptr;
         // Spell being cast
@@ -334,6 +337,8 @@ class target_ui
 
         // List of vehicle turrets in range (out of those listed in 'vturrets')
         std::vector<turret_with_lof> turrets_in_range;
+        // Index in 'vturrets'; -1 means all manual turrets
+        int selected_turret = -1;
 
         // If true, draws turret lines
         // relevant for TargetMode::Turrets
@@ -553,7 +558,7 @@ target_handler::trajectory target_handler::mode_turret_manual( avatar &you, turr
 }
 
 target_handler::trajectory target_handler::mode_turrets( avatar &you, vehicle &veh,
-        const std::vector<vehicle_part *> &turrets )
+        const std::vector<vehicle_part *> &turrets, bool use_manual_turret )
 {
     map &here = get_map();
     // Find radius of a circle centered at u encompassing all points turrets can aim at
@@ -577,6 +582,7 @@ target_handler::trajectory target_handler::mode_turrets( avatar &you, vehicle &v
     ui.mode = target_ui::TargetMode::Turrets;
     ui.veh = &veh;
     ui.vturrets = &turrets;
+    ui.allow_manual_turret_selection = use_manual_turret;
     ui.range = range_total;
 
     restore_on_out_of_scope view_offset_prev( you.view_offset );
@@ -2862,6 +2868,22 @@ target_handler::trajectory target_ui::run()
         // Due to how cluttered the display would become, disable it by default
         // unless aiming a single turret.
         draw_turret_lines = vturrets->size() == 1;
+        if( allow_manual_turret_selection && veh->manual_turret_part >= 0 ) {
+            for( size_t i = 0; i < vturrets->size(); ++i ) {
+                const vehicle_part *candidate = ( *vturrets )[i];
+                if( veh->index_of_part( candidate ) == veh->manual_turret_part &&
+                    candidate->info().id == veh->manual_turret_type &&
+                    candidate->mount == veh->manual_turret_mount ) {
+                    selected_turret = static_cast<int>( i );
+                    draw_turret_lines = true;
+                    break;
+                }
+            }
+            if( selected_turret < 0 ) {
+                // The remembered turret was removed, emptied, or switched to automatic mode.
+                veh->manual_turret_part = -1;
+            }
+        }
     }
 
     avatar &player_character = get_avatar();
@@ -2998,6 +3020,21 @@ target_handler::trajectory target_ui::run()
             toggle_snap_to_target();
         } else if( action == "TOGGLE_TURRET_LINES" ) {
             draw_turret_lines = !draw_turret_lines;
+        } else if( action == "CYCLE_TURRET" ) {
+            ++selected_turret;
+            if( selected_turret >= static_cast<int>( vturrets->size() ) ) {
+                selected_turret = -1;
+            }
+            if( selected_turret < 0 ) {
+                veh->manual_turret_part = -1;
+            } else {
+                const vehicle_part *selected = ( *vturrets )[selected_turret];
+                veh->manual_turret_part = veh->index_of_part( selected );
+                veh->manual_turret_type = selected->info().id;
+                veh->manual_turret_mount = selected->mount;
+            }
+            update_turrets_in_range();
+            update_status();
         } else if( action == "TOGGLE_MOVE_CURSOR_VIEW" ) {
             if( snap_to_target ) {
                 toggle_snap_to_target();
@@ -3202,6 +3239,9 @@ void target_ui::init_window_and_input()
     }
     if( mode == TargetMode::Turrets ) {
         ctxt.register_action( "TOGGLE_TURRET_LINES" );
+        if( allow_manual_turret_selection ) {
+            ctxt.register_action( "CYCLE_TURRET" );
+        }
     }
 }
 
@@ -3722,7 +3762,11 @@ void target_ui::update_turrets_in_range()
     map &here = get_map();
 
     turrets_in_range.clear();
-    for( vehicle_part *t : *vturrets ) {
+    for( size_t i = 0; i < vturrets->size(); ++i ) {
+        if( selected_turret >= 0 && static_cast<int>( i ) != selected_turret ) {
+            continue;
+        }
+        vehicle_part *t = ( *vturrets )[i];
         turret_data td = veh->turret_query( *t );
         if( td.in_range( here.get_abs( dst ) ) ) {
             tripoint_bub_ms src = veh->bub_part_pos( here, *t );
@@ -4286,6 +4330,10 @@ void target_ui::draw_controls_list( int text_y )
                                   ? _( "[%s] Hide lines of fire" )
                                   : _( "[%s] Show lines of fire" );
         lines.push_back( {1, colored( col_enabled, string_format( label, bound_key( "TOGGLE_TURRET_LINES" ).short_description() ) )} );
+        if( allow_manual_turret_selection ) {
+            lines.push_back( {1, colored( col_enabled, string_format( _( "[%s] Cycle turret selection" ),
+                                       bound_key( "CYCLE_TURRET" ).short_description() ) )} );
+        }
     }
 
     // Shrink the list until it fits
@@ -4545,8 +4593,18 @@ void target_ui::panel_target_info( int &text_y, bool fill_with_blank_if_no_targe
 
 void target_ui::panel_turret_list( int &text_y )
 {
+    if( allow_manual_turret_selection ) {
+        if( selected_turret < 0 ) {
+            mvwprintw( w_target, point( 1, text_y++ ), _( "Firing: all turrets" ) );
+        } else {
+            const std::string firing = string_format( _( "Firing: %s" ),
+                                       ( *vturrets )[selected_turret]->name() );
+            nc_color clr = c_white;
+            print_colored_text( w_target, point( 1, text_y++ ), clr, clr, firing );
+        }
+    }
     mvwprintw( w_target, point( 1, text_y++ ), _( "Turrets in range: %d/%d" ), turrets_in_range.size(),
-               vturrets->size() );
+               selected_turret < 0 ? vturrets->size() : 1 );
 
     for( const turret_with_lof &it : turrets_in_range ) {
         std::string str = string_format( "* %s", it.turret->name() );

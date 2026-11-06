@@ -2144,6 +2144,11 @@ class vehicle
          */
         bool turrets_aim_and_fire_all_manual( bool show_msg = false );
 
+        // Runtime-only manual selection from vehicle controls; -1 means all turrets.
+        int manual_turret_part = -1;
+        vpart_id manual_turret_type;
+        point_rel_ms manual_turret_mount;
+
         /** Set target for automatic turrets using the aiming UI */
         void turrets_override_automatic_aim();
 
@@ -2166,14 +2171,15 @@ class vehicle
          * Assumes all turrets are ready to fire.
          * @return False if target selection was aborted / no target was found
          */
-        bool turrets_aim( std::vector<vehicle_part *> &turrets );
+        bool turrets_aim( std::vector<vehicle_part *> &turrets, bool use_manual_turret = false );
 
         /*
          * Select target using the aiming UI, set turrets to aim at it and fire them.
          * Assumes all turrets are ready to fire.
          * @return Number of shots fired by all turrets (which may be zero)
          */
-        int turrets_aim_and_fire( std::vector<vehicle_part *> &turrets );
+        int turrets_aim_and_fire( std::vector<vehicle_part *> &turrets,
+                                  bool use_manual_turret = false );
 
     public:
         /**

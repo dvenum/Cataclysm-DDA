@@ -49,7 +49,8 @@ trajectory mode_unarmed_reach( avatar &you );
 trajectory mode_turret_manual( avatar &you, turret_data &turret );
 
 /** Selecting target for turrets (when using vehicle controls) */
-trajectory mode_turrets( avatar &you, vehicle &veh, const std::vector<vehicle_part *> &turrets );
+trajectory mode_turrets( avatar &you, vehicle &veh, const std::vector<vehicle_part *> &turrets,
+                         bool use_manual_turret = false );
 
 /** Casting a spell */
 trajectory mode_spell( avatar &you, spell &casting, bool no_fail, bool no_mana );

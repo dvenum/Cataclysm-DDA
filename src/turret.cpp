@@ -542,7 +542,7 @@ bool vehicle::turrets_aim_and_fire_all_manual( bool show_msg )
         return false;
     }
 
-    turrets_aim_and_fire( turrets );
+    turrets_aim_and_fire( turrets, true );
     return true;
 }
 
@@ -559,12 +559,12 @@ void vehicle::turrets_override_automatic_aim()
     turrets_aim( turrets );
 }
 
-int vehicle::turrets_aim_and_fire( std::vector<vehicle_part *> &turrets )
+int vehicle::turrets_aim_and_fire( std::vector<vehicle_part *> &turrets, bool use_manual_turret )
 {
     map &here = get_map();
 
     int shots = 0;
-    if( turrets_aim( turrets ) ) {
+    if( turrets_aim( turrets, use_manual_turret ) ) {
         for( vehicle_part *t : turrets ) {
             bool has_target = t->target.first != t->target.second;
             if( has_target ) {
@@ -578,7 +578,7 @@ int vehicle::turrets_aim_and_fire( std::vector<vehicle_part *> &turrets )
     return shots;
 }
 
-bool vehicle::turrets_aim( std::vector<vehicle_part *> &turrets )
+bool vehicle::turrets_aim( std::vector<vehicle_part *> &turrets, bool use_manual_turret )
 {
     map &here = get_map();
 
@@ -605,7 +605,7 @@ bool vehicle::turrets_aim( std::vector<vehicle_part *> &turrets )
 
     // Get target
     target_handler::trajectory trajectory = target_handler::mode_turrets( player_character, *this,
-                                            turrets );
+                                            turrets, use_manual_turret );
 
     bool got_target = !trajectory.empty();
     if( got_target ) {
@@ -614,6 +614,10 @@ bool vehicle::turrets_aim( std::vector<vehicle_part *> &turrets )
         const tripoint_abs_ms abs_target = here.get_abs( target );
 
         for( vehicle_part *t : turrets ) {
+            if( use_manual_turret && manual_turret_part >= 0 &&
+                index_of_part( t ) != manual_turret_part ) {
+                continue;
+            }
             if( turret_query( *t ).in_range( abs_target ) ) {
                 t->target.second = abs_target;
             }

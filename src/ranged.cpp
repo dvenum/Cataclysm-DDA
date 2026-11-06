@@ -4332,7 +4332,7 @@ void target_ui::draw_controls_list( int text_y )
         lines.push_back( {1, colored( col_enabled, string_format( label, bound_key( "TOGGLE_TURRET_LINES" ).short_description() ) )} );
         if( allow_manual_turret_selection ) {
             lines.push_back( {1, colored( col_enabled, string_format( _( "[%s] Cycle turret selection" ),
-                                       bound_key( "CYCLE_TURRET" ).short_description() ) )} );
+                                          bound_key( "CYCLE_TURRET" ).short_description() ) )} );
         }
     }
 

@@ -11418,10 +11418,6 @@ void fix_wound_activity_actor::finish( player_activity &act, Character &who )
 
     add_msg( m_good, fix.success_msg.translated() );
 
-    if( who.has_wounds( healed_bp.id() ) ) {
-        who.pick_wound_fix( healed_bp );
-    }
-
     if( who.is_avatar() ) {
         const std::vector<bodypart_id> bodyparts =
             who.get_all_body_parts( get_body_part_flags::sorted );

@@ -121,13 +121,14 @@
 #include "trap.h"
 #include "try_parse_integer.h"
 #include "type_id.h"
-#include "uilist.h"
 #include "ui_manager.h"
+#include "uilist.h"
 #include "units.h"
 #include "units_utility.h"
 #include "value_ptr.h"
 #include "veh_interact.h"
 #include "vehicle.h"
+#include "vehicle_selector.h"
 #include "viewer.h"
 #include "visitable.h"
 #include "vitamin.h"
@@ -8558,8 +8559,20 @@ std::optional<int> iuse::craft( Character *p, item *it, const tripoint_bub_ms &l
     if( p->has_item( *it ) ) {
         craft_loc = item_location( *p, it );
     } else {
-        craft_loc = item_location( map_cursor( loc ), it );
+        map_cursor mc( loc );
+        craft_loc = item_location( mc, it );
+
+        // The item may actually be in vehicle cargo on this tile.
+        if( !mc.has_item( *it ) ) {
+            if( const std::optional<vpart_reference> vp = get_map().veh_at( loc ).cargo() ) {
+                vehicle_cursor vc( vp->vehicle(), vp->part_index() );
+                if( vc.has_item( *it ) ) {
+                    craft_loc = item_location( vc, it );
+                }
+            }
+        }
     }
+
     craft_resolve_overdue_passive( *it, calendar::turn, craft_loc );
     if( !craft_loc || !craft_loc.get_item() ) {
         return std::nullopt;

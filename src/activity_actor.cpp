@@ -6985,8 +6985,17 @@ void craft_activity_actor::do_turn( player_activity &act, Character &crafter )
                 *( crafter.last_craft ) = craft_command( &craft.get_making(), 1, is_long, &crafter, location );
             }
         }
+        const safe_reference<item> original_craft = craft.get_safe_reference();
         item craft_copy = craft;
         craft_item.remove_item();
+
+        if( original_craft ) {
+            debugmsg( "Failed to remove completed craft '%s'; aborting completion.",
+                      craft_copy.tname() );
+            crafter.cancel_activity();
+            return;
+        }
+
         // We need to cache this before we cancel the activity else we risk Use After Free
         const bool will_continue = is_long;
         crafter.cancel_activity();

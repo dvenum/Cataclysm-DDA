@@ -316,6 +316,9 @@ void horde_map::iterator::insure_valid()
     // outer_map is not empty, outer_map->begin() is valid and so is
     // outer_map->begin()->second.begin()
     inner_iter = outer_iter->second.begin();
+    if( inner_iter == outer_iter->second.end() ) {
+        ++( *this );
+    }
 }
 
 horde_map::iterator &horde_map::iterator::operator++()

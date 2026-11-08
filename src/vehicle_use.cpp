@@ -92,6 +92,8 @@ static const furn_str_id furn_f_plant_unharvested_overgrown( "f_plant_unharveste
 static const gun_mode_id gun_mode_DEFAULT( "DEFAULT" );
 
 static const itype_id fuel_type_battery( "battery" );
+static const itype_id fuel_type_gasoline( "gasoline" );
+static const itype_id fuel_type_propane( "propane" );
 static const itype_id fuel_type_muscle( "muscle" );
 static const itype_id fuel_type_none( "null" );
 static const itype_id fuel_type_wind( "wind" );
@@ -402,6 +404,34 @@ void vehicle::build_electronics_menu( map &here, veh_menu &menu )
     }
 }
 
+std::vector<itype_id> vehicle::engine_fuel_options( const vehicle_part &vp ) const
+{
+    if( !vp.is_engine() ) {
+        return {};
+    }
+
+    std::vector<itype_id> options = vp.info().engine_info->fuel_opts;
+
+    if( vp.info().fuel_type == fuel_type_gasoline &&
+        part_with_feature( vp.mount, "LPG_CONVERSION", true ) >= 0 &&
+        std::find( options.begin(), options.end(), fuel_type_propane ) == options.end() ) {
+        options.push_back( fuel_type_propane );
+    }
+
+    return options;
+}
+
+bool vehicle::set_engine_fuel( vehicle_part &vp, const itype_id &fuel )
+{
+    const std::vector<itype_id> options = engine_fuel_options( vp );
+    if( std::find( options.begin(), options.end(), fuel ) == options.end() ) {
+        return false;
+    }
+
+    vp.ammo_pref = fuel;
+    return true;
+}
+
 void vehicle::control_engines( map &here )
 {
     bool dirty = false;
@@ -411,7 +441,7 @@ void vehicle::control_engines( map &here )
         menu.reset();
         for( const int engine_idx : engines ) {
             const vehicle_part &vp = parts[engine_idx];
-            for( const itype_id &fuel_type : vp.info().engine_info->fuel_opts ) {
+            for( const itype_id &fuel_type : engine_fuel_options( vp ) ) {
                 const bool is_active = vp.enabled && vp.fuel_current() == fuel_type;
                 const bool has_fuel = is_perpetual_type( vp ) || fuel_left( here, fuel_type );
                 menu.add( string_format( "[%s] %s %s", is_active ? "x" : " ", vp.name(), fuel_type->nname( 1 ) ) )
@@ -424,7 +454,7 @@ void vehicle::control_engines( map &here )
                         vp.enabled = !vp.enabled;
                     } else
                     {
-                        vp.fuel_set( fuel_type );
+                        set_engine_fuel( vp, fuel_type );
                     }
                     dirty = true;
                 } );
@@ -651,15 +681,22 @@ bool vehicle::auto_select_fuel( map &here, vehicle_part &vp )
     if( !vp.is_available() || !vp.is_engine() ) {
         return false;
     }
-    if( vp_engine_info.fuel_type == fuel_type_none || engine_fuel_left( here, vp ) > 0 ) {
+
+    const std::vector<itype_id> options = engine_fuel_options( vp );
+    const bool current_fuel_allowed =
+        std::find( options.begin(), options.end(), vp.fuel_current() ) != options.end();
+
+    if( vp_engine_info.fuel_type == fuel_type_none ||
+        ( current_fuel_allowed && engine_fuel_left( here, vp ) > 0 ) ) {
         return true;
     }
-    for( const itype_id &fuel_id : vp_engine_info.engine_info->fuel_opts ) {
-        if( fuel_left( here, fuel_id ) > 0 ) {
-            vp.fuel_set( fuel_id );
+
+    for( const itype_id &fuel_id : options ) {
+        if( fuel_left( here, fuel_id ) > 0 && set_engine_fuel( vp, fuel_id ) ) {
             return true;
         }
     }
+
     return false; // not a single fuel type left for this engine
 }
 
@@ -2506,7 +2543,7 @@ void vehicle::build_interact_menu( veh_menu &menu, map *here, const tripoint_bub
 
         const bool has_engine_or_fuel_controls = ( engines.size() > 1 ) ||
         std::any_of( engines.begin(), engines.end(), [&]( int engine_idx ) {
-            return parts[engine_idx].info().engine_info->fuel_opts.size() > 1;
+            return engine_fuel_options( parts[engine_idx] ).size() > 1;
         } );
 
         if( controls_here && has_engine_or_fuel_controls ) {

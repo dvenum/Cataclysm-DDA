@@ -723,6 +723,14 @@ void vehicle::set_hp( vehicle_part &pt, int qty, bool keep_degradation, int new_
     } else if( new_degradation >= 0 ) {
         pt.base.set_degradation( new_degradation );
     }
+
+    if( qty == 0 && pt.info().has_flag( "LPG_CONVERSION" ) ) {
+        for( vehicle_part &engine : parts ) {
+            if( engine.is_engine() && engine.mount == pt.mount ) {
+                engine.fuel_set( engine.info().fuel_type );
+            }
+        }
+    }
 }
 
 bool vehicle::mod_hp( vehicle_part &pt, int qty )

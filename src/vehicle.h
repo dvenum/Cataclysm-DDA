@@ -1115,6 +1115,10 @@ class vehicle
         void connect( map *here, const tripoint_bub_ms &source_pos, const tripoint_bub_ms &target_pos );
 
         bool precollision_check( units::angle &angle, map &here, bool follow_protocol );
+        // Fuels available to this specific engine, including same-tile modifications
+        std::vector<itype_id> engine_fuel_options( const vehicle_part &vp ) const;
+        // Set fuel if it is allowed for this specific engine
+        bool set_engine_fuel( vehicle_part &vp, const itype_id &fuel );
         // Try select any fuel for engine, returns true if some fuel is available
         bool auto_select_fuel( map &here, vehicle_part &vp );
         // Attempt to start an engine

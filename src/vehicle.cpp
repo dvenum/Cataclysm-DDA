@@ -2278,6 +2278,14 @@ bool vehicle::remove_part( vehicle_part &vp, RemovePartHandler &handler )
         vp.remove_flag( vp_flag::animal_flag );
     }
 
+    if( vpi.has_flag( "LPG_CONVERSION" ) ) {
+        for( vehicle_part &engine : parts ) {
+            if( engine.is_engine() && engine.mount == vp.mount ) {
+                engine.fuel_set( engine.info().fuel_type );
+            }
+        }
+    }
+
     // Update current engine configuration if needed
     if( vpi.has_flag( VPFLAG_ENGINE ) && engines.size() > 1 ) {
         bool any_engine_on = false;

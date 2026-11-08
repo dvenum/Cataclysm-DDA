@@ -59,7 +59,8 @@ vehicle_part *most_repairable_part( vehicle &veh, Character &who_arg );
  * Repairs a given part on a given vehicle by given character.
  * Awards xp and consumes components.
  */
-bool repair_part( map &here, vehicle &veh, vehicle_part &pt, Character &who );
+bool repair_part( map &here, vehicle &veh, vehicle_part &pt, Character &who,
+                  bool force_replace = false );
 /**
  * What @p who repairs a part with from @p pos: what they carry, and what lies within @p radius
  * of @p pos, along a clear path unless @p who is an NPC (which may use a welding rig it can't

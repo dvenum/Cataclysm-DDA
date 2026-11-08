@@ -135,6 +135,8 @@ std::string enum_to_string<vehicle_action>( vehicle_action stage )
             return "VEHICLE_INSTALL";
         case VEHICLE_REPAIR:
             return "VEHICLE_REPAIR";
+        case VEHICLE_REPLACE:
+            return "VEHICLE_REPLACE";
         case VEHICLE_REFILL:
             return "VEHICLE_REFILL";
         case VEHICLE_REMOVE:
@@ -194,6 +196,9 @@ void veh_interact::assign_activity( map &here )
                     time = vp->repair_time( player_character ) * pt->base.repairable_levels();
                 }
             }
+            break;
+        case VEHICLE_REPLACE:
+            time = vp->install_time( player_character );
             break;
         case VEHICLE_REMOVE:
             time = vp->removal_time( player_character );
@@ -294,6 +299,7 @@ veh_interact::veh_interact( map &here, vehicle &veh, const point_rel_ms &p )
     main_context.register_action( "QUIT" );
     main_context.register_action( "INSTALL" );
     main_context.register_action( "REPAIR" );
+    main_context.register_action( "REPLACE" );
     main_context.register_action( "MEND" );
     main_context.register_action( "REFILL" );
     main_context.register_action( "REMOVE" );
@@ -547,6 +553,10 @@ void veh_interact::do_main_loop( map &here )
             if( veh->handle_potential_theft( player_character ) ) {
                 do_repair( here );
             }
+        } else if( action == "REPLACE" ) {
+            if( veh->handle_potential_theft( player_character ) ) {
+                do_replace( here );
+            }
         } else if( action == "MEND" ) {
             if( veh->handle_potential_theft( player_character ) ) {
                 do_mend( here );
@@ -690,6 +700,18 @@ task_reason veh_interact::cant_do( const map &here, vehicle_action mode )
             has_tools = true;
             enough_light = player_character.fine_detail_vision_mod() <= 4;
             break;
+
+        case VEHICLE_REPLACE: {
+            enough_morale = player_character.has_morale_to_craft();
+            valid_target = cpart >= 0 && std::any_of( parts_here.begin(), parts_here.end(),
+            [this]( int idx ) {
+                return !veh->part( idx ).is_broken();
+            } );
+            // checked later
+            has_tools = true;
+            enough_light = player_character.fine_detail_vision_mod() <= 4;
+        }
+        break;
 
         case VEHICLE_MEND_FAULTS: {
             enough_morale = player_character.has_morale_to_craft();
@@ -1242,6 +1264,132 @@ void veh_interact::do_repair( map &here )
             break;
         } else {
             move_in_list( pos, action, need_repair.size() );
+        }
+    }
+}
+
+void veh_interact::do_replace( map &here )
+{
+    task_reason reason = cant_do( here, VEHICLE_REPLACE );
+
+    auto can_replace = [this, &reason]() {
+        switch( reason ) {
+            case task_reason::LOW_MORALE:
+                msg = _( "Your morale is too low to replace parts…" );
+                return false;
+            case task_reason::LOW_LIGHT:
+                msg = _( "It's too dark to see what you are doing…" );
+                return false;
+            case task_reason::MOVING_VEHICLE:
+                msg = _( "You can't replace stuff while driving." );
+                return false;
+            case task_reason::INVALID_TARGET:
+                msg = _( "There are no parts which can be replaced on this tile." );
+                return false;
+            default:
+                break;
+        }
+        return true;
+    };
+
+    if( !can_replace() ) {
+        return;
+    }
+
+    // anything not broken can be swapped for a fresh one
+
+    // parts_here so they match the row indices used by print_part_list
+    std::vector<int> replaceable;
+    for( size_t i = 0; i < parts_here.size(); i++ ) {
+        if( !veh->part( parts_here[i] ).is_broken() ) {
+            replaceable.push_back( static_cast<int>( i ) );
+        }
+    }
+
+    restore_on_out_of_scope prev_title( title );
+    title = _( "Choose a part here to replace:" );
+
+    shared_ptr_fast<ui_adaptor> current_ui = create_or_get_ui_adaptor( here );
+
+    int pos = 0;
+
+    restore_on_out_of_scope prev_hilight_part( highlight_part );
+
+    avatar &player_character = get_avatar();
+    while( true ) {
+        vehicle_part &pt = veh->part( parts_here[replaceable[pos]] );
+        const vpart_info &vp = pt.info();
+
+        std::string nmsg;
+
+        // same as replacing a broken part: full install price on the right
+        bool ok = format_reqs( nmsg, vp.install_requirements(), vp.install_skills,
+                               vp.install_time( player_character ) );
+
+        if( vp.has_flag( "NEEDS_JACKING" ) ) {
+            nmsg += _( "<color_white>Additional requirements:</color>\n" );
+            std::pair<bool, std::string> res = calc_lift_requirements( here, vp );
+            if( !res.first ) {
+                ok = false;
+            }
+            nmsg += res.second;
+        }
+        if( veh->has_part( "NO_MODIFY_VEHICLE" ) && !vp.has_flag( "SIMPLE_PART" ) ) {
+            nmsg += colorize( _( "This vehicle cannot be modified.\n" ), c_light_red );
+            ok = false;
+        }
+        if( pt.has_flag( vp_flag::carried_flag ) ) {
+            nmsg += colorize( _( "\nUnracking is required before replacing this part.\n" ),
+                              c_red );
+            ok = false;
+        }
+
+        bool would_prevent_flying = veh->would_repair_prevent_flyable( pt, player_character );
+        if( would_prevent_flying &&
+            !player_character.has_proficiency( proficiency_prof_aircraft_mechanic ) ) {
+            nmsg += string_format(
+                        _( "\n<color_yellow>You require the \"%s\" proficiency to replace this part safely!</color>\n\n" ),
+                        proficiency_prof_aircraft_mechanic->name() );
+        }
+
+        vp.format_description( nmsg, c_light_gray, getmaxx( w_msg ) - 4 );
+
+        msg = colorize( nmsg, c_light_gray );
+
+        highlight_part = replaceable[pos];
+
+        ui_manager::redraw();
+
+        const std::string action = main_context.handle_input();
+        msg.reset();
+        if( ( action == "REPLACE" || action == "CONFIRM" ) && ok ) {
+            if( would_prevent_flying ) {
+                if( query_yn(
+                        _( "Replacing this part will mean that this vehicle is no longer flightworthy.  Continue?" ) ) ) {
+                    veh->set_flyable( false );
+                } else {
+                    nmsg += colorize( _( "You chose not to replace this part to keep the vehicle flyable.\n" ),
+                                      c_light_red );
+                    ok = false;
+                }
+            }
+            if( ok ) {
+                reason = cant_do( here, VEHICLE_REPLACE );
+                if( !can_replace() ) {
+                    return;
+                }
+                sel_vehicle_part = &pt;
+                sel_vpart_info = &vp;
+                for( const Character *helper : player_character.get_crafting_helpers() ) {
+                    add_msg( m_info, _( "%s helps with this task…" ), helper->get_name() );
+                }
+                sel_cmd = VEHICLE_REPLACE;
+                break;
+            }
+        } else if( action == "QUIT" ) {
+            break;
+        } else {
+            move_in_list( pos, action, replaceable.size() );
         }
     }
 }
@@ -2657,7 +2805,7 @@ void veh_interact::display_mode( const map &here )
         // NOLINTNEXTLINE(cata-use-named-point-constants)
         print_colored_text( w_mode, point( 1, 0 ), title_col, title_col, title.value() );
     } else {
-        constexpr size_t action_cnt = 12;
+        constexpr size_t action_cnt = 13;
         const std::array<std::string, action_cnt> actions = { {
                 veh_act_desc( main_context, "INSTALL",
                               pgettext( "veh_interact", "install" ),
@@ -2665,6 +2813,9 @@ void veh_interact::display_mode( const map &here )
                 veh_act_desc( main_context, "REPAIR",
                               pgettext( "veh_interact", "repair" ),
                               cant_do( here, VEHICLE_REPAIR ) ),
+                veh_act_desc( main_context, "REPLACE",
+                              pgettext( "veh_interact", "replace" ),
+                              cant_do( here,  VEHICLE_REPLACE ) ),
                 veh_act_desc( main_context, "MEND",
                               pgettext( "veh_interact", "mend" ),
                               cant_do( here, VEHICLE_MEND_FAULTS ) ),

@@ -3867,7 +3867,7 @@ class Character : public Creature, public visitable
         select_item_component( const std::vector<item_comp> &components,
                                int batch, temp_crafting_inventory &map_inv, bool can_cancel = false,
                                const std::function<bool( const item & )> &filter = return_true<item>, bool player_inv = true,
-                               bool npc_query = false, const recipe *rec = nullptr );
+                               bool npc_query = false, const recipe *rec = nullptr, bool force_prompt = false );
         std::list<item> consume_items( const comp_selection<item_comp> &is, int batch,
                                        const std::function<bool( const item & )> &filter = return_true<item>, bool select_ind = false,
                                        bool disable_preference = false );

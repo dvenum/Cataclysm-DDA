@@ -35,7 +35,8 @@ vehicle_part *most_repairable_part( vehicle &veh, Character &who_arg );
  * Repairs a given part on a given vehicle by given character.
  * Awards xp and consumes components.
  */
-bool repair_part( map &here, vehicle &veh, vehicle_part &pt, Character &who );
+bool repair_part( map &here, vehicle &veh, vehicle_part &pt, Character &who,
+                  bool force_replace = false );
 
 /** Whether @p who could install @p vpart somewhere on @p veh, checked against @p inv. */
 bool can_install_anywhere( const Character &who, const temp_crafting_inventory &inv,

@@ -104,11 +104,25 @@ vehicle_part *most_repairable_part( vehicle &veh, Character &who )
     return vp_most_damaged != nullptr ? vp_most_damaged : vp_broken;
 }
 
-bool repair_part( map &here, vehicle &veh, vehicle_part &pt, Character &who )
+bool repair_part( map &here, vehicle &veh, vehicle_part &pt, Character &who,
+                  bool force_replace )
 {
     const vpart_info &vp = pt.info();
 
-    const requirement_data reqs = pt.is_broken()
+    // force_replace: the part is deliberately broken and swapped for a fresh
+    // one ("replace" in the vehicle menu) - same cost as fixing a broken part
+    const bool replacing = pt.is_broken() || force_replace;
+
+    // for a forced replacement full tanks are not valid candidates: their
+    // contents would be lost. damaged/degraded items are already rejected
+    // by is_crafting_component
+    const std::function<bool( const item & )> comp_filter = force_replace
+    ? std::function<bool( const item & )>( []( const item & it ) {
+        return is_crafting_component( it ) && ( !it.is_container() || it.is_container_empty() );
+    } )
+        : std::function<bool( const item & )>( is_crafting_component );
+
+    const requirement_data reqs = replacing
                                   ? vp.install_requirements()
                                   : vp.repair_requirements() * pt.get_base().repairable_levels();
 
@@ -119,17 +133,32 @@ bool repair_part( map &here, vehicle &veh, vehicle_part &pt, Character &who )
     // as they have the handicap of not being able to use the veh interaction menu
     // or able to drag a welding cart etc.
     map_inv.form_from_map( who.pos_bub(), PICKUP_RANGE, &who, !who.is_npc() );
-    if( !reqs.can_make_with_inventory( &who, inv, is_crafting_component ) ) {
-        who.add_msg_if_player( m_info, _( "You don't meet the requirements to repair the %s." ),
+    if( !reqs.can_make_with_inventory( &who, inv, comp_filter ) ) {
+        who.add_msg_if_player( m_info,
+                               force_replace
+                               ? _( "You don't meet the requirements to replace the %s." )
+                               : _( "You don't meet the requirements to repair the %s." ),
                                pt.name() );
         return false;
     }
 
-    // consume items extracting any base item (which we will need if replacing broken part)
+    // consume items extracting any base item (which we will need if replacing the part)
     item base( vp.base_item );
     for( const auto &e : reqs.get_components() ) {
-        for( item &obj : who.consume_items( who.select_item_component( e, 1, map_inv ), 1,
-                                            is_crafting_component ) ) {
+        // individual selection only for the base item, like during installation
+        const bool is_base_group = std::any_of( e.begin(), e.end(),
+        [&vp]( const item_comp & c ) {
+            return c.type == vp.base_item;
+        } );
+        comp_selection<item_comp> sel = who.select_item_component( e, 1, map_inv, true, comp_filter,
+                                        true, false, nullptr, /*force_prompt=*/force_replace );
+        if( sel.use_from == usage_from::cancel ) {
+            // player cancelled the component selection; leave the part untouched
+            return false;
+        }
+        for( item &obj : who.consume_items( sel, 1, comp_filter,
+                                            /*select_ind=*/force_replace && is_base_group,
+                                            /*disable_preference=*/force_replace ) ) {
             if( obj.typeId() == vp.base_item ) {
                 base = obj;
             }
@@ -142,14 +171,14 @@ bool repair_part( map &here, vehicle &veh, vehicle_part &pt, Character &who )
 
     who.invalidate_crafting_inventory();
 
-    for( const auto &sk : pt.is_broken() ? vp.install_skills : vp.repair_skills ) {
+    for( const auto &sk : replacing ? vp.install_skills : vp.repair_skills ) {
         who.practice( sk.first, calc_xp_gain( vp, sk.first, who ) );
     }
 
-    // If part is broken, it will be destroyed and references invalidated
+    // If part is being replaced, it will be destroyed and references invalidated
     const std::string partname = pt.name( false );
     const std::string startdurability = pt.get_base().damage_indicator();
-    if( pt.is_broken() ) {
+    if( replacing ) {
         const vpart_id vpid = pt.info().id;
         const point_rel_ms mount = pt.mount;
         const units::angle direction = pt.direction;

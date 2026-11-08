@@ -58,6 +58,7 @@ const std::string leak_marker = "<color_red>*</color>";
 enum vehicle_action {
     VEHICLE_INSTALL,    // 'i'
     VEHICLE_REPAIR,     // 'r'
+    VEHICLE_REPLACE,    // 't'
     VEHICLE_REFILL,     // 'f'
     VEHICLE_REMOVE,     // 'o'
     VEHICLE_REMOVE_APPLIANCE,     // 'O'
@@ -206,6 +207,7 @@ class veh_interact
         /*@{*/
         void do_install( map &here );
         void do_repair( map &here );
+        void do_replace( map &here );
         void do_mend( map &here );
         void do_refill( map &here );
         void do_remove( map &here );

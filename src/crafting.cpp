@@ -4096,7 +4096,8 @@ comp_selection<item_comp> Character::select_item_component( const std::vector<it
         &components,
         int batch, temp_crafting_inventory &map_inv, bool can_cancel,
         const std::function<bool( const item & )> &filter, bool player_inv, bool npc_query,
-        const recipe *rec )
+        const recipe *rec,
+        bool force_prompt )
 {
     std::function<bool( const item & )> preferred_component_filter = [&filter]( const item & it ) {
         return is_preferred_component( it ) && filter( it );
@@ -4197,7 +4198,7 @@ comp_selection<item_comp> Character::select_item_component( const std::vector<it
     }
 
     /* select 1 component to use */
-    if( player_has.size() + map_has.size() + mixed.size() == 1 ) { // Only 1 choice
+    if( player_has.size() + map_has.size() + mixed.size() == 1 && !force_prompt ) {  // Only 1 choice
         if( player_has.size() == 1 ) {
             selected.use_from = usage_from::player;
             selected.comp = player_has[0].first;

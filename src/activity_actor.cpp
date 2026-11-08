@@ -12138,6 +12138,12 @@ void vehicle_activity_actor::complete_vehicle( player_activity &act, Character &
             break;
         }
 
+        case VEHICLE_REPLACE: {
+            vehicle_part &vp = veh.part( vp_ind );
+            veh_utils::repair_part( here, veh, vp, you, /*force_replace=*/true );
+            break;
+        }
+
         case VEHICLE_REFILL: {
             if( !refill_location ) {
                 debugmsg( "Activity ACT_VEHICLE: missing refill source" );

@@ -1751,12 +1751,43 @@ void veh_interact::calc_overview( map &here )
         }
     }
 
-    auto compare = []( veh_interact::part_option & s1,
-    veh_interact::part_option & s2 ) {
-        // NOLINTNEXTLINE cata-use-localized-sorting
-        return  s1.key <  s2.key;
+    // tanks are grouped by contents with empty ones first; groups are ordered
+    // by first appearance of each fuel type to keep the list stable
+    std::map<itype_id, int> tank_group_rank;
+    int tank_rank = 0;
+    for( const part_option &opt : overview_opts ) {
+        if( opt.key != "2_TANK" ) {
+            continue;
+        }
+        const itype_id &fuel = opt.part->ammo_current();
+        if( fuel.is_null() ) {
+            continue;
+        }
+        if( tank_group_rank.emplace( fuel, tank_rank ).second ) {
+            tank_rank++;
+        }
+    }
+
+    auto compare = [&tank_group_rank]( const veh_interact::part_option & s1,
+    const veh_interact::part_option & s2 ) {
+        if( s1.key != s2.key ) {
+            // NOLINTNEXTLINE cata-use-localized-sorting
+            return s1.key < s2.key;
+        }
+        if( s1.key == "2_TANK" ) {
+            const bool empty1 = s1.part->ammo_current().is_null();
+            const bool empty2 = s2.part->ammo_current().is_null();
+            if( empty1 != empty2 ) {
+                return empty2; // tanks with contents first, empty ones go last
+            }
+            if( !empty1 && s1.part->ammo_current() != s2.part->ammo_current() ) {
+                return tank_group_rank.at( s1.part->ammo_current() ) <
+                       tank_group_rank.at( s2.part->ammo_current() );
+            }
+        }
+        return false;
     };
-    std::sort( overview_opts.begin(), overview_opts.end(), compare );
+    std::stable_sort( overview_opts.begin(), overview_opts.end(), compare );
 
 }
 

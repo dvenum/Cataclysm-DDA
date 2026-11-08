@@ -1771,12 +1771,12 @@ static void fire()
     }
     // try firing turrets
     if( const optional_vpart_position ovp = here.veh_at( you.pos_abs() ) ) {
-        if( turret_data turret_here = ovp->vehicle().turret_query( you.pos_abs() ) ) {
-            if( avatar_action::fire_turret_manual( you, here, turret_here ) ) {
+        if( ovp.part_with_feature( VPFLAG_CONTROLS, true ) ) {
+            if( ovp->vehicle().turrets_aim_and_fire_all_manual() ) {
                 return;
             }
-        } else if( ovp.part_with_feature( VPFLAG_CONTROLS, true ) ) {
-            if( ovp->vehicle().turrets_aim_and_fire_all_manual() ) {
+        } else if( turret_data turret_here = ovp->vehicle().turret_query( you.pos_abs() ) ) {
+            if( avatar_action::fire_turret_manual( you, here, turret_here ) ) {
                 return;
             }
         }

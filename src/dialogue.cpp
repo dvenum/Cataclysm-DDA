@@ -251,8 +251,8 @@ void avatar::talk_to( std::unique_ptr<talker> talk_with, bool radio_contact,
         for( const std::string &topic_id : d.actor( true )->get_topics( radio_contact ) ) {
             d.add_topic( topic_id );
         }
-        for( const std::string &topic_id : d.actor( true )->get_topics( radio_contact ) ) {
-            d.add_topic( topic_id );
+        if( d.topic_stack.empty() ) {
+            d.add_topic( "TALK_NONE" );
         }
     } else {
         d.add_topic( debug_topic );

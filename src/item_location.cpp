@@ -1152,6 +1152,12 @@ void item_location::deserialize( const JsonObject &obj )
                     break;
                 }
             }
+            if( !found && idx > -1 && idx < static_cast<int>( parent_contents.size() ) ) {
+                // uid mismatch (e.g. pocket contents lost uids on load): fall back to stored index
+                auto iter = parent_contents.begin();
+                std::advance( iter, idx );
+                found = *iter;
+            }
             if( !found ) {
                 debugmsg( "item_location UID not found in container contents" );
                 ptr = item_location().ptr;

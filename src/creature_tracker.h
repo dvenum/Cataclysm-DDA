@@ -170,6 +170,7 @@ class creature_tracker
         // persistent visibility from terrain or furniture changes (this excludes vehicles and fields)
         // or when persistent traversability changes, which means walls and floors.
         bool dirty_ = true;  // NOLINT(cata-serialize)
+        time_point last_epoch_turn_ = calendar::turn_zero;
         int zone_tick_ = 1;  // NOLINT(cata-serialize)
         int zone_number_ = 0;  // NOLINT(cata-serialize)
         std::unordered_map<int, std::unordered_map<mfaction_id, std::vector<shared_ptr_fast<Creature>>>>

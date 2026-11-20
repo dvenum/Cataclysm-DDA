@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "avatar.h"
+#include "calendar.h"
 #include "cata_assert.h"
 #include "debug.h"
 #include "execution_fatal.h"
@@ -418,10 +419,14 @@ T *creature_tracker::creature_at( const tripoint_abs_ms &p, bool allow_hallucina
 void creature_tracker::flood_fill_zone( const Creature &origin )
 {
     if( dirty_ ) {
-        creatures_by_zone_and_faction_.clear();
-        zone_tick_ = zone_tick_ > 0 ? -1 : 1;
-        zone_number_ = 1;
         dirty_ = false;
+        // one flip per turn only
+        if( calendar::turn != last_epoch_turn_ ) {
+            last_epoch_turn_ = calendar::turn;
+            creatures_by_zone_and_faction_.clear();
+            zone_tick_ = zone_tick_ > 0 ? -1 : 1;
+            zone_number_ = 1;
+        }
     }
 
     // This check insures we only flood fill when the target monster has an uninitialized zone,
@@ -466,7 +471,7 @@ void creature_tracker::flood_fill_zone( const Creature &origin )
                 return false;
             }
             const maptile &down = here.maptile_at( loc );
-            const ter_t &down_ter = up.get_ter_t();
+            const ter_t &down_ter = down.get_ter_t();
             if( down_ter.id.is_null() ) {
                 return false;
             }
@@ -478,6 +483,9 @@ void creature_tracker::flood_fill_zone( const Creature &origin )
     },
     [this]( const tripoint_bub_ms & loc ) {
         if( Creature *creature = this->creature_at<Creature>( loc, true ) ) {
+            if( creature->get_reachable_zone() * zone_tick_ > 0 ) {
+                return;
+            }
             if( shared_ptr_fast<Creature> ptr = g->shared_from( *creature ) ) {
                 const int n = zone_number_ * zone_tick_;
                 creatures_by_zone_and_faction_[n][creature->get_monster_faction()].emplace_back( std::move( ptr ) );

@@ -2278,10 +2278,10 @@ ret_val<item *> item_pocket::insert_item( const item &it,
 
     item *inserted = nullptr;
     if( !into_bottom ) {
-        contents.push_front( it );
+        contents.push_front( std::move( it ) );
         inserted = &contents.front();
     } else {
-        contents.push_back( it );
+        contents.push_back( std::move( it ) );
         inserted = &contents.back();
     }
     if( restack_charges && it.count_by_charges() ) {

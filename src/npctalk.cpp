@@ -5775,6 +5775,7 @@ talk_effect_fun_t::func f_open_dialogue( const JsonObject &jo, std::string_view 
     std::vector<effect_on_condition_id> true_eocs;
     std::vector<effect_on_condition_id> false_eocs;
     str_or_var topic;
+
     bool has_member = false;
     if( jo.has_object( member ) ) {
         has_member = true;
@@ -5784,6 +5785,7 @@ talk_effect_fun_t::func f_open_dialogue( const JsonObject &jo, std::string_view 
         topic = get_str_or_var( innerJo.get_member( "topic" ), "topic" );
         check_topic_at_load( topic, innerJo.get_member( "topic" ), member );
     }
+
     return [true_eocs, false_eocs, topic, has_member]( dialogue const & d ) {
         std::string actual_topic;
         if( has_member ) {

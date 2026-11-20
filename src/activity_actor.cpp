@@ -3679,6 +3679,15 @@ void ebooksave_activity_actor::start( player_activity &act, Character &/*who*/ )
 
 void ebooksave_activity_actor::do_turn( player_activity &act, Character &who )
 {
+    item *const reader = ereader.get_item();
+    item *const current_book = books.empty() ? nullptr : books.back().get_item();
+    if( reader == nullptr || current_book == nullptr ) {
+        who.add_msg_player_or_npc(
+            _( "Your e-reader is no longer available." ),
+            _( "<npcname>'s e-reader is no longer available." ) );
+        who.cancel_activity();
+        return;
+    }
     // only consume charges every pages_per_charge pages
     if( calendar::once_every( pages_per_charge * time_per_page ) ) {
         if( !ereader->ammo_sufficient( &who ) ) {

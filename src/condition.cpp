@@ -1178,26 +1178,135 @@ conditional_t::func f_has_any_wound( const JsonObject &jo, std::string_view memb
     };
 }
 
+conditional_t::func f_bodypart_is_wounded_and_fixable( const JsonObject &jo,
+        std::string_view member, bool is_npc )
+{
+    str_or_var bp = get_str_or_var( jo.get_member( member ), member, true );
+    const bool check_sublimbs = jo.get_bool( "check_sublimbs", false );
+
+    return [bp, is_npc, check_sublimbs]( const_dialogue const & d ) {
+        bodypart_id bid = bodypart_id( bp.evaluate( d ) );
+        const const_talker &who = *d.const_actor( is_npc );
+        const bodypart *bpart = who.get_bodypart( bid );
+        if( bpart == nullptr ) {
+            return false;
+        }
+
+        for( const wound &wd : bpart->get_wounds() ) {
+            if( !wd.type->fixes.empty() ) {
+                return true;
+            }
+        }
+
+        if( check_sublimbs ) {
+            for( const bodypart_id sid : who.get_all_body_parts( get_body_part_flags::only_minor ) ) {
+                if( sid->main_part == bid->id ) {
+                    const bodypart *spart = who.get_bodypart( sid );
+                    if( spart == nullptr ) {
+                        // Should not get this, get_bodypart will debugmsg if it does fail
+                        return false;
+                    }
+
+                    for( const wound &wd : spart->get_wounds() ) {
+                        if( !wd.type->fixes.empty() ) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+    };
+}
+
+conditional_t::func f_bodypart_is_wounded( const JsonObject &jo, std::string_view member,
+        bool is_npc )
+{
+    str_or_var bp = get_str_or_var( jo.get_member( member ), member, true );
+    const bool check_sublimbs = jo.get_bool( "check_sublimbs", false );
+
+    return [bp, is_npc, check_sublimbs]( const_dialogue const & d ) {
+        bodypart_id bid = bodypart_id( bp.evaluate( d ) );
+        const const_talker &who = *d.const_actor( is_npc );
+        const bodypart *bpart = who.get_bodypart( bid );
+        if( bpart == nullptr ) {
+            return false;
+        }
+
+        if( bpart->has_wounds() ) {
+            return true;
+        }
+
+        if( check_sublimbs ) {
+            for( const bodypart_id sid : who.get_all_body_parts( get_body_part_flags::only_minor ) ) {
+                if( sid->main_part == bid->id ) {
+                    const bodypart *spart = who.get_bodypart( sid );
+                    if( spart == nullptr ) {
+                        // Should not get this, get_bodypart will debugmsg if it does fail
+                        return false;
+                    }
+
+                    if( spart->has_wounds() ) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    };
+}
+
 conditional_t::func f_bodypart_is_bleeding( const JsonObject &jo, std::string_view member,
         bool is_npc )
 {
-    str_or_var bp = get_str_or_var( jo.get_member( member ), member, true );;
+    str_or_var bp = get_str_or_var( jo.get_member( member ), member, true );
 
-    return [bp, is_npc]( const_dialogue const & d ) {
+    str_or_var severity_var;
+    optional( jo, false, "severity", severity_var );
+    const bool check_sublimbs = jo.get_bool( "check_sublimbs", false );
+
+    return [bp, severity_var, is_npc, check_sublimbs]( const_dialogue const & d ) {
         bodypart_id bid = bp.evaluate( d ).empty() ? bodypart_str_id::NULL_ID() :
                           bodypart_id( bp.evaluate( d ) );
         if( require_character( d, is_npc, "bodypart_is_bleeding" ) == nullptr ) {
             return false;
         }
+        const const_talker &who = *d.const_actor( is_npc );
         // get_part says so itself when the body part is missing
-        const bodypart *part = d.const_actor( is_npc )->get_bodypart( bid );
+        const bodypart *part = who.get_bodypart( bid );
         if( part == nullptr ) {
             return false;
         }
 
+        const std::string severity_str = severity_var.evaluate( d );
+        wound_severity severity = wound_severity::MINOR;
+        if( !severity_str.empty() ) {
+            severity = io::string_to_enum<wound_severity>( severity_str );
+        }
+
         for( const wound &wd : part->get_wounds() ) {
-            if( wd.type->is_bleeding_wound() ) {
+            if( wd.type->is_bleeding_wound() && wd.type->severity >= severity ) {
                 return true;
+            }
+        }
+
+        if( check_sublimbs ) {
+            for( const bodypart_id sid : who.get_all_body_parts( get_body_part_flags::only_minor ) ) {
+                if( sid->main_part == bid->id ) {
+                    const bodypart *spart = who.get_bodypart( sid );
+                    if( spart == nullptr ) {
+                        // Should not get this, get_bodypart will debugmsg if it does fail
+                        return false;
+                    }
+
+                    for( const wound &wd : spart->get_wounds() ) {
+                        if( wd.type->is_bleeding_wound() && wd.type->severity >= severity ) {
+                            return true;
+                        }
+                    }
+                }
             }
         }
 
@@ -2024,6 +2133,33 @@ conditional_t::func f_is_bleeding( bool is_npc )
         for( const bodypart_id &bp_id : who.get_all_body_parts( get_body_part_flags::none ) ) {
             for( const wound &wd : who.get_bodypart( bp_id )->get_wounds() ) {
                 if( wd.type->is_bleeding_wound() ) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+}
+
+conditional_t::func f_is_bleeding( const JsonObject &jo, std::string_view member,
+                                   bool is_npc )
+{
+    str_or_var severity_var = get_str_or_var( jo.get_member( member ), member, true );
+
+    return [severity_var, is_npc]( const_dialogue const & d ) {
+        const std::string severity_str = severity_var.evaluate( d );
+
+        wound_severity severity = wound_severity::MINOR;
+        if( !severity_str.empty() ) {
+            severity = io::string_to_enum<wound_severity>( severity_str );
+        }
+
+        const const_talker &who = *d.const_actor( is_npc );
+
+        for( const bodypart_id &bp_id : who.get_all_body_parts( get_body_part_flags::none ) ) {
+            for( const wound &wd : who.get_bodypart( bp_id )->get_wounds() ) {
+                if( wd.type->is_bleeding_wound() && wd.type->severity >= severity ) {
                     return true;
                 }
             }
@@ -3355,7 +3491,10 @@ parsers = {
     {"u_has_any_effect", "npc_has_any_effect", jarg::array, &conditional_fun::f_has_any_effect },
     {"u_has_effect", "npc_has_effect", jarg::member, &conditional_fun::f_has_effect },
     {"u_has_any_wound", "npc_has_any_wound", jarg::array, &conditional_fun::f_has_any_wound },
+    {"u_is_bleeding", "npc_is_bleeding", jarg::member, &conditional_fun::f_is_bleeding },
     {"u_bodypart_is_bleeding", "npc_bodypart_is_bleeding", jarg::member, &conditional_fun::f_bodypart_is_bleeding },
+    {"u_bodypart_is_wounded", "npc_bodypart_is_wounded", jarg::member, &conditional_fun::f_bodypart_is_wounded },
+    {"u_bodypart_is_wounded_and_fixable", "npc_bodypart_is_wounded_and_fixable", jarg::member, &conditional_fun::f_bodypart_is_wounded_and_fixable },
     {"u_need", "npc_need", jarg::member, &conditional_fun::f_need },
     {"u_query", "npc_query", jarg::member, &conditional_fun::f_query },
     {"u_at_om_location", "npc_at_om_location", jarg::member, &conditional_fun::f_at_om_location },

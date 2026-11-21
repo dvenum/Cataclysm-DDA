@@ -244,6 +244,7 @@ TEST_CASE( "mut-b09_clear_bionics_cuts_power_to_what_is_left", "[audit][bionics]
 
 static const bionic_id test_bio_mutb08_big( "test_bio_mutb08_big" );
 
+static const itype_id itype_backpack( "backpack" );
 static const itype_id itype_hammer( "hammer" );
 static const itype_id itype_test_bio_mutb08_cancels( "test_bio_mutb08_cancels" );
 static const itype_id itype_test_bio_mutb08_conflict( "test_bio_mutb08_conflict" );
@@ -288,8 +289,11 @@ TEST_CASE( "mut-b08_self_installed_cbm_must_suit_the_body", "[audit][bionics][cb
     clear_avatar();
     avatar &you = get_avatar();
     prepare_self_install( you );
-    const item cbm( itype_test_bio_mutb08_conflict );
-    const use_function *install = cbm.type->get_use( "install_bionic" );
+    REQUIRE( you.wear_item( item( itype_backpack ), false ).has_value() );
+    item_location cbm = you.i_add( item( itype_test_bio_mutb08_conflict ) );
+    REQUIRE( cbm );
+    REQUIRE( you.has_item( *cbm ) );
+    const use_function *install = cbm->type->get_use( "install_bionic" );
     REQUIRE( install != nullptr );
     REQUIRE( install->can_call( you, cbm, you.pos_bub() ).success() );
 

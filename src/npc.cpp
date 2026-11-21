@@ -621,7 +621,7 @@ void npc_template::check_consistency()
             debugmsg( "Invalid NPC class %s", guy.myclass.c_str() );
         }
         std::string first_topic = guy.chatbin.first_topic;
-        if( const json_talk_topic *topic = get_talk_topic( first_topic ) ) {
+        if( const json_talk_topic *topic = talk_topic_all::get_talk_topic( first_topic ) ) {
             cata::flat_set<std::string> reachable_topics =
                 topic->get_directly_reachable_topics( true );
             if( reachable_topics.count( "TALK_MISSION_OFFER" ) ) {
@@ -2690,7 +2690,7 @@ void healing_options::set_all()
 
 bool npc::has_healing_item( healing_options try_to_fix )
 {
-    return !get_healing_item( try_to_fix, true ).is_null();
+    return !get_healing_item( try_to_fix, true )->is_null();
 }
 
 healing_options npc::has_healing_options()
@@ -2742,9 +2742,9 @@ healing_options npc::has_healing_options( healing_options try_to_fix )
     return can_fix;
 }
 
-item &npc::get_healing_item( healing_options try_to_fix, bool first_best )
+item_location npc::get_healing_item( healing_options try_to_fix, bool first_best )
 {
-    item *best = &null_item_reference();
+    item_location best;
     visit_items( [&best, try_to_fix, first_best]( item_location node ) {
         const use_function *use = node->type->get_use( "heal" );
         if( use == nullptr ) {
@@ -2757,7 +2757,7 @@ item &npc::get_healing_item( healing_options try_to_fix, bool first_best )
             ( try_to_fix.bleed && actor.bleed > 0 ) ||
             ( try_to_fix.bite && actor.bite > 0 ) ||
             ( try_to_fix.infect && actor.infect > 0 ) ) {
-            best = node.get_item();
+            best = node;
             if( first_best ) {
                 return VisitResponse::ABORT;
             }
@@ -2766,7 +2766,7 @@ item &npc::get_healing_item( healing_options try_to_fix, bool first_best )
         return VisitResponse::NEXT;
     } );
 
-    return *best;
+    return best;
 }
 
 bool npc::has_painkiller() const
@@ -3847,7 +3847,7 @@ void npc::process_turn()
     // TODO: Make NPCs leave the player if there's a path out of map and player is sleeping/unseen/etc.
 }
 
-bool npc::invoke_item( item *used, const tripoint_bub_ms &pt, int )
+bool npc::invoke_item( item_location &used, const tripoint_bub_ms &pt, int )
 {
     const auto &use_methods = used->type->use_methods;
 
@@ -3859,12 +3859,12 @@ bool npc::invoke_item( item *used, const tripoint_bub_ms &pt, int )
     return false;
 }
 
-bool npc::invoke_item( item *used, const std::string &method )
+bool npc::invoke_item( item_location &used, const std::string &method )
 {
     return Character::invoke_item( used, method );
 }
 
-bool npc::invoke_item( item *used )
+bool npc::invoke_item( item_location &used )
 {
     return Character::invoke_item( used );
 }
@@ -3992,7 +3992,7 @@ bool npc::path_avoids( const tripoint_bub_ms &p, const bool ignore_creatures ) c
 mfaction_id npc::get_monster_faction() const
 {
     if( my_fac ) {
-        if( my_fac->mon_faction.is_valid() ) {
+        if( !my_fac->mon_faction.is_null() && my_fac->mon_faction.is_valid() ) {
             return my_fac->mon_faction;
         }
     }

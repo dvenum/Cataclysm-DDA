@@ -90,6 +90,7 @@
 #include "vpart_range.h"
 #include "weather.h"
 
+static const activity_id ACT_BUILD( "ACT_BUILD" );
 static const activity_id ACT_FETCH_REQUIRED( "ACT_FETCH_REQUIRED" );
 static const activity_id ACT_MOVE_LOOT( "ACT_MOVE_LOOT" );
 static const activity_id ACT_MULTIPLE_BUTCHER( "ACT_MULTIPLE_BUTCHER" );
@@ -98,6 +99,7 @@ static const activity_id ACT_MULTIPLE_CHOP_TREES( "ACT_MULTIPLE_CHOP_TREES" );
 static const activity_id ACT_MULTIPLE_CONSTRUCTION( "ACT_MULTIPLE_CONSTRUCTION" );
 static const activity_id ACT_MULTIPLE_CRAFT( "ACT_MULTIPLE_CRAFT" );
 static const activity_id ACT_MULTIPLE_DIS( "ACT_MULTIPLE_DIS" );
+static const activity_id ACT_MULTIPLE_DISSECT( "ACT_MULTIPLE_DISSECT" );
 static const activity_id ACT_MULTIPLE_FARM( "ACT_MULTIPLE_FARM" );
 static const activity_id ACT_MULTIPLE_FISH( "ACT_MULTIPLE_FISH" );
 static const activity_id ACT_MULTIPLE_MINE( "ACT_MULTIPLE_MINE" );
@@ -121,6 +123,7 @@ static const itype_id itype_welder( "welder" );
 
 static const quality_id qual_AXE( "AXE" );
 static const quality_id qual_BUTCHER( "BUTCHER" );
+static const quality_id qual_CUT_FINE( "CUT_FINE" );
 static const quality_id qual_DIG( "DIG" );
 static const quality_id qual_FISHING_ROD( "FISHING_ROD" );
 static const quality_id qual_GRASS_CUT( "GRASS_CUT" );
@@ -134,6 +137,7 @@ static const requirement_id requirement_data_multi_butcher( "multi_butcher" );
 static const requirement_id requirement_data_multi_butcher_big( "multi_butcher_big" );
 static const requirement_id requirement_data_multi_chopping_planks( "multi_chopping_planks" );
 static const requirement_id requirement_data_multi_chopping_trees( "multi_chopping_trees" );
+static const requirement_id requirement_data_multi_dissect( "multi_dissect" );
 static const requirement_id
 requirement_data_multi_farm_cut_harvesting( "multi_farm_cut_harvesting" );
 static const requirement_id requirement_data_multi_farm_tilling( "multi_farm_tilling" );
@@ -154,6 +158,7 @@ static const zone_type_id zone_type_CAMP_STORAGE( "CAMP_STORAGE" );
 static const zone_type_id zone_type_CHOP_TREES( "CHOP_TREES" );
 static const zone_type_id zone_type_CONSTRUCTION_BLUEPRINT( "CONSTRUCTION_BLUEPRINT" );
 static const zone_type_id zone_type_DISASSEMBLE( "DISASSEMBLE" );
+static const zone_type_id zone_type_DISSECT( "DISSECT" );
 static const zone_type_id zone_type_FARM_PLOT( "FARM_PLOT" );
 static const zone_type_id zone_type_FISHING_SPOT( "FISHING_SPOT" );
 static const zone_type_id zone_type_LOOT_CORPSE( "LOOT_CORPSE" );
@@ -800,6 +805,18 @@ static bool vehicle_activity( Character &you, const tripoint_bub_ms &src_loc, in
     return true;
 }
 
+static void drop_moved_item( Character &you, const item &it, const tripoint_bub_ms &src,
+                             const tripoint_bub_ms &dest, const activity_id &activity_to_restore )
+{
+    map &here = get_map();
+    you.mod_moves( -activity_handlers::move_cost( it, src, dest ) );
+    if( activity_to_restore == ACT_FETCH_REQUIRED ) {
+        activity_handlers::drop_fetched_items( you, { it }, &here, dest );
+    } else {
+        put_into_vehicle_or_drop( you, item_drop_reason::deliberate, { it }, &here, dest );
+    }
+}
+
 static void move_item( Character &you, item &it, const int quantity, const tripoint_bub_ms &src,
                        const tripoint_bub_ms &dest, const std::optional<vpart_reference> &vpr_src,
                        const activity_id &activity_to_restore = activity_id::NULL_ID() )
@@ -819,12 +836,7 @@ static void move_item( Character &you, item &it, const int quantity, const tripo
     map &here = get_map();
     // Check that we can pick it up.
     if( !it.made_of_from_type( phase_id::LIQUID ) ) {
-        you.mod_moves( -activity_handlers::move_cost( it, src, dest ) );
-        if( activity_to_restore == ACT_FETCH_REQUIRED ) {
-            activity_handlers::drop_fetched_items( you, { it }, &here, dest );
-        } else {
-            put_into_vehicle_or_drop( you, item_drop_reason::deliberate, { it }, &here, dest );
-        }
+        drop_moved_item( you, it, src, dest, activity_to_restore );
         // Remove from map or vehicle.
         if( vpr_src ) {
             vpr_src->vehicle().remove_item( vpr_src->part(), &it );
@@ -843,6 +855,51 @@ static void move_item( Character &you, item &it, const int quantity, const tripo
             here.add_item_or_charges( src, leftovers );
         }
     }
+}
+
+// loose first. top-level item holding anything reserved is skipped whole, as
+// fill_requirement_inventory does; contained liquid would spill if taken out
+static std::vector<item_location> fetchable_items_at( const tripoint_bub_ms &p )
+{
+    std::vector<item_location> loose;
+    std::vector<item_location> contained;
+    for( item &top : get_map().i_at( p ) ) {
+        if( craft_reservation::contains_reserved( top ) ) {
+            continue;
+        }
+        const item_location top_loc( map_cursor( p ), &top );
+        loose.push_back( top_loc );
+        top_loc.visit_contents( [&contained]( const item_location & node ) {
+            if( !node->made_of_from_type( phase_id::LIQUID ) ) {
+                contained.push_back( node );
+            }
+            return VisitResponse::NEXT;
+        } );
+    }
+    loose.insert( loose.end(), contained.begin(), contained.end() );
+    return loose;
+}
+
+// like item::use_amount, whatever's left inside is no longer sealed
+static void unseal_source_pocket( const item_location &loc )
+{
+    if( item_pocket *const pocket = loc.parent_pocket() ) {
+        pocket->unseal();
+    }
+}
+
+// rest of a split stack stays in the container
+static item take_out_of_container( item_location &loc, const int quantity )
+{
+    unseal_source_pocket( loc );
+    item taken = loc->split( quantity );
+    if( !taken.is_null() ) {
+        loc.on_contents_changed();
+        return taken;
+    }
+    taken = *loc;
+    loc.remove_item();
+    return taken;
 }
 
 namespace zone_sorting
@@ -2011,6 +2068,7 @@ void fill_requirement_inventory( temp_crafting_inventory &temp_inv,
         return id == ACT_MULTIPLE_FARM ||
                id == ACT_MULTIPLE_CHOP_PLANKS ||
                id == ACT_MULTIPLE_BUTCHER ||
+               id == ACT_MULTIPLE_DISSECT ||
                id == ACT_VEHICLE_DECONSTRUCTION ||
                id == ACT_VEHICLE_REPAIR ||
                id == ACT_MULTIPLE_CHOP_TREES ||
@@ -2460,6 +2518,40 @@ activity_reason_info multi_butchery_activity_actor::multi_activity_can_do( Chara
     return activity_reason_info::fail( do_activity_reason::NO_ZONE );
 }
 
+activity_reason_info multi_dissection_activity_actor::multi_activity_can_do( Character &you,
+        const tripoint_bub_ms &src_loc )
+{
+    map &here = get_map();
+
+    std::vector<item> corpses;
+    for( const item &i : here.i_at( src_loc ) ) {
+        // make sure nobody else is working on that corpse right now
+        if( i.is_corpse() &&
+            ( !i.has_var( "activity_var" ) || i.get_var( "activity_var" ) == you.name ) ) {
+            const mtype corpse = *i.get_mtype();
+            corpses.push_back( i );
+        }
+    }
+    if( corpses.empty() ) {
+        return activity_reason_info::fail( do_activity_reason::NO_COMPONENTS );
+    }
+    // Multi-dissection is refused if the corpses include species we empathize with
+    for( item &body : corpses ) {
+        const mtype &corpse = *body.get_mtype();
+        for( species_id species : corpse.species ) {
+            if( you.empathizes_with_species( species ) ) {
+                return activity_reason_info::fail( do_activity_reason::REFUSES_THIS_WORK );
+            }
+        }
+    }
+    // We need a fine cutting implement
+    if( you.has_unreserved_quality( qual_CUT_FINE, 1 ) ) {
+        return activity_reason_info::ok( do_activity_reason::NEEDS_DISSECTING );
+    } else {
+        return activity_reason_info::fail( do_activity_reason::NEEDS_DISSECTING );
+    }
+}
+
 activity_reason_info multi_read_activity_actor::multi_activity_can_do( Character &you,
         const tripoint_bub_ms & )
 {
@@ -2780,6 +2872,7 @@ bool activity_reason_continue( do_activity_reason reason )
         reason == do_activity_reason::NEEDS_CHOPPING ||
         reason == do_activity_reason::NEEDS_BUTCHERING ||
         reason == do_activity_reason::NEEDS_BIG_BUTCHERING ||
+        reason == do_activity_reason::NEEDS_DISSECTING ||
         reason == do_activity_reason::NEEDS_VEH_DECONST ||
         reason == do_activity_reason::NEEDS_VEH_REPAIR ||
         reason == do_activity_reason::NEEDS_TREE_CHOPPING ||
@@ -2799,6 +2892,7 @@ bool activity_reason_picks_up_tools( do_activity_reason reason )
         reason == do_activity_reason::NEEDS_CHOPPING ||
         reason == do_activity_reason::NEEDS_BUTCHERING ||
         reason == do_activity_reason::NEEDS_BIG_BUTCHERING ||
+        reason == do_activity_reason::NEEDS_DISSECTING ||
         reason == do_activity_reason::NEEDS_VEH_DECONST ||
         reason == do_activity_reason::NEEDS_VEH_REPAIR ||
         reason == do_activity_reason::NEEDS_TREE_CHOPPING ||
@@ -2813,6 +2907,7 @@ bool activity_must_be_in_zone( activity_id act_id, const tripoint_bub_ms &src_lo
         act_id == ACT_FETCH_REQUIRED ||
         act_id == ACT_MULTIPLE_FARM ||
         act_id == ACT_MULTIPLE_BUTCHER ||
+        act_id == ACT_MULTIPLE_DISSECT ||
         act_id == ACT_MULTIPLE_CHOP_PLANKS ||
         act_id == ACT_MULTIPLE_CHOP_TREES ||
         act_id == ACT_VEHICLE_DECONSTRUCTION ||
@@ -3076,6 +3171,16 @@ std::optional<requirement_id> multi_butchery_activity_actor::multi_activity_requ
     return requirement_id::NULL_ID();
 }
 
+std::optional<requirement_id> multi_dissection_activity_actor::multi_activity_requirements(
+    Character &,
+    activity_reason_info &act_info, const tripoint_bub_ms &, const zone_data * )
+{
+    if( act_info.reason == do_activity_reason::NEEDS_DISSECTING ) {
+        return requirement_data_multi_dissect;
+    }
+    return requirement_id::NULL_ID();
+}
+
 std::optional<requirement_id> multi_fish_activity_actor::multi_activity_requirements( Character &,
         activity_reason_info &act_info, const tripoint_bub_ms &, const zone_data * )
 {
@@ -3265,10 +3370,8 @@ std::vector<std::tuple<tripoint_bub_ms, itype_id, int>>
     // will be filtered for amounts/charges afterwards.
     for( const tripoint_bub_ms &point_elem : pickup_task ? loot_spots : combined_spots ) {
         std::map<itype_id, int> temp_map;
-        for( item &stack_elem : here.i_at( point_elem ) ) {
-            if( craft_reservation::contains_reserved( stack_elem ) ) {
-                continue;
-            }
+        for( const item_location &loc : fetchable_items_at( point_elem ) ) {
+            const item &stack_elem = *loc;
             for( std::vector<item_comp> &elem : req_comps ) {
                 for( item_comp &comp_elem : elem ) {
                     if( comp_elem.type == stack_elem.typeId() ) {
@@ -3524,7 +3627,6 @@ bool fetch_required_activity_actor::fetch_activity(
     const std::vector<std::tuple<tripoint_bub_ms, itype_id, int>> mental_item_map =
                 requirements_map( you, distance );
     int pickup_count = 1;
-    map_stack items_there = here.i_at( src_loc );
     const units::volume volume_allowed = you.free_space();
     const units::mass weight_allowed = you.weight_capacity() - you.weight_carried();
 
@@ -3550,19 +3652,21 @@ bool fetch_required_activity_actor::fetch_activity(
             }
         }
     }
-    for( auto item_iter = items_there.begin(); item_iter != items_there.end(); item_iter++ ) {
-        item &it = *item_iter;
-        if( craft_reservation::contains_reserved( it ) ) {
-            continue;
-        }
+    for( item_location &loc : fetchable_items_at( src_loc ) ) {
+        item &it = *loc;
         for( auto elem : mental_item_map ) {
             if( std::get<0>( elem ) == src_loc && it.typeId() == std::get<1>( elem ) ) {
                 // some tasks (construction/crafting) want the required item moved near the work spot.
                 if( !fetch_for_activity->fetch_items_to_zone() ) {
+                    const int quantity = it.count_by_charges() ? std::get<2>( elem ) : 1;
+                    const tripoint_bub_ms dest = here.get_bub( fetched_item_destination );
                     //TODO: this teleports the item, assign an item moving activity
-                    move_item( you, it, it.count_by_charges() ? std::get<2>( elem ) : 1, src_loc,
-                               here.get_bub( fetched_item_destination ), ovp, activity_to_restore );
-
+                    if( loc.has_parent() ) {
+                        drop_moved_item( you, take_out_of_container( loc, quantity ), src_loc, dest,
+                                         activity_to_restore );
+                    } else {
+                        move_item( you, it, quantity, src_loc, dest, ovp, activity_to_restore );
+                    }
                     return true;
                     // other tasks want the item picked up
                 } else {
@@ -3599,7 +3703,8 @@ bool fetch_required_activity_actor::fetch_activity(
                         // i_add dropped it; nothing clears a mark on the floor
                         fetched->erase_var( "activity_var" );
                     }
-                    items_there.erase( item_iter );
+                    unseal_source_pocket( loc );
+                    loc.remove_item();
                     // If we didn't pick up a whole stack, put the remainder back where it came from.
                     if( leftovers.charges > 0 ) {
                         here.add_item_or_charges( src_loc, leftovers );
@@ -3623,7 +3728,7 @@ bool fetch_required_activity_actor::fetch_activity(
 }
 
 static bool butcher_corpse_activity( Character &you, const tripoint_bub_ms &src_loc,
-                                     const do_activity_reason &reason )
+                                     const do_activity_reason &reason, butcher_type type )
 {
     map &here = get_map();
     map_stack items = here.i_at( src_loc );
@@ -3632,12 +3737,13 @@ static bool butcher_corpse_activity( Character &you, const tripoint_bub_ms &src_
         if( elem.is_corpse() &&
             ( !elem.has_var( "activity_var" ) || elem.get_var( "activity_var" ) == you.name ) ) {
             const mtype corpse = *elem.get_mtype();
-            if( corpse.size > creature_size::medium && reason != do_activity_reason::NEEDS_BIG_BUTCHERING ) {
+            if( corpse.size > creature_size::medium && reason != do_activity_reason::NEEDS_BIG_BUTCHERING
+                && type != butcher_type::DISSECT ) {
                 continue;
             }
             elem.set_var( "activity_var", you.name );
             item_location corpse_loc = item_location( map_cursor( src_loc ), &elem );
-            bd.emplace_back( corpse_loc, butcher_type::FULL );
+            bd.emplace_back( corpse_loc, type );
         }
     }
     if( !bd.empty() ) {
@@ -3693,36 +3799,46 @@ static bool mine_activity( Character &you, const tripoint_bub_ms &src_loc )
     // We pre-exclude jackhammers for wall mining here, just in case the character is carrying both a jackhammer and a pickaxe.
     // If we don't then our iteration will preferentially select the (powered) jackhammer and always fail in subsequent calls to dig_tool(). Very troublesome!
     const bool is_wall_mining = here.has_flag_ter_or_furn( ter_furn_flag::TFLAG_WALL, src_loc );
-    std::vector<item *> mining_inv = you.items_with( [&you, is_wall_mining]( const item & itm ) {
-        return craft_reservation::usable_by_automation( itm ) &&
-               ( ( itm.has_flag( flag_DIG_TOOL ) && !itm.type->can_use( "JACKHAMMER" ) ) ||
-                 ( !is_wall_mining && itm.type->can_use( "JACKHAMMER" ) && itm.ammo_sufficient( &you ) ) );
+    std::vector<item_location> mining_inv;
+    you.visit_items( [&mining_inv, &you, is_wall_mining]( const item_location & node ) {
+
+        if( !craft_reservation::usable_by_automation( *node ) ) {
+            return VisitResponse::NEXT;
+        };
+
+        if( ( node->has_flag( flag_DIG_TOOL ) && !node->type->can_use( "JACKHAMMER" ) ) ||
+            ( !is_wall_mining && node->type->can_use( "JACKHAMMER" ) && node->ammo_sufficient( &you ) ) ) {
+            mining_inv.emplace_back( node );
+        };
+
+        return VisitResponse::NEXT;
     } );
+
     // All other failure conditions are handled in subsequent calls to dig_tool() with specific messaging for the player. This is just an early short circuit.
     if( mining_inv.empty() ) {
         return false;
     }
 
-
-    item *chosen_item = nullptr;
+    item_location chosen_item;
     bool powered = false;
     // is it a pickaxe or jackhammer?
-    for( item *elem : mining_inv ) {
-        if( chosen_item == nullptr ) {
+    for( item_location elem : mining_inv ) {
+        if( chosen_item.valid() ) {
             chosen_item = elem;
             if( elem->type->can_use( "JACKHAMMER" ) ) {
                 powered = true;
             }
         } else {
             // prioritise powered tools
-            if( chosen_item->type->can_use( "PICKAXE" ) && elem->type->can_use( "JACKHAMMER" ) ) {
+            if( chosen_item->type->can_use( "PICKAXE" ) &&
+                elem->type->can_use( "JACKHAMMER" ) ) {
                 chosen_item = elem;
                 powered = true;
                 break;
             }
         }
     }
-    if( chosen_item == nullptr ) {
+    if( chosen_item.valid() ) {
         return false;
     }
     std::optional<int> did_we_mine = std::nullopt;
@@ -3793,6 +3909,9 @@ zone_type_id get_zone_for_act( const tripoint_bub_ms &src_loc, const zone_manage
     if( act_id == ACT_MULTIPLE_BUTCHER ) {
         ret = zone_type_LOOT_CORPSE;
     }
+    if( act_id == ACT_MULTIPLE_DISSECT ) {
+        ret = zone_type_DISSECT;
+    }
     if( act_id == ACT_MULTIPLE_CHOP_PLANKS ) {
         ret = zone_type_LOOT_WOOD;
     }
@@ -3842,6 +3961,21 @@ void prune_same_tile_locations( Character &you, std::unordered_set<tripoint_abs_
             ++src_set_iter;
         }
     }
+}
+
+std::unordered_set<tripoint_abs_ms> occupied_construction_sites( const Character &you )
+{
+    std::unordered_set<tripoint_abs_ms> sites;
+    const auto add_site = [&you, &sites]( const Character & guy ) {
+        if( &guy != &you && guy.activity.id() == ACT_BUILD ) {
+            sites.insert( guy.activity.placement );
+        }
+    };
+    add_site( get_avatar() );
+    for( const npc &guy : g->all_npcs() ) {
+        add_site( guy );
+    }
+    return sites;
 }
 
 void prune_dark_locations( Character &you, std::unordered_set<tripoint_abs_ms> &src_set,
@@ -3928,7 +4062,6 @@ multi_build_construction_activity_actor::multi_activity_locations(
         }
     }
     multi_activity_actor::prune_dangerous_field_locations( src_set );
-    multi_activity_actor::prune_same_tile_locations( you, src_set );
     multi_activity_actor::prune_dark_locations( you, src_set, act_id );
 
     return src_set;
@@ -4108,7 +4241,22 @@ bool multi_butchery_activity_actor::multi_activity_do( Character &you,
 
     if( reason == do_activity_reason::NEEDS_BUTCHERING ||
         reason == do_activity_reason::NEEDS_BIG_BUTCHERING ) {
-        if( butcher_corpse_activity( you, src_loc, reason ) ) {
+        if( butcher_corpse_activity( you, src_loc, reason, butcher_type::FULL ) ) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool multi_dissection_activity_actor::multi_activity_do( Character &you,
+        const activity_reason_info &act_info,
+        const tripoint_abs_ms &, const tripoint_bub_ms &src_loc )
+{
+
+    const do_activity_reason &reason = act_info.reason;
+
+    if( reason == do_activity_reason::NEEDS_DISSECTING ) {
+        if( butcher_corpse_activity( you, src_loc, reason, butcher_type::DISSECT ) ) {
             return false;
         }
     }

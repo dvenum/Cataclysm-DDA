@@ -148,6 +148,9 @@ static const json_character_flag json_flag_SUPPRESS_INVISIBILITY( "SUPPRESS_INVI
 static const json_character_flag json_flag_TEEPSHIELD( "TEEPSHIELD" );
 static const json_character_flag json_flag_TRUE_SEEING( "TRUE_SEEING" );
 
+static const limb_score_id limb_score_block( "block" );
+static const limb_score_id limb_score_reaction( "reaction" );
+
 static const material_id material_cotton( "cotton" );
 static const material_id material_flesh( "flesh" );
 static const material_id material_iflesh( "iflesh" );
@@ -159,6 +162,8 @@ static const material_id material_stone( "stone" );
 static const material_id material_veggy( "veggy" );
 static const material_id material_wood( "wood" );
 static const material_id material_wool( "wool" );
+
+static const skill_id skill_melee( "melee" );
 
 static const species_id species_ROBOT( "ROBOT" );
 
@@ -1047,18 +1052,78 @@ float Creature::get_crit_factor( const bodypart_id &bp ) const
     return crit_mod;
 }
 
-int Creature::deal_melee_attack( Creature *source, int hitroll )
+// Margins that can be tuned to affect how partial dodge works.
+// Below melee_miss_threshold is a total miss,
+// above melee_full_force_threshold is a square hit
+static constexpr int melee_miss_threshold = 25;
+static constexpr int melee_full_force_threshold = 25;
+
+float Creature::melee_damage_mult( int hit_spread )
+{
+    return std::clamp( static_cast<float>( hit_spread + melee_miss_threshold ) /
+                       static_cast<float>( melee_miss_threshold + melee_full_force_threshold ), 0.0f, 1.0f );
+}
+
+static constexpr float melee_glancing_below = 0.4f;
+static constexpr float melee_solid_above = 0.9f;
+
+melee_hit_quality Creature::melee_hit_quality_of( int hit_spread )
+{
+    const float mult = melee_damage_mult( hit_spread );
+    if( mult < melee_glancing_below ) {
+        return melee_hit_quality::glancing;
+    } else if( mult <= melee_solid_above ) {
+        return melee_hit_quality::good;
+    } else {
+        return melee_hit_quality::solid;
+    }
+}
+
+// check and set message def for how hard the hit is
+std::string Creature::hit_quality_label( int hit_spread )
+{
+    switch( Creature::melee_hit_quality_of( hit_spread ) ) {
+        case melee_hit_quality::glancing:
+            return _( "A glancing hit." );
+        case melee_hit_quality::good:
+            return _( "A good hit." );
+        case melee_hit_quality::solid:
+            return _( "A solid hit!" );
+        default:
+            return _( "A good hit." );
+    }
+}
+
+bool Creature::melee_attack_hit( int hit_spread )
+{
+    return melee_damage_mult( hit_spread ) > 0.0f;
+}
+
+void Creature::clear_melee_defense()
+{
+    last_dodge = 0.0f;
+    last_block = 0.0f;
+    last_hit_spread = 0;
+}
+
+int Creature::deal_melee_attack( Creature *source, int hitroll, bool allow_block )
 {
 
     const float dodge = dodge_roll();
+    float block = 0.0f;
+    if( allow_block ) {
+        block = block_roll( source );
+    }
     on_try_dodge();
 
-    int hit_spread = hitroll - dodge - size_melee_penalty();
+    int hit_spread = hitroll - dodge - block - size_melee_penalty();
 
     add_msg_debug( debugmode::DF_CREATURE, "Base hitroll %d",
                    hitroll );
     add_msg_debug( debugmode::DF_CREATURE, "Dodge roll %.1f",
                    dodge );
+    add_msg_debug( debugmode::DF_CREATURE, "Block roll %.1f",
+                   block );
 
     if( has_flag( mon_flag_IMMOBILE ) || has_flag( json_flag_CANNOT_MOVE ) ) {
         // Under normal circumstances, even a clumsy person would
@@ -1068,13 +1133,102 @@ int Creature::deal_melee_attack( Creature *source, int hitroll )
         hit_spread += 40;
     }
 
-    // If attacker missed call targets on_dodge event
-    if( dodge > 0.0 && hit_spread <= 0 && source != nullptr && !source->is_hallucination() ) {
+    last_dodge = dodge;
+    last_block = block;
+    last_hit_spread = hit_spread;
+
+    // If attacker missed call targets on_dodge event.  A partly dodged hit still lands, so it
+    // doesn't count: no dodge counter, reaction or practice for an attack that got through.
+    if( dodge > 0.0 && !melee_attack_hit( hit_spread ) && source != nullptr &&
+        !source->is_hallucination() ) {
         on_dodge( source, source->get_melee() );
     }
     add_msg_debug( debugmode::DF_CREATURE, "Final hitspread %d",
                    hit_spread );
     return hit_spread;
+}
+
+// max chance to deflect a head/torso hit
+static constexpr float melee_deflection_cap = 0.9f;
+// fraction of cap that the worst defender in the world can get
+static constexpr float melee_deflection_base = 0.3f;
+// "max" value of a very good dodger i.e. 10 dex/10 dodge (dexterity/2+dodge) from get_dodge_base
+static constexpr float melee_deflection_full_dodge = 15.0f;
+
+// When a hit isn't dodged, and isn't blocked.  Head hits deflect to torso or arm, torso to arm or leg, account for attacker height
+bodypart_id Creature::deflect_hit_part( const bodypart_id &bp, bool can_attack_high ) const
+{
+    const Character *ch = as_character();
+    if( ch == nullptr ) {
+        return bp;
+    }
+
+    // likely needs additional work to accomodate irregular mutant anatomy that can cover vital areas, but should cover most situations
+    std::vector<bp_type> destinations;
+    if( bp->has_type( bp_type::torso ) ) {
+        destinations = { bp_type::arm, bp_type::leg };
+    } else if( bp->has_type( bp_type::head ) || bp->has_type( bp_type::sensor ) ||
+               bp->has_type( bp_type::mouth ) ) {
+        destinations = { bp_type::torso, bp_type::arm };
+    } else {
+        return bp;
+    }
+
+    // Parts that can be used to coverup/deflect to
+    std::vector<std::pair<bodypart_id, float>> candidates;
+    float usable = 0.0f;
+    int eligible = 0;
+    for( const bp_type type : destinations ) {
+        for( const bodypart_id &part : get_all_body_parts_of_type( type,
+                get_body_part_flags::only_main ) ) {
+            if( !can_attack_high && part->has_flag( json_flag_LIMB_UPPER ) ) {
+                continue;
+            }
+            ++eligible;
+            if( get_part_hp_cur( part ) <= 0 ) {
+                continue;
+            }
+            // Torso always eligible as a deflection desitnation
+            float score;
+            if( part->has_type( bp_type::torso ) ) {
+                score = 1.0f;
+            } else {
+                score = std::clamp( get_part( part )->get_limb_score( *this, limb_score_block ), 0.0f, 1.0f );
+            }
+            if( score <= 0.0f ) {
+                continue;
+            }
+            candidates.emplace_back( part, score );
+            usable += score;
+        }
+    }
+    if( candidates.empty() || eligible == 0 ) {
+        return bp;
+    }
+    // Fraction of limbs that can be deflected to/cover with that remains, where 1 is all
+    const float deflection_capability = usable / eligible;
+
+    // Dodge and block readiness.  Dodge is 0 when defender can't dodge.  Block is same as block_hit
+    const float dodge_ready = std::clamp( get_dodge() / melee_deflection_full_dodge, 0.0f, 1.0f );
+    const float block_ready = std::clamp( 0.2f * ch->get_skill_level( skill_melee ) *
+                                          ch->get_limb_score( limb_score_reaction ), 0.0f, 1.0f );
+    const float readiness = 0.5f * ( dodge_ready + block_ready );
+    const float chance = melee_deflection_cap * ( melee_deflection_base +
+                         ( 1.0f - melee_deflection_base ) * readiness ) * deflection_capability;
+
+    if( rng_float( 0.0f, 1.0f ) >= chance ) {
+        return bp;
+    }
+
+    // pick deflection destination, if deflected
+    float roll = rng_float( 0.0f, usable );
+    for( const std::pair<bodypart_id, float> &c : candidates ) {
+        roll -= c.second;
+        if( roll <= 0.0f ) {
+            return c.first;
+        }
+    }
+    return candidates.back().first;
 }
 
 void Creature::deal_melee_hit( Creature *source, int hit_spread, bool critical_hit,
@@ -1095,6 +1249,8 @@ void Creature::deal_melee_hit( Creature *source, int hit_spread, bool critical_h
         if( mons && mons->mounted_player ) {
             if( !mons->has_flag( mon_flag_MECH_DEFENSIVE ) &&
                 one_in( std::max( 2, mons->get_size() - mons->mounted_player->get_size() ) ) ) {
+                // The mount rolled the defense against this hit, not the rider
+                mons->mounted_player->clear_melee_defense();
                 mons->mounted_player->deal_melee_hit( source, hit_spread, critical_hit, dam, dealt_dam, attack );
                 return;
             }
@@ -1102,9 +1258,19 @@ void Creature::deal_melee_hit( Creature *source, int hit_spread, bool critical_h
     }
     dam = source->modify_damage_dealt_with_enchantments( dam );
     damage_instance d = dam; // copy, since we will mutate in block_hit
+    d.mult_damage( melee_damage_mult( hit_spread ), true ); // partial dodge
     bodypart_id bp_hit = bp == nullptr ? select_body_part( -1, -1, source->can_attack_high(),
                          hit_spread ) : *bp;
-    block_hit( source, bp_hit, d );
+    const bool blocked = block_hit( source, bp_hit, d );
+    if( !blocked ) {
+        const bodypart_id initial_bp = bp_hit;
+        bp_hit = deflect_hit_part( bp_hit, source->can_attack_high() );
+        if( bp_hit != initial_bp ) {
+            add_msg_player_or_npc( m_good, _( "You use your %1$s to shield your %2$s!" ),
+                                   _( "<npcname> uses their %1$s to shield their %2$s!" ), body_part_name( bp_hit ),
+                                   body_part_name( initial_bp ) );
+        }
+    }
 
     weakpoint_attack attack_copy = attack;
     attack_copy.is_crit = critical_hit;
@@ -1821,6 +1987,10 @@ bool Creature::attack_air( const tripoint_bub_ms &p )
 
 bool Creature::dodge_check( float hit_roll, bool force_try, float )
 {
+    // No block is rolled here, so a block_hit after it (the hardcoded monster attacks) mustn't
+    // use an earlier attack's rolls
+    clear_melee_defense();
+
     // If successfully uncanny dodged, no need to calculate dodge chance
     if( uncanny_dodge() ) {
         return true;
@@ -1849,6 +2019,7 @@ bool Creature::dodge_check( monster *z, float training_level )
 bool Creature::dodge_check( monster *z, bodypart_id bp, const damage_instance &dam_inst,
                             float training_level )
 {
+    clear_melee_defense();
 
     if( is_monster() ) {
         return dodge_check( z );

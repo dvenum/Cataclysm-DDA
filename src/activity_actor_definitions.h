@@ -22,6 +22,7 @@
 #include "item.h"
 #include "itype.h"
 #include "item_location.h"
+#include "iuse_actor.h"
 #include "memory_fast.h"
 #include "npctalk.h"
 #include "pickup.h"
@@ -74,6 +75,19 @@ enum class close_tile_result {
     CLOSE_TILE_RESULT_LAST
 };
 
+enum class repair_stage : int {
+    // INIT should be zero. In some scenarios (vehicle welder), activity value default to zero.
+    INIT = 0,       // Haven't found repeat value yet.
+    ONCE = 1,       // Attempt repair (and refit if possible) just once
+    // value 2 obsolete - previously used for reinforcement
+    FULL = 3,       // Continue repairing until damage==0 (and until refitted if possible)
+    EVENT = 4,      // Continue repairing (and refit if possible) until something interesting happens
+    REFIT_ONCE = 5, // Try refitting once, but don't repair
+    REFIT_FULL = 6, // Continue refitting until item fits, but don't repair
+    CANCEL = 7,     // Stop repeating
+    LAST = 8
+};
+
 template<>
 struct enum_traits<open_tile_result> {
     static constexpr open_tile_result last = open_tile_result::OPEN_TILE_RESULT_LAST;
@@ -81,6 +95,11 @@ struct enum_traits<open_tile_result> {
 template<>
 struct enum_traits<close_tile_result> {
     static constexpr close_tile_result last = close_tile_result::CLOSE_TILE_RESULT_LAST;
+};
+template<>
+struct enum_traits<repair_stage> {
+    static constexpr repair_stage last =
+        repair_stage::LAST;
 };
 
 /**
@@ -493,6 +512,27 @@ class multi_butchery_activity_actor : public multi_zone_activity_actor
                                 const tripoint_abs_ms &src, const tripoint_bub_ms &src_loc ) override;
         std::unique_ptr<activity_actor> clone() const override {
             return std::make_unique<multi_butchery_activity_actor>( *this );
+        }
+        static std::unique_ptr<activity_actor> deserialize( JsonValue & );
+};
+
+class multi_dissection_activity_actor : public multi_zone_activity_actor
+{
+    public:
+        using multi_zone_activity_actor::multi_zone_activity_actor;
+        const activity_id &get_type() const override {
+            static const activity_id ACT_MULTIPLE_DISSECT( "ACT_MULTIPLE_DISSECT" );
+            return ACT_MULTIPLE_DISSECT;
+        }
+        activity_reason_info multi_activity_can_do( Character &you,
+                const tripoint_bub_ms &src_loc ) override;
+        std::optional<requirement_id> multi_activity_requirements( Character &you,
+                activity_reason_info &act_info, const tripoint_bub_ms &src_loc,
+                const zone_data *zone = nullptr ) override;
+        bool multi_activity_do( Character &you, const activity_reason_info &act_info,
+                                const tripoint_abs_ms &src, const tripoint_bub_ms &src_loc ) override;
+        std::unique_ptr<activity_actor> clone() const override {
+            return std::make_unique<multi_dissection_activity_actor>( *this );
         }
         static std::unique_ptr<activity_actor> deserialize( JsonValue & );
 };
@@ -2906,7 +2946,7 @@ class build_construction_activity_actor : public activity_actor
             return ACT_BUILD;
         }
 
-        void start( player_activity &, Character & ) override {};
+        void start( player_activity &act, Character & ) override;
         void do_turn( player_activity &act, Character &you ) override;
         void finish( player_activity &, Character & ) override {};
 
@@ -2922,6 +2962,8 @@ class build_construction_activity_actor : public activity_actor
 
     private:
         tripoint_abs_ms construction_location;
+        // not saved; the first turn after loading sets it again
+        construction_id building = construction_id( -1 ); // NOLINT(cata-serialize)
 
 };
 
@@ -3870,6 +3912,7 @@ class forage_activity_actor : public activity_actor
         int moves;
 };
 
+// mends item faults
 class mend_item_activity_actor : public activity_actor
 {
     public:
@@ -3902,13 +3945,91 @@ class mend_item_activity_actor : public activity_actor
         fault_fix_id mending_method;
 };
 
+/*
+* HACK: Provides vehicle power to pseudo items for repair_item_activity_actor
+* An item_location for vehicle-mounted tools would be preferable!
+*/
+struct weldrig_hack {
+    std::optional<vpart_reference> part_with_pseudo_tool;
+    item pseudo_tool;
+
+    weldrig_hack() : part_with_pseudo_tool( std::nullopt ) {}
+
+    bool init( itype_id vp_tool_id, const tripoint_bub_ms &vp_pos );
+    // get pointer to either `pseudo` or the tool used at `part`
+    // should be called every time access to the item is needed
+    item *get_item();
+    // drains ammo used in `pseudo` from `part`
+    void vehicle_drain();
+};
+
+// mends item degradation, refits if necessary
+class repair_item_activity_actor : public activity_actor
+{
+    public:
+        explicit repair_item_activity_actor( const item_location &repaired_item = item_location::nowhere,
+                                             const item_location &tool_to_repair_with = item_location::nowhere,
+                                             std::optional<std::pair<itype_id, tripoint_bub_ms>> vp_tool = std::nullopt,
+                                             const std::string &repair_iuse_actor_name = "repair_item",
+                                             repair_stage stage = repair_stage::INIT,
+                                             bool no_menu = false ) :
+            repaired_item( repaired_item ), tool_to_repair_with( tool_to_repair_with ), vp_tool( vp_tool ),
+            repair_iuse_actor_name( repair_iuse_actor_name ), stage( stage ), no_menu( no_menu ) {
+        };
+
+        const activity_id &get_type() const override {
+            static const activity_id ACT_REPAIR_ITEM( "ACT_REPAIR_ITEM" );
+            return ACT_REPAIR_ITEM;
+        }
+
+        static repair_stage repeat_menu( const std::string &title, repair_stage last_selection,
+                                         bool can_refit );
+
+        void start( player_activity &act, Character & ) override;
+        void do_turn( player_activity &, Character & ) override;
+        void finish( player_activity &act, Character &who ) override;
+
+        // the item being repaired: this actor keeps it out of act.targets
+        item_location hook_target( const player_activity & ) const override {
+            return repaired_item;
+        }
+
+        // every activity turn the repaired item AND repair tool must be re-validated
+        // TODO: no way to item_location wrap a weldrig_hack pseudo-item
+        item *get_repair_tool( player_activity &act );
+
+        void init_repair( player_activity &act, Character &who, const repair_item_actor *repair_iuse,
+                          item &repair_tool );
+        void do_repair( player_activity &act, Character &who, const repair_item_actor *repair_iuse,
+                        item &repair_tool );
+
+        std::unique_ptr<activity_actor> clone() const override {
+            return std::make_unique<repair_item_activity_actor>( *this );
+        }
+
+        void serialize( JsonOut &jsout ) const override;
+        static std::unique_ptr<activity_actor> deserialize( JsonValue &jsin );
+
+    private:
+        item_location repaired_item;
+        item_location tool_to_repair_with;
+        // for `weldrig_hack`
+        std::optional<std::pair<itype_id, tripoint_bub_ms>> vp_tool;
+        std::string repair_iuse_actor_name;
+        repair_stage stage;
+        // whether to prompt the repair menu during the activity
+        bool no_menu;
+
+        weldrig_hack w_hack; // NOLINT(cata-serialize)
+};
+
 class fix_wound_activity_actor : public activity_actor
 {
     public:
         fix_wound_activity_actor( time_duration initial_moves, bodypart_id healed_bp,
-                                  wound_type_id mended_wound, wound_fix_id mending_method ) :
+                                  wound_type_id mended_wound, wound_fix_id mending_method, int amount ) :
             initial_moves( initial_moves ), healed_bp( healed_bp ),
-            mended_wound( mended_wound ), mending_method( mending_method ) { }
+            mended_wound( mended_wound ), mending_method( mending_method ), amount( amount ) { }
 
         const activity_id &get_type() const override {
             static const activity_id ACT_TREAT_WOUND( "ACT_TREAT_WOUND" );
@@ -3932,6 +4053,8 @@ class fix_wound_activity_actor : public activity_actor
         bodypart_id healed_bp;
         wound_type_id mended_wound;
         wound_fix_id mending_method;
+        // older saves don't have it
+        int amount = 1;
 };
 
 class gunmod_add_activity_actor : public activity_actor
@@ -3996,7 +4119,8 @@ class longsalvage_activity_actor : public activity_actor
 {
     public:
         longsalvage_activity_actor() = default;
-        explicit longsalvage_activity_actor( int index ) : index( index ) {}
+        explicit longsalvage_activity_actor( const item_location &salvage_tool ) : salvage_tool(
+                salvage_tool ) {}
 
         const activity_id &get_type() const override {
             static const activity_id ACT_LONGSALVAGE( "ACT_LONGSALVAGE" );
@@ -4015,7 +4139,7 @@ class longsalvage_activity_actor : public activity_actor
         static std::unique_ptr<activity_actor> deserialize( JsonValue &jsin );
 
     private:
-        int index;
+        item_location salvage_tool;
 };
 
 class mop_activity_actor : public activity_actor

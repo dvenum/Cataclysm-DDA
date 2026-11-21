@@ -46,6 +46,13 @@
         "text": { "str": "Explosive", "ctxt": "activity description" },
         "color": "red",
         "condition": { "math": [ "u_val('activity_level') == 6" ] }
+      },
+      {
+        "id": "combat",
+        "text": { "str": "Combat", "ctxt": "activity description" },
+        "color": "red",
+        "//": "COMBAT_EXERCISE reads 250, and a throw scaled down from it less",
+        "condition": { "math": [ "u_val('activity_level') > 6" ] }
       }
     ]
   },

@@ -366,7 +366,7 @@ static int audit_wound_pain( const Character &who, const bodypart_id &bp,
 {
     for( const wound &wd : who.get_part( bp )->get_wounds() ) {
         if( wd.type == type ) {
-            return wd.get_pain();
+            return wd.get_pain( &who );
         }
     }
     return -1;
@@ -385,7 +385,7 @@ TEST_CASE( "hlth-b09_wound_mod_values_respect_caps", "[audit][health]" )
     arm->get_wounds().clear();
 
     SECTION( "pain grows up to cap_max and stops there" ) {
-        arm->add_wound( wound_test_wound_capped_pain );
+        arm->add_wound( wound_test_wound_capped_pain, u, 0 );
         REQUIRE( audit_wound_pain( u, body_part_arm_l, wound_test_wound_capped_pain ) == 2 );
         // +3 per second, cap_min 5 and cap_max 6.
         u.update_wounds( 1_turns );
@@ -397,7 +397,7 @@ TEST_CASE( "hlth-b09_wound_mod_values_respect_caps", "[audit][health]" )
     }
 
     SECTION( "vitamin drain stops at cap_min" ) {
-        arm->add_wound( wound_test_wound_capped_vitamin );
+        arm->add_wound( wound_test_wound_capped_vitamin, u, 0 );
         u.vitamin_set( vitamin_iron, 15 );
         REQUIRE( u.vitamin_get( vitamin_iron ) == 15 );
         // -3 per second, cap_min 10.
@@ -410,7 +410,7 @@ TEST_CASE( "hlth-b09_wound_mod_values_respect_caps", "[audit][health]" )
     }
 
     SECTION( "a part without a bleeding wound is not bleeding" ) {
-        arm->add_wound( wound_test_wound_capped_pain );
+        arm->add_wound( wound_test_wound_capped_pain, u, 0 );
         CHECK_FALSE( u.is_bleeding( body_part_arm_l ) );
         CHECK_FALSE( u.is_bleeding( body_part_arm_r ) );
     }

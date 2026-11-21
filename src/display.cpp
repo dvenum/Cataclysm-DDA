@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <map>
 #include <memory>
 #include <optional>
 #include <tuple>
@@ -605,21 +606,32 @@ std::pair<std::string, nc_color> display::weary_malus_text_color( const Characte
 
 std::string display::activity_level_str( float level )
 {
-    static const std::array<translation, 7> activity_descriptions { {
-            to_translation( "activity description", "None" ),
-            to_translation( "activity description", "Light" ),
-            to_translation( "activity description", "Moderate" ),
-            to_translation( "activity description", "Brisk" ),
-            to_translation( "activity description", "Active" ),
-            to_translation( "activity description", "Extreme" ),
-            to_translation( "activity description", "Explosive" ),
-        } };
-    // Activity levels are 1, 2, 4, 6, 8, 10, 12
-    // So we can easily cut them in half and round down for an index
-    const int idx = std::clamp( static_cast<int>( std::floor( level / 2 ) ), 0,
-                                static_cast<int>( activity_descriptions.size() ) - 1 );
+    // This is either dead code, or we have two activity widgets.
+    // You're probably looking for data/json/ui/activity.json
+    static const std::map<float, translation> activity_descriptions_map {
+        { SLEEP_EXERCISE, to_translation( "activity description", "None" ), },
+        { NO_EXERCISE, to_translation( "activity description", "None" ), },
+        { LIGHT_EXERCISE, to_translation( "activity description", "Light" ), },
+        { MODERATE_EXERCISE, to_translation( "activity description", "Moderate" ), },
+        { BRISK_EXERCISE, to_translation( "activity description", "Brisk" ), },
+        { ACTIVE_EXERCISE, to_translation( "activity description", "Active" ), },
+        { EXTRA_EXERCISE, to_translation( "activity description", "Extreme" ), },
+        { EXPLOSIVE_EXERCISE, to_translation( "activity description", "Explosive" ), },
+        { COMBAT_EXERCISE, to_translation( "activity description", "Combat" ), }
+    };
+    // Anything above explosive comes from COMBAT_EXERCISE, a throw scaled down from it included
+    if( level > EXPLOSIVE_EXERCISE ) {
+        level = COMBAT_EXERCISE;
+    }
 
-    return activity_descriptions[idx].translated();
+    std::string retval = activity_descriptions_map.begin()->second.translated();
+
+    for( const std::pair<const float, translation> &pair : activity_descriptions_map ) {
+        if( level >= pair.first ) {
+            retval = pair.second.translated();
+        }
+    }
+    return retval;
 }
 
 std::string display::activity_malus_str( const Character &u )

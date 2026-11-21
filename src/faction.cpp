@@ -22,8 +22,6 @@
 static const faction_id faction_amf( "amf" );
 static const faction_id faction_no_faction( "no_faction" );
 
-static const mfaction_str_id monfaction_human( "human" );
-
 namespace npc_factions
 {
 static std::vector<faction_template> all_templates;
@@ -176,7 +174,7 @@ faction_template::faction_template( const JsonObject &jsobj )
     optional( jsobj, was_loaded, "limited_area_claim", limited_area_claim, false );
     // a copy keeps the parent's relations to the factions it doesn't list
     load_relations( jsobj );
-    optional( jsobj, was_loaded, "mon_faction", mon_faction, monfaction_human );
+    optional( jsobj, was_loaded, "mon_faction", mon_faction, mfaction_str_id::NULL_ID() );
     optional( jsobj, was_loaded, "epilogues", epilogue_data );
     optional( jsobj, was_loaded, "mutiny_faction", mutiny_faction, faction_amf );
 }

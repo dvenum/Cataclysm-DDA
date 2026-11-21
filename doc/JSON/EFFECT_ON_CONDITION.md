@@ -1091,6 +1091,79 @@ checks are you hot or cold
 { "u_has_any_wound": [ "bruise_bad", "bone_broken" ], "bodypart": "torso" }
 ```
 
+### `u_is_bleeding`, `npc_is_bleeding`
+- type: string or object
+- return true if alpha or beta talker's has any bleeding wound
+- `severity` can be used to specify the severity of such bleeding
+
+#### Valid talkers:
+
+| Avatar | NPC | Monster | Furniture | Item | Vehicle |
+| ------ | --------- | ---- | ------- | --- | ---- |
+| ✔️ | ✔️ | ❌ | ❌ | ❌ | ❌ |
+
+#### Examples
+
+```jsonc
+"u_is_bleeding"
+```
+
+```jsonc
+{ "u_is_bleeding": "MAJOR" }
+```
+
+### `u_bodypart_is_bleeding`, `npc_bodypart_is_bleeding`
+- type: string or [variable object](#variable-object)
+- return true if alpha or beta talker's specific bodypart has any bleeding wound
+- `severity` can be used to specify the severity of such bleeding
+- `check_sublimbs` optional: checks all other limbs that have this limb as the `main_limb`. False by default
+
+#### Valid talkers:
+
+| Avatar | NPC | Monster | Furniture | Item | Vehicle |
+| ------ | --------- | ---- | ------- | --- | ---- |
+| ✔️ | ✔️ | ❌ | ❌ | ❌ | ❌ |
+
+#### Examples
+
+```jsonc
+{ "u_bodypart_is_bleeding": "torso", "severity": "MAJOR" }
+```
+
+### `u_bodypart_is_wounded`, `npc_bodypart_is_wounded`
+- type: string or [variable object](#variable-object)
+- return true if alpha or beta talker's specific bodypart has any wound at all
+- `check_sublimbs` optional: checks all other limbs that have this limb as the `main_limb`. False by default
+
+#### Valid talkers:
+
+| Avatar | NPC | Monster | Furniture | Item | Vehicle |
+| ------ | --------- | ---- | ------- | --- | ---- |
+| ✔️ | ✔️ | ❌ | ❌ | ❌ | ❌ |
+
+#### Examples
+Returns true if the the `arm_r` or `hand_r` is wounded, since `hand_r` is a sub limb of `arm_r`
+```jsonc
+{ "u_bodypart_is_wounded": "arm_r", "check_sublimbs": true }
+```
+
+### `u_bodypart_is_wounded_and_fixable`, `npc_bodypart_is_wounded_and_fixable`
+- type: string or [variable object](#variable-object)
+- return true if alpha or beta talker's specific bodypart has any wound that has possible wound fixes. It does not check if any of the fixes are actually performable. Designed for the sidebar to use to display that there are wounds that can be treated
+- `check_sublimbs` optional: checks all other limbs that have this limb as the `main_limb`. False by default
+
+#### Valid talkers:
+
+| Avatar | NPC | Monster | Furniture | Item | Vehicle |
+| ------ | --------- | ---- | ------- | --- | ---- |
+| ✔️ | ✔️ | ❌ | ❌ | ❌ | ❌ |
+
+#### Examples
+
+```jsonc
+{ "u_bodypart_is_wounded_and_fixable": { "context_val": "widget" } }
+```
+
 ### `u_has_proficiency`, `npc_has_proficiency`
 - type: string or [variable object](#variable-object)
 - return true if alpha or beta talker has mastered a proficiency (to 100%).
@@ -4018,7 +4091,10 @@ Adds a specific wound on specific bodypart
 | Syntax | Optionality | Value  | Info |
 | --- | --- | --- | --- |
 | "u_add_wound", "npc_add_wound" | **mandatory** | string or [variable object](#variable-object) | id of a bodypart where the wound should be added |
-| "wound_id" | optional | string or [variable object](#variable-object) | id of a wound that will be applied |
+| "wound_id" | **mandatory** | string or [variable object](#variable-object) | id of a wound that will be applied |
+| "damage_amount" | optional | int or [variable object](#variable-object) | how much max HP this wound should reserve from bodypart; default 0 |
+| "damage_type" | optional | int or [variable object](#variable-object) | if used, this wound would be treated as if it was applied by this damage type; used only if may_worsen is true |
+| "may_worsen" | optional | bool | If true, appied wound may try to worsen the existing wound character has, if conditions for worsening will be met. This would require damage_type. If false, applies new wound no matter what. Default false |
 
 ##### Valid talkers:
 
@@ -5771,7 +5847,7 @@ but a duration can be started too:
 | `ACT_WAIT_NPC` | as `ACT_WAIT`; the finish message names the other talker (the beta talker for `u_assign_activity`, the alpha talker for `npc_assign_activity`). Without another talker this is a plain `ACT_WAIT` |
 | `ACT_GAME`, `ACT_GENERIC_GAME` | how long to play, 15 minutes by default; no game item is used |
 | `ACT_MEDITATE`, `ACT_TARGET_PRACTICE`, `ACT_WAIT_FOLLOWERS`, `ACT_WAIT_STAMINA`, `ACT_WAIT_WEATHER` | not allowed: they end on their own |
-| Zone jobs: `ACT_MOVE_LOOT`, `ACT_UNLOAD_LOOT`, `ACT_MULTIPLE_BUTCHER`, `ACT_MULTIPLE_CHOP_PLANKS`, `ACT_MULTIPLE_CHOP_TREES`, `ACT_MULTIPLE_CONSTRUCTION`, `ACT_MULTIPLE_CRAFT`, `ACT_MULTIPLE_DIS`, `ACT_MULTIPLE_FARM`, `ACT_MULTIPLE_FISH`, `ACT_MULTIPLE_MINE`, `ACT_MULTIPLE_MOP`, `ACT_MULTIPLE_READ`, `ACT_MULTIPLE_STUDY`, `ACT_VEHICLE_DECONSTRUCTION`, `ACT_VEHICLE_REPAIR` | not allowed: the job runs until its zones have no more work |
+| Zone jobs: `ACT_MOVE_LOOT`, `ACT_UNLOAD_LOOT`, `ACT_MULTIPLE_BUTCHER`, `ACT_MULTIPLE_CHOP_PLANKS`, `ACT_MULTIPLE_CHOP_TREES`, `ACT_MULTIPLE_CONSTRUCTION`, `ACT_MULTIPLE_CRAFT`, `ACT_MULTIPLE_DIS`, `ACT_MULTIPLE_DISSECT`, `ACT_MULTIPLE_FARM`, `ACT_MULTIPLE_FISH`, `ACT_MULTIPLE_MINE`, `ACT_MULTIPLE_MOP`, `ACT_MULTIPLE_READ`, `ACT_MULTIPLE_STUDY`, `ACT_VEHICLE_DECONSTRUCTION`, `ACT_VEHICLE_REPAIR` | not allowed: the job runs until its zones have no more work |
 
 Some activities need a target; see below. Any other activity with an actor can't be started
 from an EOC. Naming one, giving `duration` to an activity that takes none, or giving a target

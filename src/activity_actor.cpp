@@ -221,6 +221,7 @@ static const activity_id ACT_MULTIPLE_CHOP_TREES( "ACT_MULTIPLE_CHOP_TREES" );
 static const activity_id ACT_MULTIPLE_CONSTRUCTION( "ACT_MULTIPLE_CONSTRUCTION" );
 static const activity_id ACT_MULTIPLE_CRAFT( "ACT_MULTIPLE_CRAFT" );
 static const activity_id ACT_MULTIPLE_DIS( "ACT_MULTIPLE_DIS" );
+static const activity_id ACT_MULTIPLE_DISSECT( "ACT_MULTIPLE_DISSECT" );
 static const activity_id ACT_MULTIPLE_FARM( "ACT_MULTIPLE_FARM" );
 static const activity_id ACT_MULTIPLE_FISH( "ACT_MULTIPLE_FISH" );
 static const activity_id ACT_MULTIPLE_MINE( "ACT_MULTIPLE_MINE" );
@@ -242,6 +243,7 @@ static const activity_id ACT_QUARTER( "ACT_QUARTER" );
 static const activity_id ACT_READ( "ACT_READ" );
 static const activity_id ACT_REEL_CABLE( "ACT_REEL_CABLE" );
 static const activity_id ACT_RELOAD( "ACT_RELOAD" );
+static const activity_id ACT_REPAIR_ITEM( "ACT_REPAIR_ITEM" );
 static const activity_id ACT_ROBOT_CONTROL( "ACT_ROBOT_CONTROL" );
 static const activity_id ACT_SHAVE( "ACT_SHAVE" );
 static const activity_id ACT_SHEARING( "ACT_SHEARING" );
@@ -2420,7 +2422,7 @@ bool read_activity_actor::player_readma( avatar &you )
 
     if( one_in( difficulty ) ) {
         // learn martial art
-        mart_iter->second.call( &you, *book, you.pos_bub() );
+        mart_iter->second.call( &you, book, you.pos_bub() );
         return true;
     } else if( continuous ) {
         switch( rng( 1, 5 ) ) {
@@ -3832,6 +3834,8 @@ std::string enum_to_string<do_activity_reason>( do_activity_reason reason )
             return _( "There is a large corpse here to butcher." );
         case do_activity_reason::NEEDS_BUTCHERING:
             return _( "There is a corpse here to butcher." );
+        case do_activity_reason::NEEDS_DISSECTING:
+            return _( "There is a corpse here to dissect." );
         case do_activity_reason::NEEDS_CUT_HARVESTING:
             return _( "This plant needs a grass-cutting tool to harvest." );
         case do_activity_reason::ALREADY_WORKING:
@@ -3898,6 +3902,25 @@ std::string enum_to_string<close_tile_result>( close_tile_result data )
             // *INDENT-ON*
         default:
             cata_fatal( "Invalid based_on_type in enum_to_string" );
+    }
+}
+template<>
+std::string enum_to_string<repair_stage>(
+    repair_stage data )
+{
+    switch( data ) {
+            // *INDENT-OFF*
+        case repair_stage::INIT: return "INIT";
+        case repair_stage::ONCE: return "ONCE";
+        case repair_stage::FULL: return "FULL";
+        case repair_stage::EVENT: return "EVENT";
+        case repair_stage::REFIT_ONCE: return "REFIT_ONCE";
+        case repair_stage::REFIT_FULL: return "REFIT_FULL";
+        case repair_stage::CANCEL: return "CANCEL";
+        case repair_stage::LAST: return "LAST";
+            // *INDENT-ON*
+        default:
+            cata_fatal( "Invalid repair_stage in enum_to_string" );
     }
 }
 } // namespace io
@@ -5485,6 +5508,15 @@ bool multi_zone_activity_actor::simulate_turn( player_activity &act, Character &
     }
 
     std::vector<tripoint_abs_ms> src_sorted = get_sorted_tiles_by_distance( abspos, src_set );
+    if( current_activity == ACT_MULTIPLE_CONSTRUCTION ) {
+        // joins another builder's site only once no free site can be worked
+        const std::unordered_set<tripoint_abs_ms> occupied =
+            multi_activity_actor::occupied_construction_sites( you );
+        std::stable_partition( src_sorted.begin(), src_sorted.end(),
+        [&occupied]( const tripoint_abs_ms & site ) {
+            return occupied.count( site ) == 0;
+        } );
+    }
     // now loop through the work-spot tiles and judge whether its worth traveling to it yet
     // or if we need to fetch something first.
 
@@ -9568,11 +9600,39 @@ std::unique_ptr<activity_actor> tent_deconstruct_activity_actor::deserialize( Js
     return actor.clone();
 }
 
+// tile shows what the construction makes, so whoever else worked on it completed it
+static bool construction_done_at( const construction_id &built, const tripoint_bub_ms &p )
+{
+    if( !built.is_valid() || built->post_terrain.empty() ) {
+        return false;
+    }
+    const map &here = get_map();
+    if( built->post_is_furniture ) {
+        return here.furn( p ).id() == furn_str_id( built->post_terrain );
+    }
+    return here.ter( p ).id() == ter_str_id( built->post_terrain );
+}
+
+void build_construction_activity_actor::start( player_activity &act, Character & )
+{
+    // other builders try the tile a builder's activity is placed on last
+    act.placement = construction_location;
+    map &here = get_map();
+    if( const partial_con *pc = here.partial_con_at( here.get_bub( construction_location ) ) ) {
+        building = pc->id;
+    }
+}
+
 void build_construction_activity_actor::do_turn( player_activity &act, Character &you )
 {
     map &here = get_map();
     const tripoint_bub_ms construction_bub = here.get_bub( construction_location );
     partial_con *pc = here.partial_con_at( construction_bub );
+    if( !pc && construction_done_at( building, construction_bub ) ) {
+        // another builder finished it; a multi-activity in the backlog goes on
+        act.set_to_null();
+        return;
+    }
     // Maybe the player and the NPC are working on the same construction at the same time
     if( !pc ) {
         if( you.is_npc() ) {
@@ -9586,6 +9646,7 @@ void build_construction_activity_actor::do_turn( player_activity &act, Character
                  you.disp_name() );
         return;
     }
+    building = pc->id;
     you.set_activity_level( pc->id->activity_level );
     // if you ( or NPC ) are finishing someone else's started construction...
     const construction &built = pc->id.obj();
@@ -10487,11 +10548,11 @@ void invoke_item_activity_actor::do_turn( player_activity &, Character &who )
     std::string _method = method;
     if( method.empty() ) {
         who.cancel_activity();
-        who.invoke_item( _item.get_item() );
+        who.invoke_item( _item );
         return;
     }
     who.cancel_activity();
-    who.invoke_item( _item.get_item(), _method );
+    who.invoke_item( _item, _method );
 }
 
 void invoke_item_activity_actor::serialize( JsonOut &jsout ) const
@@ -11393,6 +11454,69 @@ std::unique_ptr<activity_actor> mend_item_activity_actor::deserialize( JsonValue
     return actor.clone();
 }
 
+item *repair_item_activity_actor::get_repair_tool( player_activity &act )
+{
+    item *main_tool = nullptr;
+
+    if( vp_tool.has_value() ) {
+        main_tool = w_hack.init( vp_tool->first, vp_tool->second ) ?
+                    w_hack.get_item() : tool_to_repair_with.get_item();
+    } else {
+        main_tool = tool_to_repair_with.get_item();
+    }
+
+
+    if( main_tool == nullptr ) {
+        debugmsg( "Invalid tool for repair_item_activity_actor" );
+        act.set_to_null();
+        return nullptr;
+    }
+    item *used_tool = main_tool->get_usable_item( repair_iuse_actor_name );
+    if( used_tool == nullptr ) {
+        debugmsg( "Lost tool used for repair_item_activity_actor" );
+        act.set_to_null();
+        return nullptr;
+    }
+    return used_tool;
+}
+
+void repair_item_activity_actor::start( player_activity &act, Character & )
+{
+    // processing happens in finish()
+    act.moves_total = 0;
+    act.moves_left = act.moves_total;
+}
+
+void repair_item_activity_actor::serialize( JsonOut &jsout ) const
+{
+    jsout.start_object();
+
+    jsout.member( "repaired_item", repaired_item );
+    jsout.member( "stage", stage );
+    jsout.member( "tool_to_repair_with", tool_to_repair_with );
+    jsout.member( "no_menu", no_menu );
+    jsout.member( "repair_iuse_actor_name", repair_iuse_actor_name );
+    jsout.member( "vp_tool", vp_tool );
+
+    jsout.end_object();
+}
+
+std::unique_ptr<activity_actor> repair_item_activity_actor::deserialize( JsonValue &jsin )
+{
+    repair_item_activity_actor actor;
+
+    JsonObject data = jsin.get_object();
+
+    data.read( "repaired_item", actor.repaired_item );
+    data.read( "stage", actor.stage );
+    data.read( "tool_to_repair_with", actor.tool_to_repair_with );
+    data.read( "no_menu", actor.no_menu );
+    data.read( "repair_iuse_actor_name", actor.repair_iuse_actor_name );
+    data.read( "vp_tool", actor.vp_tool );
+
+    return actor.clone();
+}
+
 void fix_wound_activity_actor::start( player_activity &act, Character & )
 {
     act.moves_total = to_moves<int>( initial_moves );
@@ -11425,34 +11549,44 @@ void fix_wound_activity_actor::finish( player_activity &act, Character &who )
         return;
     }
     for( const auto &e : reqs.get_components() ) {
-        who.consume_items( e );
+        who.consume_items( e, amount );
     }
     for( const auto &e : reqs.get_tools() ) {
-        who.consume_tools( e );
+        who.consume_tools( e, amount );
     }
     who.invalidate_crafting_inventory();
 
-    for( const wound_type_id &id : fix.wounds_removed ) {
-        bp->remove_wound( id );
-    }
-
-    for( const wound_type_id &id : fix.wounds_added ) {
-        bp->add_wound( id );
+    for( int i = 0; i < amount; i++ ) {
+        for( const wound_type_id &id : fix.wounds_added ) {
+            const wound *to_be_removed = bp->get_wound( mended_wound );
+            bp->add_wound( id, who, to_be_removed->get_hp_damage() );
+        }
     }
 
     if( fix.mod_hp ) {
-        bp->mod_hp_cur( fix.mod_hp );
+        bp->mod_hp_cur( fix.mod_hp * amount );
     }
 
-    for( const auto& [skill_id, level] : fix.skills ) {
-        who.practice( skill_id, 10, static_cast<int>( level * 1.25 ) );
+    for( const wound_skill &sk : fix.skills ) {
+        who.practice( sk.skill, 10 * amount, static_cast<int>( sk.level * 1.25 ) );
     }
 
     for( const wound_proficiency &wound_prof : fix.proficiencies ) {
         who.practice_proficiency( wound_prof.prof, fix.time );
     }
 
+    for( int i = 0; i < amount; i++ ) {
+        for( const wound_type_id &id : fix.wounds_removed ) {
+            bp->remove_wound( id );
+        }
+    }
+
     add_msg( m_good, fix.success_msg.translated() );
+
+    // only the player gets the menu again; an NPC's treatment just ends
+    if( who.is_avatar() && who.has_wounds( healed_bp.id() ) ) {
+        who.pick_wound_fix( healed_bp );
+    }
 }
 
 void fix_wound_activity_actor::serialize( JsonOut &jsout ) const
@@ -11462,6 +11596,7 @@ void fix_wound_activity_actor::serialize( JsonOut &jsout ) const
     jsout.member( "healed_bp", healed_bp );
     jsout.member( "mended_wound", mended_wound );
     jsout.member( "mending_method", mending_method );
+    jsout.member( "amount", amount );
 
     jsout.end_object();
 }
@@ -11475,6 +11610,7 @@ std::unique_ptr<activity_actor> fix_wound_activity_actor::deserialize( JsonValue
     data.read( "healed_bp", actor.healed_bp );
     data.read( "mended_wound", actor.mended_wound );
     data.read( "mending_method", actor.mending_method );
+    data.read( "amount", actor.amount );
 
     return actor.clone();
 }
@@ -11609,8 +11745,6 @@ std::unique_ptr<activity_actor> toolmod_add_activity_actor::deserialize( JsonVal
 
 void longsalvage_activity_actor::start( player_activity &act, Character & )
 {
-    act.index = index;
-
     //todo: refactor the actor to process items in ::do_turn, then remove setting the moves to 0
     //this currently still can't get interrupted before you get attacked
     act.moves_left = 0;
@@ -11618,12 +11752,16 @@ void longsalvage_activity_actor::start( player_activity &act, Character & )
 
 void longsalvage_activity_actor::finish( player_activity &act, Character &who )
 {
+    if( !salvage_tool.valid() ) {
+        debugmsg( "Lost tool used for long salvage" );
+        act.set_to_null();
+        return;
+    }
     static const std::string salvage_string = "salvage";
-    item &main_tool = who.i_at( act.index );
     map &here = get_map();
     map_stack items = here.i_at( who.pos_bub() );
-    item *salvage_tool = main_tool.get_usable_item( salvage_string );
-    if( salvage_tool == nullptr ) {
+    item *found_usable_item = salvage_tool->get_usable_item( salvage_string );
+    if( found_usable_item == nullptr ) {
         debugmsg( "Lost tool used for long salvage" );
         act.set_to_null();
         return;
@@ -11655,18 +11793,24 @@ void longsalvage_activity_actor::serialize( JsonOut &jsout ) const
 {
     jsout.start_object();
 
-    jsout.member( "index", index );
+    jsout.member( "salvage_tool", salvage_tool );
 
     jsout.end_object();
 }
 
 std::unique_ptr<activity_actor> longsalvage_activity_actor::deserialize( JsonValue &jsin )
 {
-    longsalvage_activity_actor actor( {} );
+    longsalvage_activity_actor actor;
 
     JsonObject data = jsin.get_object();
 
-    data.read( "index", actor.index );
+    // REMOVE "index" AFTER 0.K
+    if( data.has_member( "index" ) ) {
+        int index = 0;
+        // don't attempt to find an item, let activity from legacy save fail safely
+        data.read( "index", index );
+    }
+    data.read( "salvage_tool", actor.salvage_tool );
 
     return actor.clone();
 }
@@ -14058,6 +14202,8 @@ void butchery_activity_actor::do_turn( player_activity &act, Character &you )
         item &corpse_item = *this_bd->corpse;
         corpse_item.set_var( butcher_progress_time_var(),
                              to_turns<double>( calendar::turn - calendar::start_of_cataclysm ) );
+        corpse_item.set_var( butcher_progress_var( this_bd->b_type ),
+                             this_bd->progress / this_bd->time_to_butcher );
     }
 }
 
@@ -14128,6 +14274,12 @@ std::unique_ptr<activity_actor> butchery_activity_actor::deserialize( JsonValue 
 std::unique_ptr<activity_actor> multi_butchery_activity_actor::deserialize( JsonValue & )
 {
     multi_butchery_activity_actor actor;
+    return actor.clone();
+}
+
+std::unique_ptr<activity_actor> multi_dissection_activity_actor::deserialize( JsonValue & )
+{
+    multi_dissection_activity_actor actor;
     return actor.clone();
 }
 
@@ -15801,6 +15953,7 @@ deserialize_functions = {
     { ACT_MULTIPLE_CONSTRUCTION, &multi_build_construction_activity_actor::deserialize },
     { ACT_MULTIPLE_CRAFT, &multi_craft_activity_actor::deserialize },
     { ACT_MULTIPLE_DIS, &multi_disassemble_activity_actor::deserialize },
+    { ACT_MULTIPLE_DISSECT, &multi_dissection_activity_actor::deserialize },
     { ACT_MULTIPLE_FARM, &multi_farm_activity_actor::deserialize },
     { ACT_MULTIPLE_FISH, &multi_fish_activity_actor::deserialize },
     { ACT_MULTIPLE_MINE, &multi_mine_activity_actor::deserialize },
@@ -15822,6 +15975,7 @@ deserialize_functions = {
     { ACT_READ, &read_activity_actor::deserialize },
     { ACT_REEL_CABLE, &reel_cable_activity_actor::deserialize },
     { ACT_RELOAD, &reload_activity_actor::deserialize },
+    { ACT_REPAIR_ITEM, &repair_item_activity_actor::deserialize },
     { ACT_ROBOT_CONTROL, &robot_control_activity_actor::deserialize },
     { ACT_SHAVE, &shave_activity_actor::deserialize },
     { ACT_SHEARING, &shearing_activity_actor::deserialize },
@@ -15923,6 +16077,7 @@ const std::unordered_map<activity_id, eoc_starter> eoc_starters = {
     { ACT_MULTIPLE_CONSTRUCTION, { &build_plain<multi_build_construction_activity_actor>, false } },
     { ACT_MULTIPLE_CRAFT, { &build_plain<multi_craft_activity_actor>, false } },
     { ACT_MULTIPLE_DIS, { &build_plain<multi_disassemble_activity_actor>, false } },
+    { ACT_MULTIPLE_DISSECT, { &build_plain<multi_dissection_activity_actor>, false } },
     { ACT_MULTIPLE_FARM, { &build_plain<multi_farm_activity_actor>, false } },
     { ACT_MULTIPLE_FISH, { &build_plain<multi_fish_activity_actor>, false } },
     { ACT_MULTIPLE_MINE, { &build_plain<multi_mine_activity_actor>, false } },

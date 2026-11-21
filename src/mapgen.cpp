@@ -3330,7 +3330,7 @@ class jmapgen_computer : public jmapgen_piece_with_has_vehicle_collision
                 }
             }
             for( const std::string &topic : chat_topics ) {
-                if( !talk_topic_exists( topic ) ) {
+                if( !talk_topic_all::talk_topic_exists( topic ) ) {
                     debugmsg( "Invalid chat topic \"%s\" for a computer in %s", topic, context );
                 }
             }

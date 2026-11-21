@@ -5,6 +5,7 @@
 #include "cata_catch.h"
 #include "character.h"
 #include "creature.h"
+#include "damage.h"
 #include "flexbuffer_json.h"
 #include "json_loader.h"
 #include "magic.h"
@@ -21,11 +22,11 @@ static const wound_type_id wound_bruise_bad( "bruise_bad" );
 // ---- CHAR-B01 ----
 
 // Leaves exactly `count` fresh bad bruises on the bodypart, and no other wounds.
-static void reset_bad_bruises( bodypart &bp, int count )
+static void reset_bad_bruises( bodypart &bp, const Character &who, int count )
 {
     bp.get_wounds().clear();
     for( int i = 0; i < count; i++ ) {
-        bp.add_wound( wound_bruise_bad );
+        bp.add_wound( wound_bruise_bad, who, 0 );
     }
 }
 
@@ -58,8 +59,9 @@ TEST_CASE( "char-b01_wound_progresses_at_most_once_per_hit", "[audit]" )
         // got a nullptr back and dereferenced it.
         int bad_outcomes = 0;
         for( int i = 0; i < hits; i++ ) {
-            reset_bad_bruises( *arm, 1 );
-            arm->add_or_worsen_wound( wound_bruise_bad );
+            reset_bad_bruises( *arm, dummy, 1 );
+            dealt_damage_instance ddi;
+            arm->add_or_worsen_wound( wound_bruise_bad, &dummy, ddi );
             const int total = static_cast<int>( arm->get_wounds().size() );
             const int bruises = count_wounds_of_type( *arm, wound_bruise_bad );
             // unchanged, progressed into exactly one wound, or a second bruise was added
@@ -74,8 +76,9 @@ TEST_CASE( "char-b01_wound_progresses_at_most_once_per_hit", "[audit]" )
         // Without the fix both progression entries succeeding consumed both bruises.
         int double_progressions = 0;
         for( int i = 0; i < hits; i++ ) {
-            reset_bad_bruises( *arm, 2 );
-            arm->add_or_worsen_wound( wound_bruise_bad );
+            reset_bad_bruises( *arm, dummy, 2 );
+            dealt_damage_instance ddi;
+            arm->add_or_worsen_wound( wound_bruise_bad, &dummy, ddi );
             const int total = static_cast<int>( arm->get_wounds().size() );
             const int bruises = count_wounds_of_type( *arm, wound_bruise_bad );
             if( bruises < 1 || total - bruises > 1 ) {

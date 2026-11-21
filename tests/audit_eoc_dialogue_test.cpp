@@ -84,6 +84,8 @@ static const oter_str_id oter_field( "field" );
 
 static const overmap_special_id overmap_special_test_audit_b08_shelter( "test_audit_b08_shelter" );
 
+static const skill_id skill_gramarye( "gramarye" );
+
 static const ter_str_id ter_t_rock( "t_rock" );
 static const ter_str_id ter_t_thconc_floor( "t_thconc_floor" );
 
@@ -735,11 +737,15 @@ TEST_CASE( "eoc-b14_eocs_after_a_stopped_chain_still_run", "[audit][eoc]" )
 
 namespace
 {
-// Runs @p eoc on the avatar; true when it logged nothing
-bool runs_quietly( const effect_on_condition_id &eoc )
+// Runs @p eoc on the avatar, with @p context as its context variables; true when it logged nothing
+bool runs_quietly( const effect_on_condition_id &eoc,
+                   const std::map<std::string, double> &context = {} )
 {
     REQUIRE( eoc.is_valid() );
     dialogue d( get_talker_for( get_avatar() ), nullptr );
+    for( const auto &[name, value] : context ) {
+        d.set_value( name, value );
+    }
     const std::string messages = capture_debugmsg_during( [&]() {
         eoc->activate( d );
     } );
@@ -760,13 +766,16 @@ TEST_CASE( "eoc-b14_xedra_spell_selectors_dont_run_themselves_again", "[.][xedra
         clear_avatar();
     } );
     avatar &u = get_avatar();
+    // Arvore, Salamander and Sylph passive XP is gramarye times the caller's xp_multiplier
+    u.set_skill_level( skill_gramarye, 1 );
+    const std::map<std::string, double> context = { { "xp_multiplier", 50 } };
     // Each selector, with one of its spells and that spell's cap
     const std::vector<std::tuple<std::string, std::string, int>> selectors = {
         { "ARVORE", "arvore_nurture_the_green", 15 },
         { "HOMULLUS", "homullus_summon_feral_spell", 35 },
         { "IERDE", "ierde_summon_earth_spirit", 35 },
         { "SALAMANDER", "salamander_make_fire", 15 },
-        { "SYLPH", "ominous_wind", 20 },
+        { "SYLPH", "ominous_wind", 15 },
         { "UNDINE", "grant_buoyancy", 20 },
     };
     for( const auto &[kind, spell_name, cap] : selectors ) {
@@ -774,16 +783,16 @@ TEST_CASE( "eoc-b14_xedra_spell_selectors_dont_run_themselves_again", "[.][xedra
         const effect_on_condition_id selector( "EOC_" + kind + "_SPELL_EXPERIENCE_INCREASER_SELECTOR" );
         const spell_id sp( spell_name );
         // No spell to improve: nothing happens
-        CHECK( runs_quietly( selector ) );
+        CHECK( runs_quietly( selector, context ) );
         // One spell that can improve: it is picked every time
         u.magic->learn_spell( sp, u, true );
         const int xp_before = u.magic->get_spell( sp ).xp();
-        CHECK( runs_quietly( selector ) );
+        CHECK( runs_quietly( selector, context ) );
         CHECK( u.magic->get_spell( sp ).xp() > xp_before );
         // At its cap, it can't
         u.magic->set_spell_level( sp, cap, &u );
         const int xp_at_cap = u.magic->get_spell( sp ).xp();
-        CHECK( runs_quietly( selector ) );
+        CHECK( runs_quietly( selector, context ) );
         CHECK( u.magic->get_spell( sp ).xp() == xp_at_cap );
         u.magic->forget_spell( sp );
     }

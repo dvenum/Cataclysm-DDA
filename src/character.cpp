@@ -3663,8 +3663,9 @@ float Character::instantaneous_activity_level() const
 
 int Character::activity_level_index() const
 {
-    // Activity levels are 1, 2, 4, 6, 8, 10
-    // So we can easily cut them in half and round down for an index
+    // Activity levels are 1, 2, 4, 6, 8, 10, 12 (EXPLOSIVE) and 500 (COMBAT)
+    // So we can (mostly) easily cut them in half and round down for an index: COMBAT gives 250
+    // ...This function is only called for EOCs, maybe we should just return the activity level directly instead of this.
     return std::floor( instantaneous_activity_level() / 2 );
 }
 
@@ -4689,23 +4690,23 @@ void Character::burn_energy_all( int mod )
     }
 }
 
-bool Character::invoke_item( item *used )
+bool Character::invoke_item( item_location &used )
 {
     return invoke_item( used, pos_bub() );
 }
 
-bool Character::invoke_item( item *, const tripoint_bub_ms &, int )
+bool Character::invoke_item( item_location &, const tripoint_bub_ms &, int )
 {
     return false;
 }
 
-bool Character::invoke_item( item *used, const std::string &method )
+bool Character::invoke_item( item_location &used, const std::string &method )
 {
     return invoke_item( used, method, pos_bub() );
 }
 
-bool Character::invoke_item( item *used, const std::string &method, const tripoint_bub_ms &pt,
-                             int pre_obtain_moves )
+bool Character::invoke_item( item_location &used, const std::string &method,
+                             const tripoint_bub_ms &pt, int pre_obtain_moves )
 {
     // As avatar::invoke_item does: a cancelled use refunds the moves spent from here on, so an
     // NPC's moves aren't set to -1.
@@ -4760,7 +4761,7 @@ bool Character::invoke_item( item *used, const std::string &method, const tripoi
         return false;
     }
 
-    std::optional<int> charges_used = actually_used->type->invoke( this, *actually_used,
+    std::optional<int> charges_used = actually_used->type->invoke( this, used,
                                       pt, method );
     if( !charges_used.has_value() ) {
         set_moves( pre_obtain_moves );
@@ -4776,7 +4777,7 @@ bool Character::invoke_item( item *used, const std::string &method, const tripoi
     actually_used->activation_consume( charges_used.value(), pt, this );
 
     if( actually_used->has_flag( flag_SINGLE_USE ) || actually_used->is_bionic() ) {
-        i_rem( actually_used );
+        used.remove_item();
         return true;
     }
 
@@ -5673,6 +5674,14 @@ void Character::process_activity()
     }
 }
 
+void Character::process_activity_until_invalid()
+{
+    while( activity ) {
+        set_moves( 100 );
+        activity.do_turn( *this );
+    }
+}
+
 void Character::fall_asleep()
 {
     // Communicate to the player that he is using items on the floor
@@ -6141,16 +6150,16 @@ void Character::use_fire( const int quantity )
         return;
     }
 
-    const item firestarter = find_firestarter_with_charges( quantity );
-    if( firestarter.is_null() ) {
+    const item_location firestarter = find_firestarter_with_charges( quantity );
+    if( !firestarter.valid() ) {
         return;
     }
-    if( firestarter.type->has_flag( flag_USES_BIONIC_POWER ) ) {
+    if( firestarter->type->has_flag( flag_USES_BIONIC_POWER ) ) {
         mod_power_level( -quantity * 5_kJ );
         return;
     }
-    if( firestarter.ammo_sufficient( this, quantity ) ) {
-        use_charges( firestarter.typeId(), quantity );
+    if( firestarter->ammo_sufficient( this, quantity ) ) {
+        use_charges( firestarter->typeId(), quantity );
         return;
     }
 }
@@ -8374,15 +8383,7 @@ void Character::knock_back_to( const tripoint_bub_ms &to )
 
 void Character::use_wielded()
 {
-    use( -1 );
-}
-
-void Character::use( int inventory_position )
-{
-    item &used = i_at( inventory_position );
-    item_location loc = item_location( *this, &used );
-
-    use( loc );
+    use( get_wielded_item() );
 }
 
 void Character::use( item_location loc, int pre_obtain_moves, std::string const &method )
@@ -8413,10 +8414,10 @@ void Character::use( item_location loc, int pre_obtain_moves, std::string const 
             set_moves( pre_obtain_moves );
             return;
         }
-        invoke_item( &used, method, loc.pos_bub( here ), pre_obtain_moves );
+        invoke_item( loc, method, loc.pos_bub( here ), pre_obtain_moves );
 
     } else if( used.type->can_use( "PETFOOD" ) ) { // NOLINT(bugprone-branch-clone)
-        invoke_item( &used, method, loc.pos_bub( here ), pre_obtain_moves );
+        invoke_item( loc, method, loc.pos_bub( here ), pre_obtain_moves );
 
     } else if( !used.is_craft() && ( used.is_medication() || ( !used.type->has_use() &&
                                      used.is_food() ) ) ) {
@@ -8449,7 +8450,7 @@ void Character::use( item_location loc, int pre_obtain_moves, std::string const 
             }
         }
     } else if( used.type->has_use() ) {
-        invoke_item( &used, method, loc.pos_bub( here ), pre_obtain_moves );
+        invoke_item( loc, method, loc.pos_bub( here ), pre_obtain_moves );
     } else if( used.has_flag( flag_SPLINT ) ) {
         ret_val<void> need_splint = can_wear( *loc );
         if( need_splint.success() ) {
@@ -8459,7 +8460,7 @@ void Character::use( item_location loc, int pre_obtain_moves, std::string const 
             add_msg( m_info, need_splint.str() );
         }
     } else if( used.is_relic() ) {
-        invoke_item( &used, method, loc.pos_bub( here ), pre_obtain_moves );
+        invoke_item( loc, method, loc.pos_bub( here ), pre_obtain_moves );
     } else {
         if( !is_armed() ) {
             add_msg( m_info, _( "You are not wielding anything you could use." ) );

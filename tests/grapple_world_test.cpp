@@ -7,8 +7,10 @@
 #include "cata_catch.h"
 #include "character.h"
 #include "coordinates.h"
+#include "flexbuffer_json.h"
 #include "game_constants.h"
 #include "item.h"
+#include "json_loader.h"
 #include "magic_enchantment.h"
 #include "map.h"
 #include "map_helpers.h"
@@ -27,9 +29,10 @@
 #include "veh_type.h"
 #include "vehicle.h"
 #include "vpart_position.h"
+#include "worldfactory.h"
 
 // World-side grappling ported from Cataclysm: The Last Generation (TLG): monster grabs pulling
-// riders out of vehicles, resisting crowd crush, and explosive combat exertion.
+// riders out of vehicles, resisting crowd crush, and the combat exertion option.
 
 static const efftype_id effect_downed( "downed" );
 static const efftype_id effect_grabbed( "grabbed" );
@@ -251,9 +254,9 @@ static float exertion_of( Character &you, const std::function<void()> &act )
     return you.instantaneous_activity_level();
 }
 
-// EXPLOSIVE_EXERCISE (Cataclysm-TLG) is always defined; the EXPLOSIVE_COMBAT_EXERTION world
-// option decides whether combat uses it, and with it off nothing changes.
-TEST_CASE( "explosive_combat_exertion_option", "[grapple][activity]" )
+// EXPLOSIVE_EXERCISE (Cataclysm-TLG) and COMBAT_EXERCISE (upstream) are always defined; the
+// COMBAT_EXERTION world option decides which one combat uses, and on "normal" nothing changes.
+TEST_CASE( "combat_exertion_option", "[grapple][activity]" )
 {
     clear_map_without_vision();
     clear_avatar();
@@ -274,10 +277,16 @@ TEST_CASE( "explosive_combat_exertion_option", "[grapple][activity]" )
             you.throw_item( you.pos_bub() + tripoint( -3, 0, 0 ), item( thrown ) );
         };
     };
+    // Weary enough that fighting at extra exercise or above slows you down
+    const auto make_weary = [&you]() {
+        you.activity_history.debug_set_tracker( 1000 * ( 1 + static_cast<int>(
+                you.weary_threshold() * get_option<float>( "WEARY_INITIAL_STEP" ) ) ) );
+        REQUIRE( you.weariness_level() == 1 );
+    };
     REQUIRE( you.get_str() == 8 );
 
-    SECTION( "off (the default): combat stays at extra exercise" ) {
-        REQUIRE_FALSE( get_option<bool>( "EXPLOSIVE_COMBAT_EXERTION" ) );
+    SECTION( "normal (the default): combat stays at extra exercise" ) {
+        REQUIRE( get_option<std::string>( "COMBAT_EXERTION" ) == "normal" );
         CHECK( you.melee_exertion_level() == EXTRA_EXERCISE );
         CHECK( you.maximum_exertion_level() == EXTRA_EXERCISE );
         CHECK( exertion_of( you, attack ) == EXTRA_EXERCISE );
@@ -285,9 +294,12 @@ TEST_CASE( "explosive_combat_exertion_option", "[grapple][activity]" )
         CHECK( exertion_of( you, throwing( itype_test_boltcutter ) ) == NO_EXERCISE );
         CHECK( get_avatar().total_daily_calories_string().find( "Explosive" ) ==
                std::string::npos );
+        make_weary();
+        CHECK( you.exertion_adjusted_move_multiplier( you.melee_exertion_level() ) ==
+               Approx( ACTIVE_EXERCISE / EXTRA_EXERCISE ) );
     }
-    SECTION( "on: melee, dodges and throws are explosive" ) {
-        override_option explosive( "EXPLOSIVE_COMBAT_EXERTION", "true" );
+    SECTION( "explosive: melee, dodges and throws are explosive" ) {
+        override_option explosive( "COMBAT_EXERTION", "explosive" );
         CHECK( you.melee_exertion_level() == EXPLOSIVE_EXERCISE );
         CHECK( you.maximum_exertion_level() == EXPLOSIVE_EXERCISE );
         CHECK( exertion_of( you, attack ) == EXPLOSIVE_EXERCISE );
@@ -299,7 +311,42 @@ TEST_CASE( "explosive_combat_exertion_option", "[grapple][activity]" )
         // The calorie diary grows a column for it.
         CHECK( get_avatar().total_daily_calories_string().find( "Explosive" ) !=
                std::string::npos );
+        // A weary fighter slows down more than at extra exercise
+        make_weary();
+        CHECK( you.exertion_adjusted_move_multiplier( you.melee_exertion_level() ) ==
+               Approx( ACTIVE_EXERCISE / EXPLOSIVE_EXERCISE ) );
     }
+    SECTION( "combat: fighting burns calories at the combat level, but slows you as extra" ) {
+        override_option combat( "COMBAT_EXERTION", "combat" );
+        CHECK( you.melee_exertion_level() == COMBAT_EXERCISE );
+        CHECK( you.maximum_exertion_level() == COMBAT_EXERCISE );
+        CHECK( exertion_of( you, attack ) == COMBAT_EXERCISE );
+        CHECK( exertion_of( you, dodge ) == COMBAT_EXERCISE );
+        CHECK( exertion_of( you, throwing( itype_test_boltcutter ) ) == COMBAT_EXERCISE );
+        CHECK( exertion_of( you, throwing( itype_test_rag ) ) == COMBAT_EXERCISE / 2 );
+        make_weary();
+        // Not max / level = 8 / 500: the penalty is that of extra exercise, for a throw too
+        CHECK( you.exertion_adjusted_move_multiplier( you.melee_exertion_level() ) ==
+               Approx( ACTIVE_EXERCISE / EXTRA_EXERCISE ) );
+        CHECK( you.exertion_adjusted_move_multiplier( COMBAT_EXERCISE / 2 ) ==
+               Approx( ACTIVE_EXERCISE / EXTRA_EXERCISE ) );
+    }
+    you.activity_history.weary_clear();
     // The thrown items stay on the map; later tests expect it empty.
     clear_map_without_vision();
+}
+
+// The option was a bool, EXPLOSIVE_COMBAT_EXERTION; a world saved with it keeps its meaning.
+TEST_CASE( "combat_exertion_option_loads_the_old_bool", "[grapple][activity]" )
+{
+    const auto loaded = []( const std::string & value ) {
+        WORLD world( "combat exertion test world" );
+        const JsonValue jv = json_loader::from_string(
+                                 R"([ { "name": "EXPLOSIVE_COMBAT_EXERTION", "value": ")" + value +
+                                 R"(" } ])" );
+        world.load_options( jv.get_array() );
+        return world.WORLD_OPTIONS["COMBAT_EXERTION"].getValue();
+    };
+    CHECK( loaded( "true" ) == "explosive" );
+    CHECK( loaded( "false" ) == "normal" );
 }

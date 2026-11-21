@@ -1587,7 +1587,7 @@ These can be read or written to with `val()`.
 
 | Value | Supports assignment | Description |
 --- | --- | --- |
-| `activity_level` | ❌ | Current activity level index as a floored integer, from 0-6. Roughly: <pre>0.45 = SLEEP_EXERCISE (floored and returns 0),<br/>0.5 = NO_EXERCISE(floored and returns 0),<br/>1 = LIGHT_EXERCISE,<br/>2 = MODERATE_EXERCISE,<br/>3 = BRISK_EXERCISE,<br/>4 = ACTIVE_EXERCISE,<br/>5 = EXTRA_EXERCISE,<br/>6 = EXPLOSIVE_EXERCISE (combat with the `EXPLOSIVE_COMBAT_EXERTION` world option). |
+| `activity_level` | ❌ | Current activity level index, half the activity level rounded down. Roughly: <pre>0.45 = SLEEP_EXERCISE (floored and returns 0),<br/>0.5 = NO_EXERCISE(floored and returns 0),<br/>1 = LIGHT_EXERCISE,<br/>2 = MODERATE_EXERCISE,<br/>3 = BRISK_EXERCISE,<br/>4 = ACTIVE_EXERCISE,<br/>5 = EXTRA_EXERCISE,<br/>6 = EXPLOSIVE_EXERCISE (fighting with the `COMBAT_EXERTION` world option on "explosive"),<br/>250 = COMBAT_EXERCISE (fighting with `COMBAT_EXERTION` on "combat"; a throw reads 125-250). |
 | `age` | ✅ | Current age in years. |
 | `allies` | ❌ | The avatar's number of allies |
 | `anger` | ✅ | Current anger level. Only works for monsters. |

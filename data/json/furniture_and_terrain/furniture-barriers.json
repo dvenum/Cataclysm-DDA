@@ -239,14 +239,14 @@
     "required_str": -1,
     "flags": [ "CLIMB_SIMPLE", "TRANSPARENT", "MOUNTABLE", "BLOCKSDOOR", "SHORT", "THIN_OBSTACLE", "CLIMBABLE", "PERMEABLE" ],
     "examine_action": "chainfence",
-    "deconstruct": { "items": [ { "item": "hesco_mil3_cell", "count": 1 }, { "item": "material_soil", "count": [ 100, 160 ] } ] },
+    "deconstruct": { "items": [ { "item": "hesco_mil3_cell", "count": 1 }, { "item": "material_soil", "count": 40 } ] },
     "bash": {
       "str_min": 30,
       "str_max": 100,
       "sound": "clang!",
       "sound_fail": "thump.",
       "items": [
-        { "item": "material_soil", "count": [ 70, 110 ] },
+        { "item": "material_soil", "count": [ 20, 35 ] },
         { "item": "wire", "count": [ 4, 8 ] },
         { "item": "scrap", "count": [ 1, 3 ] }
       ]
@@ -264,7 +264,7 @@
     "move_cost_mod": 0,
     "required_str": -1,
     "flags": [ "NOITEM", "BLOCKSDOOR", "BLOCK_WIND", "REDUCE_SCENT" ],
-    "deconstruct": { "items": [ { "item": "hesco_mil3_cell", "count": 2 }, { "item": "material_soil", "count": [ 200, 320 ] } ] },
+    "deconstruct": { "items": [ { "item": "hesco_mil3_cell", "count": 2 }, { "item": "material_soil", "count": 80 } ] },
     "bash": {
       "str_min": 36,
       "str_max": 115,
@@ -272,7 +272,7 @@
       "sound_fail": "thump.",
       "furn_set": "f_hesco_barrier",
       "items": [
-        { "item": "material_soil", "count": [ 70, 110 ] },
+        { "item": "material_soil", "count": [ 20, 35 ] },
         { "item": "wire", "count": [ 6, 12 ] },
         { "item": "scrap", "count": [ 2, 5 ] }
       ]

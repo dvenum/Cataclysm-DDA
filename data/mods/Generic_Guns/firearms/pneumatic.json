@@ -26,6 +26,15 @@
     "subtypes": [ "GUN" ],
     "name": { "str": "air pistol" },
     "description": "Pneumatic replica of US army standard issue sidearm, perfect tool for an outdoor recreation and for some basic firearm training.",
-    "variants": [  ]
+    "variants": [  ],
+    "pocket_data": [
+      { "id": "ammo", "magazine_well": "250 ml", "pocket_type": "MAGAZINE_WELL", "item_restriction": [ "air_pistol_mag" ] },
+      {
+        "id": "co2",
+        "pocket_type": "MAGAZINE_WELL",
+        "magazine_well": "250 ml",
+        "item_restriction": [ "co2_12g_cartridge" ]
+      }
+    ]
   }
 ]

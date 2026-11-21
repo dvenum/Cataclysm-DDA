@@ -5,6 +5,7 @@
     "type": "ITEM",
     "subtypes": [ "MAGAZINE" ],
     "name": { "str": "air pistol magazine" },
-    "description": "Air pistol magazine, capable of holding 18 airgun pellets."
+    "description": "Air pistol magazine, capable of holding 18 airgun pellets.",
+    "variants": [  ]
   }
 ]

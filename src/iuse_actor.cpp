@@ -189,29 +189,35 @@ static const trap_str_id tr_firewood_source( "tr_firewood_source" );
 
 static const zone_type_id zone_type_SOURCE_FIREWOOD( "SOURCE_FIREWOOD" );
 
+// The location of an item with the containers it is in.  A location made straight on a
+// character names no container even for an item in a bag, so only then is the item looked up.
+static item_location location_with_parents( const Character &p, const item_location &it,
+        map *here, const tripoint_bub_ms &pos )
+{
+    if( it.where() != item_location::type::character || p.is_worn( *it ) || p.is_wielding( *it ) ) {
+        return it;
+    }
+    return item_location::try_form_loc( const_cast<Character *>( &p ), here, pos,
+                                        const_cast<item &>( *it ) ).value_or( it );
+}
+
 // Like parents_can_contain_recursive but with replacement semantics: an
 // in-place transform swaps `it` out, so each level credits `it`'s footprint.
-static ret_val<void> transform_fits_parent_pocket( const Character &p, const item &it,
-        const item &result, map *here, const tripoint_bub_ms &pos )
+static ret_val<void> transform_fits_parent_pocket( const item_location &loc, const item &result )
 {
-    const std::optional<item_location> loc = item_location::try_form_loc(
-                const_cast<Character *>( &p ), here, pos, const_cast<item &>( it ) );
-    if( !loc || !loc->has_parent() ) {
-        return ret_val<void>::make_success();
-    }
-
+    const item &it = *loc;
     units::mass result_weight = result.weight();
     units::volume result_volume = result.volume();
     units::length result_length = result.length();
     units::mass it_weight = it.weight();
     units::volume it_volume = it.volume();
     units::length it_length = it.length();
-    const std::vector<const item_pocket *> innermost = loc->get_item()->get_standard_pockets();
+    const std::vector<const item_pocket *> innermost = it.get_standard_pockets();
     const item_pocket *current_pocket = innermost.empty() ? nullptr : innermost.front();
     const pocket_data *current_pocket_data = current_pocket ? current_pocket->get_pocket_data()
             : nullptr;
 
-    item_location current = *loc;
+    item_location current = loc;
     while( current.has_parent() ) {
         const item_pocket *parent_pocket = current.parent_pocket();
         if( parent_pocket == nullptr ) {
@@ -412,12 +418,15 @@ ret_val<void> iuse_transform::can_use( const Character &p, const item_location &
     }
 
     if( transform.target_group.is_empty() && !transform.target.is_empty() ) {
-        const item result = transform.container.is_empty()
-                            ? item( transform.target )
-                            : item( transform.container );
-        ret_val<void> fits = transform_fits_parent_pocket( p, *it, result, here, pos );
-        if( !fits.success() ) {
-            return fits;
+        const item_location loc = location_with_parents( p, it, here, pos );
+        if( loc.has_parent() ) {
+            const item result = transform.container.is_empty()
+                                ? item( transform.target )
+                                : item( transform.container );
+            ret_val<void> fits = transform_fits_parent_pocket( loc, result );
+            if( !fits.success() ) {
+                return fits;
+            }
         }
     }
 

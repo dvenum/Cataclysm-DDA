@@ -4753,15 +4753,17 @@ bool Character::invoke_item( item_location &used, const std::string &method,
         return false;
     }
 
-    item *actually_used = used->get_usable_item( method );
-    if( actually_used == nullptr ) {
+    // The item with the method: used itself, or an item inside it (a sheathed knife).
+    item_location contained = used->get_usable_item_loc( used, method );
+    if( !contained ) {
         debugmsg( "Tried to invoke a method %s on item %s, which doesn't have this method",
                   method.c_str(), used->tname() );
         set_moves( pre_obtain_moves );
         return false;
     }
+    item_location &actually_used = contained.get_item() == used.get_item() ? used : contained;
 
-    std::optional<int> charges_used = actually_used->type->invoke( this, used,
+    std::optional<int> charges_used = actually_used->type->invoke( this, actually_used,
                                       pt, method );
     if( !charges_used.has_value() ) {
         set_moves( pre_obtain_moves );
@@ -4777,7 +4779,7 @@ bool Character::invoke_item( item_location &used, const std::string &method,
     actually_used->activation_consume( charges_used.value(), pt, this );
 
     if( actually_used->has_flag( flag_SINGLE_USE ) || actually_used->is_bionic() ) {
-        used.remove_item();
+        actually_used.remove_item();
         return true;
     }
 

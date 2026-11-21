@@ -3748,6 +3748,10 @@ item *item::get_usable_item( const std::string &use_name )
 item_location item::get_usable_item_loc( const item_location &loc,
         const std::string &use_name ) const
 {
+    // As get_usable_item: the item itself first, then its contents.
+    if( get_use_internal( use_name ) ) {
+        return loc;
+    }
     item_location ret;
     loc.visit_contents( [use_name, &ret]( const item_location & node ) {
         if( node->get_use_internal( use_name ) ) {

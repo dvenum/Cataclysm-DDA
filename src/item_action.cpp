@@ -151,7 +151,7 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
             // Actually used item can be different from the "outside item"
             // For example, sheathed knife
             item_location actual_item = i->get_usable_item_loc( i, use );
-            if( actual_item ) {
+            if( !actual_item ) {
                 continue;
             }
 

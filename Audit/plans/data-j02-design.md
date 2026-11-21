@@ -1,6 +1,6 @@
 # Design: one set of override rules for every JSON type (DATA-J02)
 
-**Status:** for discussion with the owner. Built on a survey of all 190 types registered in `src/init.cpp`, taken on 2026-11-21 after the upstream sync. The per-type tables are in [data-j02-survey/](data-j02-survey/) (`part_00.md` to `part_02.md`), with file:line for every gap.
+**Status:** decided with the owner on 2026-11-21 (see "Decisions" at the end); not built yet. Built on a survey of all 190 types registered in `src/init.cpp`, taken on 2026-11-21 after the upstream sync. The per-type tables are in [data-j02-survey/](data-j02-survey/) (`part_00.md` to `part_02.md`), with file:line for every gap.
 
 ## The problem
 
@@ -122,7 +122,15 @@ A redefinition of one of these appends today, and hundreds of shipped definition
 
 This is about the size of the upstream sync. Phases 1 and 2 are mostly mechanical once the round-trip test exists. Phase 3 is per-type work, and phase 4 needs a small amount of shared code in `generic_factory` that every keyed list then uses.
 
-## Decisions for the owner
+## Decisions (2026-11-21)
+
+The owner took all four proposals:
+1. **Collections keep appending.** Talk topics, monster groups, item groups, trait groups, vehicle groups and mapgen alternatives still add on redefinition, and gain `delete` and `replace` operations.
+2. **A duplicate id within one mod is a load error.** The shipped duplicates are fixed as part of the work.
+3. **List entries are named by natural keys,** plus an optional `"id"` any entry can be given. Vanilla talk responses without an id can be matched by their exact text.
+4. **Mapgen gets `"replaces": true`,** which supersedes every earlier mapgen for its map tiles. Later mods can still add alternatives.
+
+## The questions as they were put
 
 1. **Collections that append on redefinition today** (talk topics, monster groups, item groups, trait groups, vehicle groups, mapgen alternatives).
    - Proposed: they stay collections. A redefinition keeps adding, and `delete` and `replace` are added for when a mod wants to remove or replace.

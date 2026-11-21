@@ -356,8 +356,8 @@
           {
             "if": { "u_has_any_wound": [ "bleeding_laceration_medium" ], "bodypart": { "context_val": "bodypart" } },
             "then": [
-              { "u_remove_wound": { "context_val": "bp" }, "wound_id": [ "bleeding_laceration_medium" ] },
-              { "u_add_wound": { "context_val": "bp" }, "wound_id": "laceration_medium" }
+              { "u_remove_wound": { "context_val": "bodypart" }, "wound_id": [ "bleeding_laceration_medium" ] },
+              { "u_add_wound": { "context_val": "bodypart" }, "wound_id": "laceration_medium" }
             ]
           },
           {

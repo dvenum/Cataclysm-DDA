@@ -41,7 +41,12 @@
         "blacklist_flag": "BIONIC_LIMB"
       },
       {
-        "if": { "u_bodypart_is_bleeding": { "u_val": "pyrokin_cauterize_picked_bodypart" } },
+        "if": {
+          "or": [
+            { "u_bodypart_is_bleeding": { "u_val": "pyrokin_cauterize_picked_bodypart" } },
+            { "u_has_effect": "bleed", "bodypart": { "u_val": "pyrokin_cauterize_picked_bodypart" } }
+          ]
+        },
         "then": {
           "if": {
             "or": [ { "u_has_trait": "PROF_MED" }, { "roll_contested": { "math": [ "u_skill('firstaid')" ] }, "difficulty": 7 } ]
@@ -58,6 +63,10 @@
               "intensity": { "math": [ "u_effect_intensity('effect_psi_post_cauterize', 'bodypart': u_pyrokin_cauterize_picked_bodypart) + 1" ] }
             },
             { "u_lose_effect": "bleed", "target_part": { "u_val": "pyrokin_cauterize_picked_bodypart" } },
+            {
+              "run_eocs": "EOC_REGEN_MUTATIONS_STOP_BLEEDING_WOUNDS_EFFECTS",
+              "variables": { "bodypart": { "u_val": "pyrokin_cauterize_picked_bodypart" } }
+            },
             { "math": [ "u_hp(u_pyrokin_cauterize_picked_bodypart) -= 1" ] },
             { "math": [ "u_pain('type': 'perceived') += rng(1,2)" ] },
             {

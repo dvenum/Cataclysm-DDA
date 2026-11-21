@@ -33,6 +33,8 @@ static const json_character_flag json_flag_ATTUNEMENT( "ATTUNEMENT" );
 static const json_character_flag json_flag_HERITAGE( "HERITAGE" );
 static const json_character_flag json_flag_PERK( "PERK" );
 
+static const material_id material_all( "all" );
+
 static const mutation_category_id mutation_category_ANY( "ANY" );
 
 static const trait_group::Trait_group_tag Trait_group_EMPTY_GROUP( "EMPTY_GROUP" );
@@ -741,6 +743,18 @@ void mutation_branch::check_consistency()
             if( !allergy.second.is_valid() ) {
                 debugmsg( "mutation %s has a food allergy with undefined morale type %s",
                           mid.c_str(), allergy.second.c_str() );
+            }
+        }
+        for( const auto &absorb : mdata.vitamin_absorb_multi ) {
+            if( absorb.first != material_all && !absorb.first.is_valid() ) {
+                debugmsg( "mutation %s has vitamins_absorb_multi for undefined material %s (use a "
+                          "material, or \"all\")", mid.c_str(), absorb.first.c_str() );
+            }
+            for( const std::pair<const vitamin_id, double> &vit : absorb.second ) {
+                if( !vit.first.is_valid() ) {
+                    debugmsg( "mutation %s has vitamins_absorb_multi for undefined vitamin %s",
+                              mid.c_str(), vit.first.c_str() );
+                }
             }
         }
         // Suppress these onload warnings for overlapping mods

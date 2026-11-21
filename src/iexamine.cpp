@@ -922,6 +922,12 @@ class atm_menu
                                            "Your current balance is: %s" ),
                                         format_money( you.cash ) );
 
+            // Every option needs a cash card, and the game may have none (vanilla doesn't).
+            if( !item::type_is_defined( itype_cash_card ) ) {
+                add_info( purchase_card, _( "This ATM has no cash cards to issue." ) );
+                return;
+            }
+
             if( you.cash >= 1000 ) {
                 add_choice( purchase_card, _( "Purchase cash card?" ) );
             } else {

@@ -1759,9 +1759,9 @@ bool construct::check_deconstruct( const tripoint_bub_ms &p )
         return !!here.furn( p ).obj().deconstruct ||
                ( !here.furn( p ).obj().base_item.is_null() && !here.furn( p ).obj().has_flag( "NO_DECONSTRUCT" ) );
     }
-    // terrain can only be deconstructed when there is no furniture in the way
-    return !!here.ter( p ).obj().deconstruct ||
-           ( !here.furn( p ).obj().base_item.is_null() || !here.furn( p ).obj().has_flag( "NO_DECONSTRUCT" ) );
+    // terrain can only be deconstructed when there is no furniture in the way, and
+    // done_deconstruct only takes terrain apart that says what it leaves behind
+    return !!here.ter( p ).obj().deconstruct;
 }
 
 bool construct::check_up_OK( const tripoint_bub_ms & )

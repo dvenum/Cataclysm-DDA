@@ -1754,5 +1754,10 @@ item_location item_location::form_loc( Character *you, map *here, const tripoint
     }
     debugmsg( "Couldn't find item %s to form item_location, forming dummy location to ensure minimum functionality",
               it.display_name() );
+    // Items processed with no carrier (on the map, in a vehicle part) have nobody to put the
+    // dummy on.
+    if( you == nullptr ) {
+        return item_location( map_cursor( here != nullptr ? here : &get_map(), p ), &it );
+    }
     return item_location( *you, &it );
 }

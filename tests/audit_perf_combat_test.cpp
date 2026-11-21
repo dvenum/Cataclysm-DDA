@@ -864,12 +864,12 @@ TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
         guy.set_attitude( NPCATT_KILL );
         arm_fighter();
         learn_attack_spells( guy, 10 );
-        monster *near = zombie_at( { 2, 1, 0 } );
+        monster *near_mon = zombie_at( { 2, 1, 0 } );
         zombie_at( { 7, -3, 0 } );
         zombie_at( { 8, -3, 0 } );
         zombie_at( { -12, 6, 0 } );
         here.build_map_cache( 0 );
-        check_choice( choose_attack( guy, near, 5 ), "spell", { 8, -2, 0 }, 372 );
+        check_choice( choose_attack( guy, near_mon, 5 ), "spell", { 8, -2, 0 }, 372 );
     }
     SECTION( "spells only, in a room with a doorway" ) {
         guy.set_attitude( NPCATT_KILL );

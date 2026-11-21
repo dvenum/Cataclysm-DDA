@@ -26,6 +26,18 @@
   },
   {
     "type": "recipe",
+    "result": "mc_steel_lump",
+    "id_suffix": "from_qt_steel",
+    "obsolete": true
+  },
+  {
+    "type": "recipe",
+    "result": "lc_steel_lump",
+    "id_suffix": "from_ch_steel",
+    "obsolete": true
+  },
+  {
+    "type": "recipe",
     "result": "hc_steel_lump",
     "obsolete": true
   },

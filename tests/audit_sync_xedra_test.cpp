@@ -178,7 +178,7 @@ TEST_CASE( "sync-89431_cauterize_stops_both_kinds_of_bleeding", "[.][mindovermat
         CHECK( runs_quietly( effect_on_condition_EOC_PYROKIN_CAUTERIZE_SELECTOR, guy ) );
         const bodypart_id bp = picked_part();
         CAPTURE( bp.id().str() );
-        CHECK_FALSE( guy.has_bleeding_wound( bp.id() ) );
+        CHECK_FALSE( guy.is_bleeding( bp ) );
         CHECK( guy.has_wound( wound_laceration_medium, bp.id() ) );
     }
     SECTION( "the bleed effect" ) {

@@ -12,6 +12,8 @@
 #include <unordered_map>
 #include <variant>
 
+#include <char8_t-remediation/char8_t-remediation.h>
+
 #include "catacharset.h"
 #include "debug.h"
 #include "event.h"
@@ -770,7 +772,7 @@ bool may_hold_settings( const cata_path &file )
     std::error_code ec;
     const std::filesystem::file_time_type time = std::filesystem::last_write_time( path, ec );
     const std::uintmax_t size = ec ? 0 : std::filesystem::file_size( path, ec );
-    const std::string key = path.generic_u8string();
+    const std::string key = from_u8string( path.generic_u8string() );
     if( !ec ) {
         const auto found = scanned.find( key );
         if( found != scanned.end() && found->second.time == time && found->second.size == size ) {

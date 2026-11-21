@@ -2411,7 +2411,8 @@ bool WORLD::set_compression_enabled( bool enabled )
                     // its cold one
                     const std::array<std::string, 3> temps = { ".cold", ".warm", ".hot" };
                     for( const std::string &temp : temps ) {
-                        start_zzip( character_map_memory_folder / ( mmr_path.filename().generic_u8string() +
+                        start_zzip( character_map_memory_folder / ( from_u8string( mmr_path.filename().generic_u8string() )
+                                    +
                                     temp + std::string( zzip_suffix ) ) );
                     }
                     for( const cata_path &map_memory : character_map_memory_files ) {

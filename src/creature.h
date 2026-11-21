@@ -256,6 +256,16 @@ using terminating_effect = struct terminating_effect_t {
 
 enum class melee_hit_quality { glancing, good, solid };
 
+// Which hit spreads of a melee attack count as dodged (deal_melee_attack runs on_dodge for them)
+enum class melee_dodge_rule : int {
+    // A partly dodged hit still lands: only a full miss (hit spread -25 or less) is dodged
+    partial,
+    // A grab or disarm takes hold or it doesn't: any negative hit spread is dodged
+    all_or_nothing,
+    // The attack can't be dodged: nothing is
+    undodgeable,
+};
+
 class Creature : public viewer
 {
     public:
@@ -470,6 +480,9 @@ class Creature : public viewer
         float last_dodge = 0.0f;
         float last_block = 0.0f;
         int last_hit_spread = 0;
+        // The blow those rolls were against, before the block cut it down: a worn shield that
+        // blocks it wears by it.  Callers of block_hit set it.
+        damage_instance last_blow;
         // Forgets the last defense rolls, for a hit no block was rolled against (a hardcoded
         // attack's dodge_check, a hit passed on to a rider): block_hit then doesn't block it
         void clear_melee_defense();
@@ -478,7 +491,8 @@ class Creature : public viewer
         }
         // begins a melee attack against the creature
         // returns hit - dodge - block
-        int deal_melee_attack( Creature *source, int hitroll, bool allow_block = true );
+        int deal_melee_attack( Creature *source, int hitroll, bool allow_block = true,
+                               melee_dodge_rule dodge_rule = melee_dodge_rule::partial );
 
         // damage multiplier represnting partial dodge (hitroll-dodge).
         // 0=complete miss, 1=square hit

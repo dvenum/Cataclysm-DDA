@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <string>
+#include <utility>
 
 #include "activity_tracker.h"
 #include "avatar.h"
@@ -18,9 +20,11 @@
 #include "json_loader.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "mattack_common.h"
 #include "math_parser_diag_value.h"
 #include "melee.h"
-#include "mattack_common.h"
+#include "messages.h"
+#include "mod_setting.h"
 #include "monattack.h"
 #include "monster.h"
 #include "mtype.h"
@@ -45,7 +49,9 @@ static const flag_id json_flag_GRAB( "GRAB" );
 static const itype_id itype_test_armguard( "test_armguard" );
 
 static const matype_id test_style_cmbt_j01( "test_style_cmbt_j01" );
+static const matype_id test_style_sync_dodge_count( "test_style_sync_dodge_count" );
 
+static const skill_id skill_dodge( "dodge" );
 static const skill_id skill_melee( "melee" );
 static const skill_id skill_unarmed( "unarmed" );
 
@@ -94,23 +100,52 @@ static double num_var( const Creature &c, const std::string &key )
     return val == nullptr ? 0.0 : val->dbl();
 }
 
+static bool has_message_containing( const std::string &text )
+{
+    for( const std::pair<std::string, std::string> &msg :
+         Messages::recent_messages( Messages::size() ) ) {
+        if( msg.second.find( text ) != std::string::npos ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // #89640 moved blocking into a block roll and dropped the wear on a worn shield that takes the
 // blow, which the old block_hit dealt: worn shields no longer wore out from blocking.
+// The wear goes by the blow before the block cut it down (sync review): by the damage left after
+// it, a strong block left too little to wear a sturdy guard, and a perfect one none at all.
 TEST_CASE( "sync-89640_worn_shield_wears_when_it_blocks", "[melee][sync]" )
 {
     sync_scene scene;
     avatar &you = get_avatar();
     item &guard = make_blocker( you );
     monster &zed = spawn_test_monster( "mon_zombie", you.pos_bub() + tripoint::east );
+    // A STURDY item takes no wear from a blow below this
+    const float sturdy = std::max( 10.0f, guard.resist( damage_bash, true, body_part_arm_l.id() ) *
+                                   1.3333f );
+    float blow = 200.0f;
+    bool strong = false;
 
+    SECTION( "a fair block" ) {
+    }
+    SECTION( "a strong block" ) {
+        you.set_str_base( 40 );
+        blow = 3.0f * sturdy;
+        strong = true;
+    }
     int blocks = 0;
     for( int i = 0; i < 100 && guard.damage() == 0; ++i ) {
         you.blocks_left = 1;
         you.set_stamina( you.get_stamina_max() );
         bodypart_id bp = body_part_arm_l;
-        damage_instance dam( damage_bash, 200.0f );
+        damage_instance dam( damage_bash, blow );
         if( melee::roll_and_block_hit( you, &zed, bp, dam ) ) {
             ++blocks;
+        }
+        if( strong ) {
+            // What gets past the block couldn't wear the guard; the blow can
+            REQUIRE( Creature::melee_damage_mult( you.last_hit_spread ) * blow < sturdy );
         }
     }
     REQUIRE( blocks > 0 );
@@ -148,17 +183,29 @@ TEST_CASE( "sync-89640_hardcoded_monster_attacks_roll_a_fresh_block", "[melee][s
         CHECK( blocks > 0 );
     }
     SECTION( "the last exchange's block doesn't carry over" ) {
-        // Unarmed 0: no block at all
+        // Unarmed 0, no shield: no block at all, so a lunge lands in full (3 to 7 bash), whatever
+        // a block in an earlier exchange left behind
         monster &zed = spawn_test_monster( "mon_zombie", you.pos_bub() + tripoint::east );
-        you.blocks_left = 1;
-        you.last_dodge = 0.0f;
-        you.last_block = 40.0f;
-        you.last_hit_spread = -10;
-        bodypart_id bp = body_part_arm_l;
-        damage_instance dam( damage_bash, 10.0f );
-        CHECK_FALSE( melee::roll_and_block_hit( you, &zed, bp, dam ) );
-        CHECK( you.blocks_left == 1 );
-        CHECK( dam.total_damage() == Approx( 10.0f ) );
+        zed.set_dest( you.pos_abs() );
+        REQUIRE( zed.attack_target() == &you );
+        for( int i = 0; i < 10; ++i ) {
+            you.blocks_left = 1;
+            you.set_dodges_left( 0 );
+            you.set_all_parts_hp_to_max();
+            you.remove_effect( effect_downed );
+            you.last_dodge = 0.0f;
+            you.last_block = 40.0f;
+            you.last_hit_spread = -10;
+            zed.set_moves( 100 );
+            REQUIRE( mattack::lunge( &zed ) );
+            CHECK( you.blocks_left == 1 );
+            int hp_lost = 0;
+            for( const bodypart_id &part : you.get_all_body_parts() ) {
+                hp_lost += you.get_part_hp_max( part ) - you.get_part_hp_cur( part );
+            }
+            CHECK( hp_lost >= 3 );
+            CHECK( hp_lost <= 7 );
+        }
     }
 }
 
@@ -270,6 +317,80 @@ TEST_CASE( "sync-89470_dodge_reactions_only_on_a_miss", "[melee][martial_arts][s
         REQUIRE_FALSE( Creature::melee_attack_hit( spread ) );
         CHECK( num_var( attacker, "cmbt_j01_dodged" ) == 1 );
     }
+    // Sync review: a grab or disarm misses at any negative hit spread, and that is a dodge
+    SECTION( "an all-or-nothing attack missed by a little" ) {
+        const int spread = you.deal_melee_attack( &attacker, static_cast<int>( dodge ) - 10, false,
+                           melee_dodge_rule::all_or_nothing );
+        REQUIRE( Creature::melee_attack_hit( spread ) );
+        REQUIRE( spread < 0 );
+        CHECK( num_var( attacker, "cmbt_j01_dodged" ) == 1 );
+    }
+    // Sync review: an undodgeable attack lands whatever the dodge roll, so it's never a dodge
+    SECTION( "an undodgeable attack" ) {
+        const int spread = you.deal_melee_attack( &attacker, static_cast<int>( dodge ) - 40, false,
+                           melee_dodge_rule::undodgeable );
+        REQUIRE_FALSE( Creature::melee_attack_hit( spread ) );
+        CHECK( num_var( attacker, "cmbt_j01_dodged" ) == 0 );
+    }
+}
+
+// Sync review: a monster's grab misses at any negative hit spread (it takes hold or it doesn't),
+// but on_dodge ran only for a full miss, at -25 or less: a grab dodged by a little gave no dodge
+// counter, ondodge EOC or practice. And an undodgeable attack ran on_dodge, then hit in full.
+TEST_CASE( "sync-review_monster_attacks_count_dodges_by_their_own_miss", "[melee][grapple][sync]" )
+{
+    sync_scene scene;
+    avatar &you = get_avatar();
+    you.martial_arts_data->add_martialart( test_style_sync_dodge_count );
+    you.martial_arts_data->set_style( test_style_sync_dodge_count, false );
+
+    SECTION( "a grab" ) {
+        // Its hit roll centers on the avatar's dodge roll: about a third of the grabs miss by
+        // less than 25
+        monster &grabber = spawn_test_monster( "mon_test_sync_clumsy_grabber",
+                                               you.pos_bub() + tripoint::east );
+        grabber.set_dest( you.pos_abs() );
+        REQUIRE( grabber.attack_target() == &you );
+        const mtype_special_attack &grab = grabber.type->special_attacks.at( "grab" );
+        int misses = 0;
+        int small_misses = 0;
+        for( int i = 0; i < 60; ++i ) {
+            you.clear_effects();
+            grabber.clear_effects();
+            you.set_dodges_left( 5 );
+            you.set_stamina( you.get_stamina_max() );
+            Messages::clear_messages();
+            REQUIRE( grab->call( grabber ) );
+            if( has_message_containing( "but you dodge" ) ) {
+                ++misses;
+                if( Creature::melee_attack_hit( you.last_hit_spread ) ) {
+                    ++small_misses;
+                }
+            }
+        }
+        REQUIRE( small_misses > 0 );
+        CHECK( num_var( you, "sync_dodges" ) == misses );
+    }
+    SECTION( "an undodgeable attack" ) {
+        you.set_dex_base( 20 );
+        you.set_skill_level( skill_dodge, 10 );
+        monster &jabber = spawn_test_monster( "mon_test_sync_undodgeable_jabber",
+                                              you.pos_bub() + tripoint::east );
+        jabber.set_dest( you.pos_abs() );
+        REQUIRE( jabber.attack_target() == &you );
+        const mtype_special_attack &jab = jabber.type->special_attacks.at( "test_sync_undodgeable_jab" );
+        int full_misses = 0;
+        for( int i = 0; i < 10; ++i ) {
+            you.set_dodges_left( 5 );
+            you.set_all_parts_hp_to_max();
+            REQUIRE( jab->call( jabber ) );
+            if( !Creature::melee_attack_hit( you.last_hit_spread ) ) {
+                ++full_misses;
+            }
+        }
+        REQUIRE( full_misses > 0 );
+        CHECK( num_var( you, "sync_dodges" ) == 0 );
+    }
 }
 
 // #89469's activity widgets compared u_val('activity_level') with 500, but it is half the
@@ -341,4 +462,23 @@ TEST_CASE( "sync-89444_hardcoded_mutation_attack_is_a_load_error", "[mutations][
                        R"("attack_text_npc": "%1$s hits %2$s", "chance": 10, )"
                        R"("hardcoded_effect": true })" ),
                        Catch::Matchers::Contains( "hardcoded mutation attacks are gone" ) );
+}
+
+// Sync review: a mod's WORLD_OPTION naming the old EXPLOSIVE_COMBAT_EXERTION bool failed to load
+// ("there's no option"); it now reads as COMBAT_EXERTION, its value migrated as a save's is.
+TEST_CASE( "sync-89469_world_option_reads_the_old_exertion_bool", "[options][mod_settings][sync]" )
+{
+    const auto read = []( const std::string & json ) {
+        const JsonObject jo = json_loader::from_string( json );
+        jo.allow_omitted_members();
+        return read_world_option( jo );
+    };
+    using option = std::pair<std::string, std::string>;
+    CHECK( read( R"({ "type": "WORLD_OPTION", "name": "EXPLOSIVE_COMBAT_EXERTION", "default": true })" )
+           == option( "COMBAT_EXERTION", "explosive" ) );
+    CHECK( read(
+               R"({ "type": "WORLD_OPTION", "name": "EXPLOSIVE_COMBAT_EXERTION", "default": false })" )
+           == option( "COMBAT_EXERTION", "normal" ) );
+    CHECK( read( R"({ "type": "WORLD_OPTION", "name": "COMBAT_EXERTION", "default": "combat" })" )
+           == option( "COMBAT_EXERTION", "combat" ) );
 }

@@ -43,7 +43,8 @@
             "id": "warlord_setup",
             "condition": { "math": [ "u_setup != 1" ] },
             "effect": [
-              { "math": [ "_wm_uid = rand(1200)" ] },
+              { "math": [ "wells_machine_last_uid++" ] },
+              { "math": [ "_wm_uid = wells_machine_last_uid" ] },
               { "math": [ "u_wm_uid = _wm_uid" ] },
               { "math": [ "u_setup = 1" ] },
               { "u_spawn_monster": "mon_wells_machine_leg", "real_count": 3, "min_radius": 1, "max_radius": 1 },
@@ -258,8 +259,8 @@
       { "message": "A strange bomb is ejected from the Warlord's munitions bay", "type": "warning" },
       { "math": [ "u_timer_smoke = time('now')" ] },
       { "npc_location_variable": { "context_val": "loc" } },
-      { "math": [ "_tar.x += rng(-4, 4)" ] },
-      { "math": [ "_tar.y += rng(-4, 4)" ] },
+      { "math": [ "_loc.x += rng(-4, 4)" ] },
+      { "math": [ "_loc.y += rng(-4, 4)" ] },
       { "map_spawn_item": "warlord_gasbomb_act", "loc": { "context_val": "loc" } }
     ]
   }

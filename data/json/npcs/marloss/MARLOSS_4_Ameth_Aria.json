@@ -147,7 +147,7 @@
       },
       {
         "text": "Approach.",
-        "topic": "TALK_MARLOSS_EVAN_JOTH_WAKE",
+        "topic": "TALK_MARLOSS_EVAN_Ameth_1a",
         "condition": { "math": [ "time_since('cataclysm', 'unit':'days') >= 160" ] }
       },
       { "text": "Nevermind?", "topic": "TALK_DONE" }
@@ -203,7 +203,7 @@
     "responses": [
       {
         "text": "Heard who?",
-        "topic": "TALK_MARLOSS_EVAN_JOTH_WAKE",
+        "topic": "TALK_MARLOSS_EVAN_Ameth_1a",
         "condition": { "math": [ "time_since('cataclysm', 'unit':'days') >= 160" ] }
       }
     ]
@@ -219,7 +219,7 @@
     "responses": [
       {
         "text": "Heard who?",
-        "topic": "TALK_MARLOSS_EVAN_JOTH_WAKE",
+        "topic": "TALK_MARLOSS_EVAN_Ameth_1a",
         "condition": { "math": [ "time_since('cataclysm', 'unit':'days') >= 160" ] }
       }
     ]

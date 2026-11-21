@@ -439,7 +439,7 @@
     "replace": "shot_speedloader"
   },
   {
-    "id": [ "air_pistol_beretta_9mm_mag " ],
+    "id": [ "air_pistol_beretta_9mm_mag" ],
     "type": "MIGRATION",
     "replace": "air_pistol_mag"
   }

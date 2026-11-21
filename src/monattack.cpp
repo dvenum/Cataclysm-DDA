@@ -3867,7 +3867,7 @@ bool mattack::fixbot_spawner( monster *z )
         }
     }
 
-    // 10 max allies
+    // 20 max allies
     constexpr int max_allies = 20;
     if( ally_count >= max_allies ) {
         return true;
@@ -3894,10 +3894,10 @@ bool mattack::fixbot_spawner_haywire( monster *z )
 
     // count allies
     const bool u_see = get_player_view().sees( here, *z );
+    // every bot turns haywire when the printer dies, and this one prints haywire bots
     int ally_count = 0;
     for( monster &candidate : g->all_monsters() ) {
-        if( candidate.type->id == mon_LS_fixbot || candidate.type->id == mon_LS_spotbot ||
-            candidate.type->id == mon_LS_medbot ) {
+        if( candidate.type->id == mon_LS_fixbot_haywire ) {
             ally_count++;
         }
     }

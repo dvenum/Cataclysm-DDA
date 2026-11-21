@@ -45,13 +45,15 @@ struct cata_timer {
                 }
                 if( child_duration_sum != 0 ) {
                     uint64_t self_duration = duration - child_duration_sum;
-                    uint64_t self_percentage = ( self_duration * 100 ) / adj_duration;
+                    // a node can spend all its time waiting on its children
+                    uint64_t self_percentage = adj_duration == 0 ? 0 :
+                                               ( self_duration * 100 ) / adj_duration;
                     terminal_string = ") (self duration: " +
                                       std::to_string( self_duration ) + "us, " + std::to_string( self_percentage ) + "%)";
                 }
                 DebugLog( DebugLevel::D_WARNING, D_MAIN )
                         << prefix << name << ": " << std::to_string( adj_duration )
-                        << "us (avg: " << std::to_string( adj_duration / count )
+                        << "us (avg: " << std::to_string( count == 0 ? 0 : adj_duration / count )
                         << "us) (count: " << count
                         << terminal_string;
                 std::string child_prefix;

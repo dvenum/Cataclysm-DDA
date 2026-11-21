@@ -197,7 +197,10 @@
         {
           "id": "EOC_LS_Obelisk_fixbot_grant",
           "condition": {
-            "and": [ { "compare_string": [ "yes", { "u_val": "ls_had_a_passcode" } ] }, { "not": { "u_has_trait": "LS_Passcode_1" } } ]
+            "and": [
+              { "compare_string": [ "yes", { "u_val": "ls_had_a_passcode" } ] },
+              { "not": { "u_has_trait": "LS_Passcode_fixbot" } }
+            ]
           },
           "effect": [
             {

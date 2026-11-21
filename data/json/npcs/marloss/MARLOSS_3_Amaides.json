@@ -80,16 +80,6 @@
     "id": [ "TALK_MARLOSS_EVAN_AMAIDES_1a" ],
     "responses": [
       {
-        "text": "Why did you all decide to settle down here?",
-        "topic": "TALK_MARLOSS_EVAN_AMAIDES_SETTLE",
-        "condition": { "math": [ "time_since('cataclysm', 'unit':'days') <= 160" ] }
-      },
-      {
-        "text": "How are things here?",
-        "topic": "TALK_MARLOSS_EVAN_AMAIDES_SITUATION",
-        "condition": { "math": [ "time_since('cataclysm', 'unit':'days') <= 160" ] }
-      },
-      {
         "text": "Tell me a bit about yourself.",
         "topic": "TALK_MARLOSS_EVAN_AMAIDES_SELF",
         "condition": { "math": [ "time_since('cataclysm', 'unit':'days') <= 160" ] }
@@ -208,7 +198,7 @@
     },
     "responses": [
       { "text": "How'd you end up here?", "topic": "TALK_MARLOSS_EVAN_AMAIDES_AboutMe_Basic" },
-      { "text": "Why do you follow the Marloss?", "topic": "TALK_MARLOSS_EVAN_AMAIDES_Marloss" },
+      { "text": "Why do you follow the Marloss?", "topic": "MARLOSS_EVAN_AMAIDES_Marloss" },
       {
         "text": "How do you feel about the other evangelists?",
         "topic": "TALK_MARLOSS_EVAN_AMAIDES_OtherEvangelists"

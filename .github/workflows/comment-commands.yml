@@ -11,7 +11,7 @@ env:
 
 jobs:
   issue-comment-job:
-    if: ${{ !github.event.issue.pull_request }}
+    if: ${{ github.repository == 'CleverRaven/Cataclysm-DDA' && !github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -60,7 +60,7 @@ jobs:
           gh issue reopen "$ISSUE_NUMBER"
 
   pr-comment-job:
-    if: ${{ github.event.issue.pull_request }}
+    if: ${{ github.repository == 'CleverRaven/Cataclysm-DDA' && github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -11565,10 +11565,10 @@ void fix_wound_activity_actor::finish( player_activity &act, Character &who )
     who.invalidate_crafting_inventory();
 
     // Each fix replaces the next wound it mends, and the wound it adds holds back that
-    // wound's HP, not the first one's
-    for( int i = 0; i < amount; i++ ) {
-        const int hp_damage = bp->has_wound( mended_wound ) ?
-                              bp->get_wound( mended_wound )->get_hp_damage() : 0;
+    // wound's HP, not the first one's. Wounds that healed or changed meanwhile aren't treated.
+    int treated = 0;
+    for( ; treated < amount && bp->has_wound( mended_wound ); treated++ ) {
+        const int hp_damage = bp->get_wound( mended_wound )->get_hp_damage();
         for( const wound_type_id &id : fix.wounds_removed ) {
             bp->remove_wound( id );
         }
@@ -11580,11 +11580,11 @@ void fix_wound_activity_actor::finish( player_activity &act, Character &who )
     }
 
     if( fix.mod_hp ) {
-        bp->mod_hp_cur( fix.mod_hp * amount );
+        bp->mod_hp_cur( fix.mod_hp * treated );
     }
 
     for( const wound_skill &sk : fix.skills ) {
-        who.practice( sk.skill, 10 * amount, static_cast<int>( sk.level * 1.25 ) );
+        who.practice( sk.skill, 10 * treated, static_cast<int>( sk.level * 1.25 ) );
     }
 
     for( const wound_proficiency &wound_prof : fix.proficiencies ) {

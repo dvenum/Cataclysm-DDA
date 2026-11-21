@@ -177,8 +177,10 @@ faction_template::faction_template( const JsonObject &jsobj )
     optional( jsobj, was_loaded, "mon_faction", mon_faction, mfaction_str_id::NULL_ID() );
     if( jsobj.has_member( "mon_faction" ) ) {
         mon_faction_inherited = false;
-    } else if( was_loaded && !mon_faction.is_null() ) {
-        mon_faction_inherited = true;
+    } else if( was_loaded && faction_id( jsobj.get_string( "copy-from" ) ) != id ) {
+        // a copy of another faction shares its monster faction; a faction redefined from
+        // itself keeps what it had
+        mon_faction_inherited = !mon_faction.is_null();
     }
     optional( jsobj, was_loaded, "epilogues", epilogue_data );
     optional( jsobj, was_loaded, "mutiny_faction", mutiny_faction, faction_amf );

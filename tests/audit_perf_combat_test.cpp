@@ -799,6 +799,8 @@ void check_choice( const chosen_attack &got, const std::string &kind,
 } // namespace
 
 // NPC-P01, NPC-P02: the attack and target an NPC chooses in a few typical fights.
+// The test spells roll random damage, so a spell's choice also depends on how many random
+// numbers the ratings before it draw (item::effective_dps draws some for every hit quality).
 TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
 {
     scoped_weather_override weather( WEATHER_CLEAR );
@@ -858,7 +860,12 @@ TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
         zombie_at( { -7, 3, 0 } );
         zombie_at( { -7, 4, 0 } );
         here.build_map_cache( 0 );
-        check_choice( choose_attack( guy, near_ally, 4 ), "spell", { -11, 2, 0 }, 67 );
+        const chosen_attack chosen = choose_attack( guy, near_ally, 4 );
+        check_choice( chosen, "spell", { 6, 4, 0 }, 70 );
+        // whichever zombies it aims at, the blast spares the player
+        const std::set<tripoint_bub_ms> blast = calculate_spell_effect_area(
+                guy.magic->get_spell( spell_test_npc_fireball ), center + chosen.target, guy );
+        CHECK( blast.count( get_avatar().pos_bub() ) == 0 );
     }
     SECTION( "spells or a gun, with zombies near and far" ) {
         guy.set_attitude( NPCATT_KILL );
@@ -869,7 +876,7 @@ TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
         zombie_at( { 8, -3, 0 } );
         zombie_at( { -12, 6, 0 } );
         here.build_map_cache( 0 );
-        check_choice( choose_attack( guy, near, 5 ), "spell", { 8, -2, 0 }, 372 );
+        check_choice( choose_attack( guy, near, 5 ), "spell", { 15, -4, 0 }, 371 );
     }
     SECTION( "spells only, in a room with a doorway" ) {
         guy.set_attitude( NPCATT_KILL );

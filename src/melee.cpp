@@ -2503,6 +2503,16 @@ bool Character::block_hit( Creature *source, bodypart_id &bp_hit, damage_instanc
     item_location shield = best_shield();
     const bool conductive_shield = shield && shield->conductive();
 
+    // A worn shield on the blocking limb takes the blow, and wears as armor does
+    if( !block_item && shield && shield->has_flag( flag_BLOCK_WHILE_WORN ) &&
+        block_bp != bodypart_str_id::NULL_ID() && shield->covers( block_bp ) &&
+        source != nullptr && !source->is_hallucination() ) {
+        for( damage_unit &du : dam.damage_units ) {
+            shield->damage_armor_durability( du, du, block_bp, calculate_by_enchantment( 1,
+                                             enchant_vals::mod::EQUIPMENT_DAMAGE_CHANCE ), this );
+        }
+    }
+
     float total_damage = 0.0f;
     float damage_blocked = 0.0f;
 

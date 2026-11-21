@@ -14,6 +14,7 @@ class Character;
 class Creature;
 class item;
 class item_location;
+struct damage_instance;
 enum class technique_rejection : int;
 
 /*
@@ -67,6 +68,13 @@ float hit_roll_against( const Creature &target, const std::function<float()> &ro
 melee_statistic_data get_stats();
 void clear_stats();
 int blocking_ability( const item &shield );
+/**
+ * For a hit on @p target that landed without a hit roll (the hardcoded monster attacks, after
+ * dodge_check): rolls a fresh block, which cuts @p dam down as it would a square melee hit,
+ * then calls block_hit.  Returns what block_hit returns.
+ */
+bool roll_and_block_hit( Creature &target, Creature *source, bodypart_id &bp_hit,
+                         damage_instance &dam );
 extern melee_statistic_data melee_stats;
 
 /** Where a line of the manual technique menu comes from; the menu's groups, in order */

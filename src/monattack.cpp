@@ -56,6 +56,7 @@
 #include "martialarts.h"
 #include "material.h"
 #include "mattack_common.h"
+#include "melee.h"
 #include "memorial_logger.h"
 #include "memory_fast.h"
 #include "messages.h"
@@ -784,7 +785,7 @@ bool mattack::acid_barf( monster *z )
         return true;
     }
 
-    target->block_hit( z, hit, dam_inst );
+    melee::roll_and_block_hit( *target, z, hit, dam_inst );
 
     int dam = target->deal_damage( z,  hit, dam_inst ).total_damage();
 
@@ -1720,7 +1721,7 @@ bool mattack::fungus_inject( monster *z )
         return true;
     }
 
-    target->block_hit( z, hit, dam_inst );
+    melee::roll_and_block_hit( *target, z, hit, dam_inst );
 
     int dam = player_character.deal_damage( z, hit, dam_inst ).total_damage();
     if( dam > 0 ) {
@@ -1777,7 +1778,7 @@ bool mattack::fungus_bristle( monster *z )
         return true;
     }
 
-    target->block_hit( z, hit, dam_inst );
+    melee::roll_and_block_hit( *target, z, hit, dam_inst );
 
     int dam = target->deal_damage( z, hit, dam_inst ).total_damage();
     if( dam > 0 ) {
@@ -1946,7 +1947,7 @@ bool mattack::fungus_fortify( monster *z )
         return true;
     }
 
-    target->block_hit( z, hit, dam_inst );
+    melee::roll_and_block_hit( *target, z, hit, dam_inst );
 
     int dam = player_character.deal_damage( z, hit, dam_inst ).total_damage();
     // no way to pump spores into a bionic limb
@@ -3231,7 +3232,7 @@ bool mattack::flesh_golem( monster *z )
         return true;
     }
 
-    target->block_hit( z, hit, dam_inst );
+    melee::roll_and_block_hit( *target, z, hit, dam_inst );
 
     int dam = target->deal_damage( z, hit, dam_inst ).total_damage();
     if( one_in( 6 ) ) {
@@ -3368,7 +3369,7 @@ bool mattack::lunge( monster *z )
         return true;
     }
 
-    target->block_hit( z, hit, dam_inst );
+    melee::roll_and_block_hit( *target, z, hit, dam_inst );
 
     int dam = target->deal_damage( z, hit, dam_inst ).total_damage();
     if( dam > 0 ) {

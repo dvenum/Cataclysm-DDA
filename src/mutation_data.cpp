@@ -168,7 +168,10 @@ static mut_attack load_mutation_attack( const JsonObject &jo )
     jo.read( "attack_text_npc", ret.attack_text_npc );
     jo.read( "required_mutations", ret.required_mutations );
     jo.read( "blocker_mutations", ret.blocker_mutations );
-    jo.read( "hardcoded_effect", ret.hardcoded_effect );
+    if( jo.has_member( "hardcoded_effect" ) ) {
+        jo.throw_error_at( "hardcoded_effect",
+                           "hardcoded mutation attacks are gone: give the attack base_damage or strength_damage" );
+    }
 
     if( jo.has_string( "body_part" ) ) {
         ret.bp = bodypart_str_id( jo.get_string( "body_part" ) );
@@ -183,10 +186,8 @@ static mut_attack load_mutation_attack( const JsonObject &jo )
         jo.throw_error( "Attack message unset" );
     }
 
-    if( !ret.hardcoded_effect && ret.base_damage.empty() && ret.strength_damage.empty() ) {
+    if( ret.base_damage.empty() && ret.strength_damage.empty() ) {
         jo.throw_error( "Damage unset" );
-    } else if( ret.hardcoded_effect && ( !ret.base_damage.empty() || !ret.strength_damage.empty() ) ) {
-        jo.throw_error( "Damage and hardcoded effect are both set (must be one, not both)" );
     }
 
     if( ret.chance <= 0 ) {

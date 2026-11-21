@@ -841,12 +841,12 @@ TEST_CASE( "npc_json_goal_ends_during_its_own_walk", "[npc][npc_goal][errand]" )
 {
     npc &guy = goal_npc();
     map &here = get_map();
-    const tripoint_abs_ms far = here.get_abs( goal_origin + tripoint( 15, 0, 0 ) );
+    const tripoint_abs_ms far_pos = here.get_abs( goal_origin + tripoint( 15, 0, 0 ) );
     const bool still_applies = GENERATE( false, true );
     CAPTURE( still_applies );
     SECTION( "until" ) {
         goal_test_tree tree( "test_goal_walk_until_tree" );
-        get_globals().set_global_value( "test_goal_spot", far );
+        get_globals().set_global_value( "test_goal_spot", far_pos );
         adopt( guy, "test_goal_walk_until" );
         run_npc_turns( guy, 2 );
         REQUIRE( npc_goal_runtime::owns_walk( guy ) );
@@ -867,7 +867,7 @@ TEST_CASE( "npc_json_goal_ends_during_its_own_walk", "[npc][npc_goal][errand]" )
     }
     SECTION( "timeout" ) {
         goal_test_tree tree( "test_goal_walk_timeout_tree" );
-        get_globals().set_global_value( "test_goal_spot", far );
+        get_globals().set_global_value( "test_goal_spot", far_pos );
         adopt( guy, "test_goal_walk_timeout" );
         const time_point started = guy.json_goal->started;
         guy.set_value( "test_goal_off", still_applies ? 0.0 : 1.0 );

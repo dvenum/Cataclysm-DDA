@@ -2,10 +2,13 @@
 #include <optional>
 #include <string>
 
+#include "activity_actor_definitions.h"
 #include "avatar.h"
 #include "calendar.h"
 #include "cata_catch.h"
+#include "cata_scope_helpers.h"
 #include "character.h"
+#include "construction.h"
 #include "coordinates.h"
 #include "debug.h"
 #include "dialogue.h"
@@ -18,23 +21,43 @@
 #include "iuse.h"
 #include "map.h"
 #include "map_helpers.h"
+#include "mapdata.h"
 #include "math_parser_diag_value.h"
 #include "player_helpers.h"
 #include "pocket_type.h"
 #include "point.h"
 #include "ret_val.h"
+#include "sleep.h"
+#include "stomach.h"
 #include "talker.h"
+#include "trap.h"
 #include "type_id.h"
+
+static const construction_str_id construction_constr_deconstruct( "constr_deconstruct" );
 
 static const effect_on_condition_id
 effect_on_condition_EOC_audit_sync_items_activate_npc( "EOC_audit_sync_items_activate_npc" );
+
+static const furn_str_id furn_f_chair( "f_chair" );
+static const furn_str_id furn_f_table( "f_table" );
 
 static const itype_id itype_audit_sync_items_bud( "audit_sync_items_bud" );
 static const itype_id itype_audit_sync_items_rune( "audit_sync_items_rune" );
 static const itype_id itype_audit_sync_items_timer( "audit_sync_items_timer" );
 static const itype_id itype_audit_sync_items_tin( "audit_sync_items_tin" );
 static const itype_id itype_backpack( "backpack" );
+static const itype_id itype_cash_card( "cash_card" );
+static const itype_id itype_oxycodone( "oxycodone" );
 static const itype_id itype_stick_long( "stick_long" );
+
+static const ter_str_id ter_t_dirt( "t_dirt" );
+static const ter_str_id ter_t_window( "t_window" );
+
+static const trait_id trait_OPIATEHYPER( "OPIATEHYPER" );
+
+static const trap_str_id tr_rollmat( "tr_rollmat" );
+
+static const vitamin_id vitamin_vit_mme( "vit_mme" );
 
 // Guards the fix to item_location::form_loc: an item processed with no carrier that is not
 // where it is processed (map::add_item processes new items before placing them) got its dummy
@@ -143,5 +166,100 @@ TEST_CASE( "use-p08_transform_parent_pocket_check_uses_the_given_location",
         u.set_wielded_item( item( itype_audit_sync_items_bud ) );
         const item_location held = u.get_wielded_item();
         CHECK( actor->can_use( u, held, &here, u.pos_bub() ).success() );
+    }
+}
+
+// Guards construct::check_deconstruct: since #89499 the terrain branch also passed when
+// the (absent) furniture lacked NO_DECONSTRUCT, so "deconstruct" was offered on every tile
+// without furniture, and failed after 20 minutes.
+TEST_CASE( "sync-89499_deconstruct_needs_something_to_take_apart", "[construction]" )
+{
+    clear_avatar();
+    clear_map();
+    map &here = get_map();
+    const construction &con = construction_constr_deconstruct.obj();
+    const tripoint_bub_ms site = get_avatar().pos_bub() + tripoint::east;
+    here.furn_set( site, furn_str_id::NULL_ID() );
+
+    SECTION( "bare ground" ) {
+        here.ter_set( site, ter_t_dirt );
+        REQUIRE_FALSE( here.ter( site )->deconstruct.has_value() );
+        CHECK_FALSE( can_construct( con, site ) );
+    }
+    SECTION( "terrain that comes apart" ) {
+        here.ter_set( site, ter_t_window );
+        REQUIRE( here.ter( site )->deconstruct.has_value() );
+        CHECK( can_construct( con, site ) );
+    }
+    SECTION( "furniture that comes apart" ) {
+        here.ter_set( site, ter_t_dirt );
+        here.furn_set( site, furn_f_table );
+        REQUIRE( here.furn( site )->deconstruct.has_value() );
+        CHECK( can_construct( con, site ) );
+    }
+}
+
+// Guards the ATM after #89166 removed cash cards: buying one built the undefined cash_card
+// (a debugmsg and an undefined item) and charged $10.  The menu no longer offers it, and a
+// purchase saved before the update is refused.
+TEST_CASE( "sync-89166_atm_sells_no_removed_cash_cards", "[activity][iexamine]" )
+{
+    clear_avatar();
+    clear_map();
+    avatar &u = get_avatar();
+    REQUIRE_FALSE( item::type_is_defined( itype_cash_card ) );
+    u.cash = 2000;
+
+    u.assign_activity( atm_activity_actor( purchase_card ) );
+    const std::string msg = capture_debugmsg_during( [&]() {
+        process_activity( u );
+    } );
+    CAPTURE( msg );
+    CHECK( msg.empty() );
+    CHECK( u.cash == 2000 );
+    CHECK_FALSE( u.has_item_with( []( const item & it ) {
+        return it.typeId() == itype_cash_card;
+    } ) );
+}
+
+// Guards Opiate Intolerance (#89621): its vitamins_absorb_multi was keyed on the vitamin
+// vit_mme, not a material, so the twelvefold dose never applied.
+TEST_CASE( "sync-89621_opiate_intolerance_multiplies_opiate_doses", "[mutation][vitamin]" )
+{
+    clear_avatar();
+    avatar &u = get_avatar();
+    const item pill( itype_oxycodone );
+    const int usual = u.compute_effective_nutrients( pill ).get_vitamin( vitamin_vit_mme );
+    REQUIRE( usual > 0 );
+
+    u.set_mutation( trait_OPIATEHYPER );
+    REQUIRE( u.has_trait( trait_OPIATEHYPER ) );
+    CHECK( u.compute_effective_nutrients( pill ).get_vitamin( vitamin_vit_mme ) == usual * 12 );
+}
+
+// Guards sleep comfort after #89346: it took the best of furniture and trap (so a rollmat on
+// furniture counts), but started from 0, so bare floor and rough ground lost their discomfort.
+TEST_CASE( "sync-89346_sleeping_on_the_ground_stays_uncomfortable", "[sleep]" )
+{
+    clear_map();
+    map &here = get_map();
+    const tripoint_bub_ms spot( 60, 60, 0 );
+    here.ter_set( spot, ter_t_dirt );
+    here.furn_set( spot, furn_str_id::NULL_ID() );
+    const on_out_of_scope clear_trap( [&here, &spot]() {
+        here.remove_trap( spot );
+    } );
+
+    SECTION( "bare ground" ) {
+        CHECK( comfort_data::human_comfort_at( spot ) == here.ter( spot )->comfort -
+               here.move_cost( spot ) );
+        const int neutral = comfort_data::COMFORT_NEUTRAL;
+        CHECK( comfort_data::human_comfort_at( spot ) < neutral );
+    }
+    SECTION( "a rollmat on a chair counts" ) {
+        here.furn_set( spot, furn_f_chair );
+        here.trap_set( spot, tr_rollmat );
+        REQUIRE( tr_rollmat->comfort > furn_f_chair->comfort );
+        CHECK( comfort_data::human_comfort_at( spot ) == tr_rollmat->comfort );
     }
 }

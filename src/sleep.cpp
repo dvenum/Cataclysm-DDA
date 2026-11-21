@@ -62,15 +62,20 @@ const comfort_data &comfort_data::human()
 
 int comfort_data::human_comfort_at( const tripoint_bub_ms &p )
 {
-    int ret = 0;
     const map &here = get_map();
     const optional_vpart_position vp = here.veh_at( p );
     const furn_id &furn = here.furn( p );
     const trap &trap = here.tr_at( p );
 
+    // The vehicle or the ground, then the best of that, the furniture and the trap (a rollmat
+    // on furniture).  Bare floor, rough ground and vehicle parts without a seat or bed are
+    // below neutral.
+    int ret = 0;
     if( vp ) {
         const std::optional<vpart_reference> board = vp.part_with_feature( "BOARDABLE", true );
-        ret = std::max( ret, board ? board->info().comfort : -here.move_cost( p ) );
+        ret = board ? board->info().comfort : -here.move_cost( p );
+    } else {
+        ret = here.ter( p )->comfort - here.move_cost( p );
     }
     if( furn != furn_str_id::NULL_ID() ) {
         ret = std::max( ret, furn->comfort );
@@ -78,7 +83,6 @@ int comfort_data::human_comfort_at( const tripoint_bub_ms &p )
     if( !trap.is_null() ) {
         ret = std::max( ret, trap.comfort );
     }
-    ret = std::max( ret, here.ter( p )->comfort - here.move_cost( p ) );
 
     return ret;
 }

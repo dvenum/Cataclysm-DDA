@@ -4682,6 +4682,11 @@ void atm_activity_actor::do_turn( player_activity &act, Character &who )
 void atm_activity_actor::finish( player_activity &act, Character &who )
 {
     act.set_to_null();
+    if( option_selected == purchase_card && !item::type_is_defined( itype_cash_card ) ) {
+        // a purchase saved before cash cards were removed
+        add_msg( m_info, _( "This ATM has no cash cards to issue." ) );
+        return;
+    }
     if( option_selected == purchase_card ) {
         item card( itype_cash_card, calendar::turn );
         card.ammo_set( card.ammo_default(), 0 );

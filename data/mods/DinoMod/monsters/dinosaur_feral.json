@@ -24,7 +24,7 @@
     "melee_skill": 3,
     "dodge": 1,
     "description": "A large, fast predatory bipedal dinosaur, decorated with three colorful horns on its head and dotted with bright skin bones with sharp teeth and a long tail.  The pupils are dilated and the breathing is rapid and noisy.",
-    "copy-from": "mon_dilophosaurus",
+    "copy-from": "mon_ceratosaurus",
     "fear_triggers": [  ]
   },
   {

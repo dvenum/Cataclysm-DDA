@@ -228,12 +228,12 @@
         "SWIM_GOGGLES"
       ]
     },
-    "revert_to": "afs_recon_headset",
+    "revert_to": "afs_recon_headset_off",
     "qualities": [ [ "GLARE", 1 ], [ "HACK", 3 ] ],
     "delete": { "flags": [ "BLIND", "DEAF" ] },
     "use_action": [
       {
-        "target": "afs_recon_headset",
+        "target": "afs_recon_headset_off",
         "menu_text": "Deactivate",
         "msg": "The OmniWare screen flickers off with a brief flash, leaving you in darkness.",
         "type": "transform"

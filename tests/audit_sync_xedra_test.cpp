@@ -13,11 +13,16 @@
 #include "dialogue.h"
 #include "effect.h"
 #include "effect_on_condition.h"
+#include "item_transformation.h"
+#include "itype.h"
+#include "iuse.h"
+#include "iuse_actor.h"
 #include "magic.h"
 #include "magic_enchantment.h"
 #include "map.h"
 #include "map_helpers.h"
 #include "math_parser_diag_value.h"
+#include "mtype.h"
 #include "npc.h"
 #include "options_helpers.h"
 #include "pimpl.h"
@@ -36,6 +41,13 @@ effect_on_condition_EOC_SYLPH_SPELL_EXPERIENCE_INCREASER( "EOC_SYLPH_SPELL_EXPER
 
 static const efftype_id effect_bleed( "bleed" );
 static const efftype_id effect_effect_ewwww_de_zombie( "effect_ewwww_de_zombie" );
+
+static const itype_id itype_afs_recon_headset( "afs_recon_headset" );
+static const itype_id itype_afs_recon_headset_off( "afs_recon_headset_off" );
+
+static const mtype_id mon_ceratosaurus( "mon_ceratosaurus" );
+static const mtype_id mon_ceratosaurus_feral( "mon_ceratosaurus_feral" );
+static const mtype_id mon_dilophosaurus( "mon_dilophosaurus" );
 
 static const skill_id skill_gramarye( "gramarye" );
 
@@ -178,4 +190,29 @@ TEST_CASE( "sync-89431_cauterize_stops_both_kinds_of_bleeding", "[.][mindovermat
         CAPTURE( bp.id().str() );
         CHECK_FALSE( guy.has_effect( effect_bleed, bp ) );
     }
+}
+
+// #89438: the active OmniWare screen's Deactivate and its revert_to both pointed at the active
+// screen, so it could never be switched off and stayed "active" when its battery died.  Needs the
+// mod: run with --mods=no_npc_food,aftershock_exoplanet "[aftershock_exoplanet]".
+TEST_CASE( "sync-89438_omniware_screen_turns_off", "[.][aftershock_exoplanet]" )
+{
+    const itype &screen = *itype_afs_recon_headset;
+    const use_function *use = screen.get_use( "transform" );
+    REQUIRE( use != nullptr );
+    const iuse_transform *deactivate = dynamic_cast<const iuse_transform *>( use->get_actor_ptr() );
+    REQUIRE( deactivate != nullptr );
+    CHECK( deactivate->transform.target == itype_afs_recon_headset_off );
+    REQUIRE( screen.transform_into.has_value() );
+    CHECK( screen.transform_into->target == itype_afs_recon_headset_off );
+}
+
+// #89374: the crazed ceratosaurus copied the dilophosaurus, so it had a dilophosaurus' body and
+// stats.  Needs the mod: run with --mods=DinoMod "[DinoMod]".
+TEST_CASE( "sync-89374_crazed_ceratosaurus_is_a_ceratosaurus", "[.][DinoMod]" )
+{
+    REQUIRE( mon_ceratosaurus->hp != mon_dilophosaurus->hp );
+    CHECK( mon_ceratosaurus_feral->hp == mon_ceratosaurus->hp );
+    CHECK( mon_ceratosaurus_feral->speed == mon_ceratosaurus->speed );
+    CHECK( mon_ceratosaurus_feral->volume == mon_ceratosaurus->volume );
 }

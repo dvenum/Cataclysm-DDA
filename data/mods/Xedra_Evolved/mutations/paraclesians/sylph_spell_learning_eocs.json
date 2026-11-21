@@ -177,12 +177,6 @@
             },
             {
               "and": [
-                { "math": [ "u_spell_level('create_light_sylph') >= 0 " ] },
-                { "math": [ "u_spell_level('create_light_sylph') < 15" ] }
-              ]
-            },
-            {
-              "and": [
                 { "math": [ "u_spell_level('sylph_call_lightning') >= 0 " ] },
                 { "math": [ "u_spell_level('sylph_call_lightning') < 15" ] }
               ]

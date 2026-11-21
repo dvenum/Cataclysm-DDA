@@ -54,6 +54,7 @@
 #include "mapdata.h"
 #include "mattack_common.h"
 #include "mdarray.h"
+#include "melee.h"
 #include "messages.h"
 #include "monster.h"
 #include "mtype.h"
@@ -1106,6 +1107,16 @@ void Creature::clear_melee_defense()
     last_hit_spread = 0;
 }
 
+bool melee::roll_and_block_hit( Creature &target, Creature *source, bodypart_id &bp_hit,
+                                damage_instance &dam )
+{
+    target.clear_melee_defense();
+    target.last_block = target.block_roll( source );
+    target.last_hit_spread = static_cast<int>( melee_full_force_threshold - target.last_block );
+    dam.mult_damage( Creature::melee_damage_mult( target.last_hit_spread ), true );
+    return target.block_hit( source, bp_hit, dam );
+}
+
 int Creature::deal_melee_attack( Creature *source, int hitroll, bool allow_block )
 {
 
@@ -1987,8 +1998,8 @@ bool Creature::attack_air( const tripoint_bub_ms &p )
 
 bool Creature::dodge_check( float hit_roll, bool force_try, float )
 {
-    // No block is rolled here, so a block_hit after it (the hardcoded monster attacks) mustn't
-    // use an earlier attack's rolls
+    // No block is rolled here, so a block_hit after it mustn't use an earlier attack's rolls
+    // (the hardcoded monster attacks roll their own: melee::roll_and_block_hit)
     clear_melee_defense();
 
     // If successfully uncanny dodged, no need to calculate dodge chance

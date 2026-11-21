@@ -114,7 +114,7 @@ The event EOCs run with the martial artist as the alpha (`u_`) talker and the ot
 - `technique`: string, id of the technique used for the attack, `tec_none` when none.
 - `bp`: string, body part hit. For attack events it is the target's; for `ongethit_eocs` it is your own body part about to be hit, and for `onblock_eocs` the body part that takes the blocked hit.
 - `damage`: number. For attack events, the damage the hit dealt after armor. For `ongethit_eocs`, the incoming damage before blocking and armor; for `onblock_eocs`, the damage left after the block, before armor.
-- `hit`, `crit`, `killed`: 1 or 0.
+- `hit`, `crit`, `killed`: 1 or 0. A glancing (partly dodged) hit counts as a hit.
 - `grab_strength`: number, the strength of the hold (1 to 100, the intensity of the `GRAB` effect).
 - `grab_part`: string, the body part held: the victim's for `ongrab_eocs`, your own for `ongrabbed_eocs`. Not set when the creature held is a monster (a monster is held as a whole).
 

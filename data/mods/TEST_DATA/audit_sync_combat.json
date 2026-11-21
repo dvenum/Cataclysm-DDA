@@ -1,0 +1,22 @@
+[
+  {
+    "type": "MONSTER",
+    "id": "mon_test_sync_override_grabber",
+    "copy-from": "mon_test_counter_grabber",
+    "name": { "str": "override test grabber", "//~": "NO_I18N" },
+    "description": {
+      "str": "A grabber whose own copy of the grab attack replaces its condition, as the skeletal hulk's does.",
+      "//~": "NO_I18N"
+    },
+    "special_attacks": [ { "id": "grab", "cooldown": 0, "move_cost": 0, "condition": { "not": { "u_has_effect": "downed" } } } ]
+  },
+  {
+    "type": "MONSTER",
+    "id": "mon_test_sync_blocker",
+    "copy-from": "mon_test_counter_grabber",
+    "name": { "str": "blocking test monster", "//~": "NO_I18N" },
+    "description": { "str": "A monster that always tries to block.", "//~": "NO_I18N" },
+    "special_attacks": [  ],
+    "block": { "chance": 100, "effectiveness": 30, "count": 1 }
+  }
+]

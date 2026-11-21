@@ -1614,7 +1614,8 @@ std::string avatar::total_daily_calories_string() const
 
     std::string columns = "  Day  Sleep None Light Moderate Brisk Active Extra";
     if( show_explosive ) {
-        columns += " Explosive";
+        // One column for everything above extra; with COMBAT_EXERTION on "combat", that's fighting
+        columns += melee_exertion_level() >= COMBAT_EXERCISE ? "    Combat" : " Explosive";
     }
     columns += "    Gained  Spent  Total";
     const std::string header_string =

@@ -2503,11 +2503,12 @@ bool Character::block_hit( Creature *source, bodypart_id &bp_hit, damage_instanc
     item_location shield = best_shield();
     const bool conductive_shield = shield && shield->conductive();
 
-    // A worn shield on the blocking limb takes the blow, and wears as armor does
+    // A worn shield on the blocking limb takes the blow, and wears by it as armor does: by the
+    // blow before the block cut it down, so a good block doesn't spare the shield
     if( !block_item && shield && shield->has_flag( flag_BLOCK_WHILE_WORN ) &&
         block_bp != bodypart_str_id::NULL_ID() && shield->covers( block_bp ) &&
         source != nullptr && !source->is_hallucination() ) {
-        for( damage_unit &du : dam.damage_units ) {
+        for( damage_unit du : last_blow.damage_units ) {
             shield->damage_armor_durability( du, du, block_bp, calculate_by_enchantment( 1,
                                              enchant_vals::mod::EQUIPMENT_DAMAGE_CHANCE ), this );
         }
@@ -3239,7 +3240,7 @@ void avatar::disarm( npc &target )
     // (a block doesn't stop it, and it's all or nothing: a partly dodged lunge misses)
     int hitspread = target.deal_melee_attack( this, melee::hit_roll_against( target, [this] {
         return hit_roll();
-    } ), false );
+    } ), false, melee_dodge_rule::all_or_nothing );
     if( hitspread < 0 ) {
         add_msg( _( "You lunge for the %s, but miss!" ), it->tname() );
         item weap = get_wielded_item() ? *get_wielded_item() : null_item_reference();

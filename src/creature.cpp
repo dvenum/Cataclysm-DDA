@@ -1105,6 +1105,7 @@ void Creature::clear_melee_defense()
     last_dodge = 0.0f;
     last_block = 0.0f;
     last_hit_spread = 0;
+    last_blow.clear();
 }
 
 bool melee::roll_and_block_hit( Creature &target, Creature *source, bodypart_id &bp_hit,
@@ -1113,11 +1114,13 @@ bool melee::roll_and_block_hit( Creature &target, Creature *source, bodypart_id 
     target.clear_melee_defense();
     target.last_block = target.block_roll( source );
     target.last_hit_spread = static_cast<int>( melee_full_force_threshold - target.last_block );
+    target.last_blow = dam;
     dam.mult_damage( Creature::melee_damage_mult( target.last_hit_spread ), true );
     return target.block_hit( source, bp_hit, dam );
 }
 
-int Creature::deal_melee_attack( Creature *source, int hitroll, bool allow_block )
+int Creature::deal_melee_attack( Creature *source, int hitroll, bool allow_block,
+                                 melee_dodge_rule dodge_rule )
 {
 
     const float dodge = dodge_roll();
@@ -1147,11 +1150,22 @@ int Creature::deal_melee_attack( Creature *source, int hitroll, bool allow_block
     last_dodge = dodge;
     last_block = block;
     last_hit_spread = hit_spread;
+    last_blow.clear();
 
-    // If attacker missed call targets on_dodge event.  A partly dodged hit still lands, so it
-    // doesn't count: no dodge counter, reaction or practice for an attack that got through.
-    if( dodge > 0.0 && !melee_attack_hit( hit_spread ) && source != nullptr &&
-        !source->is_hallucination() ) {
+    // If the attack missed, call the target's on_dodge event.  A partly dodged hit still lands,
+    // so it doesn't count: no dodge counter, reaction or practice for an attack that got through.
+    bool dodged = false;
+    switch( dodge_rule ) {
+        case melee_dodge_rule::partial:
+            dodged = !melee_attack_hit( hit_spread );
+            break;
+        case melee_dodge_rule::all_or_nothing:
+            dodged = hit_spread < 0;
+            break;
+        case melee_dodge_rule::undodgeable:
+            break;
+    }
+    if( dodged && dodge > 0.0 && source != nullptr && !source->is_hallucination() ) {
         on_dodge( source, source->get_melee() );
     }
     add_msg_debug( debugmode::DF_CREATURE, "Final hitspread %d",
@@ -1269,6 +1283,9 @@ void Creature::deal_melee_hit( Creature *source, int hit_spread, bool critical_h
     }
     dam = source->modify_damage_dealt_with_enchantments( dam );
     damage_instance d = dam; // copy, since we will mutate in block_hit
+    // The blow the block works against: partly dodged, not yet blocked
+    last_blow = dam;
+    last_blow.mult_damage( melee_damage_mult( static_cast<int>( hit_spread + last_block ) ), true );
     d.mult_damage( melee_damage_mult( hit_spread ), true ); // partial dodge
     bodypart_id bp_hit = bp == nullptr ? select_body_part( -1, -1, source->can_attack_high(),
                          hit_spread ) : *bp;

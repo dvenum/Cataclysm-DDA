@@ -956,10 +956,13 @@ bool melee_actor::call( monster &z ) const
 
     // Dodge check
     const int acc = accuracy >= 0 ? accuracy : z.type->melee_skill;
-    // A grab can only be dodged, as a character's grab can: a block doesn't stop it
+    // A grab can only be dodged, as a character's grab can: a block doesn't stop it.  It takes
+    // hold or it doesn't, so any negative hit spread dodges it.
+    const melee_dodge_rule dodge_rule = !dodgeable ? melee_dodge_rule::undodgeable :
+                                        is_grab ? melee_dodge_rule::all_or_nothing : melee_dodge_rule::partial;
     int hitspread = target->deal_melee_attack( &z, melee::hit_roll_against( *target, [acc] {
         return melee::melee_hit_range( acc );
-    } ), blockable && !is_grab );
+    } ), blockable && !is_grab, dodge_rule );
     std::vector<bodypart_id> bodyparts_hit = pick_bodyparts_hit( target, hitspread );
 
     if( bodyparts_hit.empty() ) {
@@ -1113,17 +1116,23 @@ bool melee_actor::call( monster &z ) const
     add_msg_debug( debugmode::DF_MATTACK, "Damage multiplier %.1f (range %.1f - %.1f)", multiplier,
                    min_mul, max_mul );
     damage.mult_damage( multiplier );
+    // The blow the block works against: partly dodged, not yet blocked
+    damage_instance blow = damage;
 
     // check if it can be dodged, and by extension, partially dodged
     if( dodgeable ) {
+        blow.mult_damage( Creature::melee_damage_mult( static_cast<int>( hitspread +
+                          target->last_block ) ), true );
         damage.mult_damage( Creature::melee_damage_mult( hitspread ), true );
     }
 
     // split the damage between all the bodyparts we gonna hit
     damage.mult_damage( 1.0 / bodyparts_hit.size() );
+    blow.mult_damage( 1.0 / bodyparts_hit.size() );
 
     // Block our hit
     if( blockable ) {
+        target->last_blow = blow;
         for( bodypart_id &bp_id : bodyparts_hit ) {
             target->block_hit( &z, bp_id, damage );
         }

@@ -1169,7 +1169,7 @@ bodypart_id Character::body_window( const std::string &menu_header,
 
         std::string msg;
         std::string desc;
-        bool bleeding = has_effect( effect_bleed, bp.id() ) || has_bleeding_wound( bp.id() );
+        bool bleeding = has_effect( effect_bleed, bp.id() ) || is_bleeding( bp );
         bool bitten = has_effect( effect_bite, bp.id() );
         bool infected = has_effect( effect_infected, bp.id() );
         bool bandaged = has_effect( effect_bandaged, bp.id() );

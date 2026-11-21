@@ -36,7 +36,8 @@ struct wound_limb_score {
     limb_score_id score;
     // additive, ie `0.1` will reduce score by 0.1, so so 1.00 -> 0.90 and 0.5 -> 0.4
     float value = 0.f;
-    // multiplicative, ie `0.9` will multiply score, so 1.00 -> 0.90 and 0.5 -> 0.45
+    // the fraction of the score removed, after `value`: the mods of a score are summed, and the
+    // score is multiplied by 1 - their sum, so `0.1` makes 1.00 -> 0.90 and 0.5 -> 0.45
     float mod = 0.f;
 
     void deserialize( const JsonObject &jo );
@@ -211,6 +212,7 @@ class wound
         // return how much pain this specific wound gives you, reduced depending on how long the wound presented and character effects.
         // not affected by limb pain_mod since this one was applied at evaluation
         // painkillers are not applied as well, they are applied at character as a whole
+        // With nullptr, it leaves out who's PAIN_IMMUNE and narcosis, which make it 0.
         int get_pain( const Character *who ) const;
         // accessor to wound pain.
         int get_pain_raw() const;

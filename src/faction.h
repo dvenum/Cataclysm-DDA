@@ -180,6 +180,9 @@ class faction_template
         std::map<std::string, std::bitset<static_cast<size_t>( npc_factions::relationship::rel_types )>>
                 relations;
         mfaction_str_id mon_faction; // associated monster faction, if any
+        // mon_faction came from a "copy-from" parent: the parent owns that monster faction (see
+        // monfaction::associated_faction), the copy's NPCs only count as it
+        bool mon_faction_inherited = false;
         std::vector<faction_epilogue_data> epilogue_data;
         // where a member that mutinies goes (npc::mutiny()); "amf" unless the JSON says otherwise.
         // Template data: a faction from a save takes it from its template.

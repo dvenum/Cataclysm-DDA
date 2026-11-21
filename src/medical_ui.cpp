@@ -230,7 +230,7 @@ void medical_ui::print_debug_wound_info( const Character &you, const bodypart_id
                     for( const wound_limb_score &s : wd.type->get_limb_scores() ) {
                         tooltip += string_format( "%s: %s%s\n", s.score.str(),
                                                   s.value != 0.f ? string_format( "%.2f", s.value ) : "",
-                                                  s.mod != 1.f ? string_format( "%.2f", s.mod ) : "" );
+                                                  s.mod != 0.f ? string_format( " mod %.2f", s.mod ) : "" );
 
                     }
                     tooltip += "-----\n";

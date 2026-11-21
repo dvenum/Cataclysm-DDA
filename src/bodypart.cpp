@@ -1071,8 +1071,9 @@ float bodypart::wound_adjusted_limb_value( const float val, const limb_score_id 
         }
     }
 
-    // makes the penalty less harsh, i imagine?
-    percent /= 0.75;
+    // the limb keeps its full score down to 75% HP, then loses it in proportion; never above
+    // full, or a healthy limb's boost would hide its wound penalties
+    percent = std::min( percent / 0.75f, 1.f );
 
     float ret = val * percent;
     ret -= wound_score_penalty_flat;

@@ -175,6 +175,11 @@ faction_template::faction_template( const JsonObject &jsobj )
     // a copy keeps the parent's relations to the factions it doesn't list
     load_relations( jsobj );
     optional( jsobj, was_loaded, "mon_faction", mon_faction, mfaction_str_id::NULL_ID() );
+    if( jsobj.has_member( "mon_faction" ) ) {
+        mon_faction_inherited = false;
+    } else if( was_loaded && !mon_faction.is_null() ) {
+        mon_faction_inherited = true;
+    }
     optional( jsobj, was_loaded, "epilogues", epilogue_data );
     optional( jsobj, was_loaded, "mutiny_faction", mutiny_faction, faction_amf );
 }
@@ -604,6 +609,7 @@ faction *faction_manager::get( const faction_id &id, const bool complain )
                         elem.second.set_name( fac_temp.get_name() );
                         elem.second.desc = fac_temp.desc;
                         elem.second.mon_faction = fac_temp.mon_faction;
+                        elem.second.mon_faction_inherited = fac_temp.mon_faction_inherited;
                         elem.second.epilogue_data = fac_temp.epilogue_data;
                         elem.second.mutiny_faction = fac_temp.mutiny_faction;
                         for( const auto &rel_data : fac_temp.relations ) {

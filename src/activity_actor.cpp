@@ -9629,8 +9629,11 @@ void build_construction_activity_actor::do_turn( player_activity &act, Character
     const tripoint_bub_ms construction_bub = here.get_bub( construction_location );
     partial_con *pc = here.partial_con_at( construction_bub );
     if( !pc && construction_done_at( building, construction_bub ) ) {
-        // another builder finished it; a multi-activity in the backlog goes on
+        // another builder finished it, so this activity ended in success; a multi-activity in
+        // the backlog goes on
+        activity_end_hooks ended = act.take_end_hooks();
         act.set_to_null();
+        ended.run( you, false );
         return;
     }
     // Maybe the player and the NPC are working on the same construction at the same time
@@ -11556,10 +11559,18 @@ void fix_wound_activity_actor::finish( player_activity &act, Character &who )
     }
     who.invalidate_crafting_inventory();
 
+    // Each fix replaces the next wound it mends, and the wound it adds holds back that
+    // wound's HP, not the first one's
     for( int i = 0; i < amount; i++ ) {
+        const int hp_damage = bp->has_wound( mended_wound ) ?
+                              bp->get_wound( mended_wound )->get_hp_damage() : 0;
+        for( const wound_type_id &id : fix.wounds_removed ) {
+            bp->remove_wound( id );
+        }
+        bool first_added = true;
         for( const wound_type_id &id : fix.wounds_added ) {
-            const wound *to_be_removed = bp->get_wound( mended_wound );
-            bp->add_wound( id, who, to_be_removed->get_hp_damage() );
+            bp->add_wound( id, who, first_added ? hp_damage : 0 );
+            first_added = false;
         }
     }
 
@@ -11573,12 +11584,6 @@ void fix_wound_activity_actor::finish( player_activity &act, Character &who )
 
     for( const wound_proficiency &wound_prof : fix.proficiencies ) {
         who.practice_proficiency( wound_prof.prof, fix.time );
-    }
-
-    for( int i = 0; i < amount; i++ ) {
-        for( const wound_type_id &id : fix.wounds_removed ) {
-            bp->remove_wound( id );
-        }
     }
 
     add_msg( m_good, fix.success_msg.translated() );

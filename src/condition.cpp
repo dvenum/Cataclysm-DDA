@@ -1178,6 +1178,28 @@ conditional_t::func f_has_any_wound( const JsonObject &jo, std::string_view memb
     };
 }
 
+// A literal severity is checked as the condition loads: a typo is a load error, not an error
+// each time the condition is checked.
+static void check_wound_severity_at_load( const JsonObject &jo, std::string_view member,
+        const str_or_var &severity )
+{
+    if( severity.is_constant() && !severity.constant().empty() &&
+        !io::enum_is_valid<wound_severity>( severity.constant() ) ) {
+        jo.throw_error_at( member, string_format( "unknown wound severity \"%s\"",
+                           severity.constant() ) );
+    }
+}
+
+static wound_severity wound_severity_at_least( const str_or_var &severity_var,
+        const_dialogue const &d )
+{
+    const std::string severity_str = severity_var.evaluate( d );
+    if( severity_str.empty() ) {
+        return wound_severity::MINOR;
+    }
+    return io::string_to_enum<wound_severity>( severity_str );
+}
+
 conditional_t::func f_bodypart_is_wounded_and_fixable( const JsonObject &jo,
         std::string_view member, bool is_npc )
 {
@@ -1186,6 +1208,9 @@ conditional_t::func f_bodypart_is_wounded_and_fixable( const JsonObject &jo,
 
     return [bp, is_npc, check_sublimbs]( const_dialogue const & d ) {
         bodypart_id bid = bodypart_id( bp.evaluate( d ) );
+        if( require_character( d, is_npc, "bodypart_is_wounded_and_fixable" ) == nullptr ) {
+            return false;
+        }
         const const_talker &who = *d.const_actor( is_npc );
         const bodypart *bpart = who.get_bodypart( bid );
         if( bpart == nullptr ) {
@@ -1228,6 +1253,9 @@ conditional_t::func f_bodypart_is_wounded( const JsonObject &jo, std::string_vie
 
     return [bp, is_npc, check_sublimbs]( const_dialogue const & d ) {
         bodypart_id bid = bodypart_id( bp.evaluate( d ) );
+        if( require_character( d, is_npc, "bodypart_is_wounded" ) == nullptr ) {
+            return false;
+        }
         const const_talker &who = *d.const_actor( is_npc );
         const bodypart *bpart = who.get_bodypart( bid );
         if( bpart == nullptr ) {
@@ -1265,6 +1293,7 @@ conditional_t::func f_bodypart_is_bleeding( const JsonObject &jo, std::string_vi
 
     str_or_var severity_var;
     optional( jo, false, "severity", severity_var );
+    check_wound_severity_at_load( jo, "severity", severity_var );
     const bool check_sublimbs = jo.get_bool( "check_sublimbs", false );
 
     return [bp, severity_var, is_npc, check_sublimbs]( const_dialogue const & d ) {
@@ -1280,11 +1309,7 @@ conditional_t::func f_bodypart_is_bleeding( const JsonObject &jo, std::string_vi
             return false;
         }
 
-        const std::string severity_str = severity_var.evaluate( d );
-        wound_severity severity = wound_severity::MINOR;
-        if( !severity_str.empty() ) {
-            severity = io::string_to_enum<wound_severity>( severity_str );
-        }
+        const wound_severity severity = wound_severity_at_least( severity_var, d );
 
         for( const wound &wd : part->get_wounds() ) {
             if( wd.type->is_bleeding_wound() && wd.type->severity >= severity ) {
@@ -2146,15 +2171,13 @@ conditional_t::func f_is_bleeding( const JsonObject &jo, std::string_view member
                                    bool is_npc )
 {
     str_or_var severity_var = get_str_or_var( jo.get_member( member ), member, true );
+    check_wound_severity_at_load( jo, member, severity_var );
 
     return [severity_var, is_npc]( const_dialogue const & d ) {
-        const std::string severity_str = severity_var.evaluate( d );
-
-        wound_severity severity = wound_severity::MINOR;
-        if( !severity_str.empty() ) {
-            severity = io::string_to_enum<wound_severity>( severity_str );
+        if( require_character( d, is_npc, "is_bleeding" ) == nullptr ) {
+            return false;
         }
-
+        const wound_severity severity = wound_severity_at_least( severity_var, d );
         const const_talker &who = *d.const_actor( is_npc );
 
         for( const bodypart_id &bp_id : who.get_all_body_parts( get_body_part_flags::none ) ) {

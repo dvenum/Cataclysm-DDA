@@ -40,7 +40,7 @@ Align bleed values to the ones in body_parts.json unless being instructed otherw
         "score": "grip",
         "mod": 0.15  // for `mod`, the game will first sums all the `mod` of the same score, and then multiplies the final value by [ 1 - total ]
       },           // so single wound with mod 0.15 corresponds to 15% reduction of grip. so if limb score is 0.5, it will be decreased to 0.425
-    ],           // flat reduction is applied first, mod is applied later
+    ],           // flat reduction is applied first, mod is applied later; below 75% of its HP the limb's score also drops in proportion to its HP
     "progress_timer": {   // this wound may transform into another wound over time
       "id": "scratch_medium",
       "time": [ "2 minutes", "4 minutes" ],

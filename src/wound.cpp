@@ -588,7 +588,8 @@ int wound::get_pain( const Character *who ) const
 {
     float ret = pain * ( 1.f - healing_percentage() );
 
-    if( who->has_flag( json_flag_PAIN_IMMUNE ) || who->has_effect( effect_narcosis ) ) {
+    if( who != nullptr && ( who->has_flag( json_flag_PAIN_IMMUNE ) ||
+                            who->has_effect( effect_narcosis ) ) ) {
         return 0;
     }
 

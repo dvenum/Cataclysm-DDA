@@ -164,8 +164,8 @@ void monfaction::finalize()
     // associate with NPC faction
     for( const std::pair<const faction_id, faction> &npc_faction : g->faction_manager_ptr->all() ) {
         mfaction_str_id npc_fac = npc_faction.second.mon_faction;
-        // Nasty: Avoid matching empty string.
-        if( npc_fac.is_empty() ) {
+        // Nasty: Avoid matching empty string.  A copy-from child shares its parent's.
+        if( npc_fac.is_empty() || npc_faction.second.mon_faction_inherited ) {
             continue;
         }
         if( !npc_fac.is_null() && npc_fac == id ) {

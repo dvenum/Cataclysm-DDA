@@ -1406,8 +1406,10 @@ class Character : public Creature, public visitable
         /** Actually hurt the player, hurts a body_part directly, no armor reduction */
         void apply_damage( Creature *source, bodypart_id hurt, int dam,
                            bool bypass_med = false ) override;
-        // applies one or two wounds depending on damage dealt
-        void apply_random_wound_from_damage( bodypart_id bp, const dealt_damage_instance &d );
+        // applies a wound for each damage type dealt; together they hold back hp_lost, the HP the
+        // hit took from the part (DISTRIBUTED_DAMAGE spreads the rest over other parts)
+        void apply_random_wound_from_damage( bodypart_id bp, const dealt_damage_instance &d,
+                                             int hp_lost );
         /** Calls Creature::deal_damage and handles damaged effects (waking up, etc.) */
         dealt_damage_instance deal_damage( Creature *source, bodypart_id bp,
                                            const damage_instance &d,
@@ -4369,8 +4371,6 @@ class Character : public Creature, public visitable
 
         bool has_wound( wound_type_id wd ) const;
         bool has_wound( wound_type_id wd, const bodypart_str_id &part ) const;
-
-        bool has_bleeding_wound( const bodypart_str_id &part ) const;
 
         bool has_wounds( const bodypart_str_id &part ) const;
 

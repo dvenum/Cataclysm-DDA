@@ -238,8 +238,11 @@ class monster : public Creature
         bool has_dest() const;
         // Returns point at the end of the monster's current plans
         tripoint_abs_ms get_dest() const;
-        // Returns the creature at the end of plans (if hostile)
+        // Returns the creature at the end of plans (if hostile; while eoc_attack, if not friendly)
         Creature *attack_target();
+        // Set while u_attack makes this monster use a special attack: an EOC may aim one at a
+        // creature the monster is only neutral to
+        bool eoc_attack = false; // NOLINT(cata-serialize)
         // Go towards p using the monster's pathfinding settings.
         void set_dest( const tripoint_abs_ms &p );
         // Reset our plans, we've become aimless.

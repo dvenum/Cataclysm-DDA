@@ -59,9 +59,10 @@ static const trap_str_id tr_rollmat( "tr_rollmat" );
 
 static const vitamin_id vitamin_vit_mme( "vit_mme" );
 
-// Guards the fix to item_location::form_loc: an item processed with no carrier that is not
-// where it is processed (map::add_item processes new items before placing them) got its dummy
-// location from a null Character, so its countdown action dereferenced nullptr.
+// Guards item_location::form_loc: an item processed with no carrier that is not where it is
+// processed (map::add_item processes temperature-tracked items before placing them) got its dummy
+// location from a null Character, so its countdown action dereferenced nullptr. It now gets a
+// location pointing at the item, quietly: that is a normal case, not a lost item.
 TEST_CASE( "sync-89473_countdown_without_carrier_gets_a_map_location", "[item][iuse]" )
 {
     clear_map();
@@ -76,8 +77,7 @@ TEST_CASE( "sync-89473_countdown_without_carrier_gets_a_map_location", "[item][i
     const std::string msg = capture_debugmsg_during( [&]() {
         timer.process( here, nullptr, pos );
     } );
-    CAPTURE( msg );
-    CHECK( msg.find( "Couldn't find item" ) != std::string::npos );
+    CHECK( msg.empty() );
     CHECK( globvars.get_global_value( "audit_sync_items_runs" ) == 1 );
 }
 

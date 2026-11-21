@@ -1761,12 +1761,13 @@ item_location item_location::form_loc( Character *you, map *here, const tripoint
     if( std::optional<item_location> loc = try_form_loc( you, here, p, it ) ) {
         return *loc;
     }
-    debugmsg( "Couldn't find item %s to form item_location, forming dummy location to ensure minimum functionality",
-              it.display_name() );
-    // Items processed with no carrier (on the map, in a vehicle part) have nobody to put the
-    // dummy on.
     if( you == nullptr ) {
+        // An item processed with no carrier can be on no tile yet: map::add_item processes a
+        // temperature-tracked item, its countdown and tick actions included, before placing it.
+        // Point at the item itself, as use actions got it before they took a location.
         return item_location( map_cursor( here != nullptr ? here : &get_map(), p ), &it );
     }
+    debugmsg( "Couldn't find item %s to form item_location, forming dummy location to ensure minimum functionality",
+              it.display_name() );
     return item_location( *you, &it );
 }

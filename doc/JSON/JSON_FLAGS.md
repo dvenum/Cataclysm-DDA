@@ -641,7 +641,7 @@ These are checked by hardcode for monsters (introducing new flags will require C
 - ```EFFECT_LIMB_SCORE_MOD_LOCAL``` Same as `EFFECT_LIMB_SCORE_MOD`, but limb score is modified only if effect is applied to body part, that has said score; effect, that apply -50% vision debuff, won't have effect if applied to leg with this flag.
 - ```GRAB``` This effect is a grab, creatures will attempt to break it as such (see `character_escape.cpp`).  When a character holds the creature, the effect's source is that character (see [Grab attacks](MONSTER_SPECIAL_ATTACKS.md#characters-grabbing-creatures)).
 - ```GRAB_FILTER``` This effect is a grab filter effect, assigning grabs to their grabbing monster or character.  Handles targeted grab removal on grab break, as well as potentially acting as a filter for monster attack logic.  Bodypart `grabbing_effects` should have it defined.
-- ```NO_GRAB``` A creature with this flag can't start a grab: the `grab`, `grab_2` and `grab_3` monster attacks check it, and so does a character's grab (for characters any character flag counts, not only effect flags).
+- ```NO_GRAB``` A creature with this flag can't start a grab: every monster grab attack checks it (including a monster's own copy of `grab` with its own condition), and so does a character's grab (for characters any character flag counts, not only effect flags).
 
 
 ## Furniture and Terrain

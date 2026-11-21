@@ -324,6 +324,10 @@ TEST_CASE( "combat_exertion_option", "[grapple][activity]" )
         CHECK( exertion_of( you, dodge ) == COMBAT_EXERCISE );
         CHECK( exertion_of( you, throwing( itype_test_boltcutter ) ) == COMBAT_EXERCISE );
         CHECK( exertion_of( you, throwing( itype_test_rag ) ) == COMBAT_EXERCISE / 2 );
+        // The diary's column above extra is headed for combat
+        const std::string diary = get_avatar().total_daily_calories_string();
+        CHECK( diary.find( "Combat" ) != std::string::npos );
+        CHECK( diary.find( "Explosive" ) == std::string::npos );
         make_weary();
         // Not max / level = 8 / 500: the penalty is that of extra exercise, for a throw too
         CHECK( you.exertion_adjusted_move_multiplier( you.melee_exertion_level() ) ==

@@ -1732,7 +1732,16 @@ std::optional<item_location> item_location::try_form_loc( Character *you, map *h
     }
     if( here ) {
         map_cursor mc( here, p );
-        if( mc.has_item( it ) ) {
+        if( here != &get_map() ) {
+            // A map_cursor looks its items up on the main map, so an item on another map (a
+            // tinymap loading or generating a submap processes its active items) can't be found
+            // through one. Point at the item itself, as before use actions took a location.
+            for( const item &top : here->i_at( p ) ) {
+                if( &top == &it || top.has_item( it ) ) {
+                    return item_location( mc, &it );
+                }
+            }
+        } else if( mc.has_item( it ) ) {
             return form_loc_recursive( mc, it );
         }
         const optional_vpart_position vp = here->veh_at( p );

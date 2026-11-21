@@ -81,6 +81,44 @@ TEST_CASE( "sync-89473_countdown_without_carrier_gets_a_map_location", "[item][i
     CHECK( globvars.get_global_value( "audit_sync_items_runs" ) == 1 );
 }
 
+// Guards item_location::try_form_loc on a map that isn't the main one: a tinymap that loads a
+// submap processes its active items, and a map_cursor finds items on the main map only, so the
+// countdown of an item outside the main map logged "Couldn't find item" (and before the
+// null-carrier fix, crashed).
+TEST_CASE( "sync-89473_countdown_on_a_tinymap_finds_its_item", "[item][iuse]" )
+{
+    clear_map();
+    map &here = get_map();
+    global_variables &globvars = get_globals();
+    globvars.clear_global_values();
+    const tripoint_abs_ms far_pos = here.get_abs( tripoint_bub_ms( 60, 60, 0 ) ) + tripoint::east * 200;
+    REQUIRE_FALSE( here.inbounds( here.get_bub( far_pos ) ) );
+
+    tinymap far_map;
+    far_map.load( project_to<coords::omt>( far_pos ), false );
+    const tripoint_omt_ms far_at = far_map.get_omt( far_pos );
+    item &timer = far_map.add_item( far_at, item( itype_audit_sync_items_timer ) );
+    const on_out_of_scope clean_up( [far_pos]() {
+        tinymap m;
+        m.load( project_to<coords::omt>( far_pos ), false );
+        m.i_clear( m.get_omt( far_pos ) );
+    } );
+    timer.active = true;
+    timer.countdown_point = calendar::turn;
+
+    map &far = *far_map.cast_to_map();
+    const tripoint_bub_ms at( far_at.raw() );
+    const std::optional<item_location> loc = item_location::try_form_loc( nullptr, &far, at, timer );
+    REQUIRE( loc.has_value() );
+    CHECK( loc->get_item() == &timer );
+
+    const std::string msg = capture_debugmsg_during( [&]() {
+        timer.process( far, nullptr, at );
+    } );
+    CHECK( msg.empty() );
+    CHECK( globvars.get_global_value( "audit_sync_items_runs" ) == 1 );
+}
+
 // Guards Character::invoke_item: when the method belongs to an item inside the one invoked
 // (u_activate on a container), the use action got the container's location, and a single-use
 // item removed the container instead of itself.

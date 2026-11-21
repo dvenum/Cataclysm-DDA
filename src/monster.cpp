@@ -1663,9 +1663,12 @@ Creature *monster::attack_target()
     }
 
     Creature *target = get_creature_tracker().creature_at( get_dest() );
-    if( target == nullptr || target == this ||
-        attitude_to( *target ) != Attitude::HOSTILE || !sees( here,  *target ) ||
+    if( target == nullptr || target == this || !sees( here,  *target ) ||
         target->is_hallucination() ) {
+        return nullptr;
+    }
+    const Attitude att = attitude_to( *target );
+    if( att == Attitude::FRIENDLY || ( att != Attitude::HOSTILE && !eoc_attack ) ) {
         return nullptr;
     }
 

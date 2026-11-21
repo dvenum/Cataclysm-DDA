@@ -1847,6 +1847,19 @@
     "connected_to": "torso",
     "limb_types": "arm",
     "opposite_part": "vine_limb_lower_l",
+    "flags": [
+      "IGNORE_TEMP",
+      "ALWAYS_BLOCK",
+      "NO_LIMB_FIRST_AID",
+      "NON_FLESH_LIMB",
+      "PLANT_LIMB",
+      "VINE_LIMB",
+      "HEAL_OVERRIDE",
+      "MEND_LIMB",
+      "LIMB_LOWER",
+      "NONSTANDARD_BLOCK",
+      "BONELESS"
+    ],
     "side": "right",
     "sub_parts": [ "vine_sublimb_lr" ]
   },
@@ -1866,6 +1879,19 @@
     "connected_to": "torso",
     "limb_types": "arm",
     "opposite_part": "vine_limb_lower_r",
+    "flags": [
+      "IGNORE_TEMP",
+      "ALWAYS_BLOCK",
+      "NO_LIMB_FIRST_AID",
+      "NON_FLESH_LIMB",
+      "PLANT_LIMB",
+      "VINE_LIMB",
+      "HEAL_OVERRIDE",
+      "MEND_LIMB",
+      "LIMB_LOWER",
+      "NONSTANDARD_BLOCK",
+      "BONELESS"
+    ],
     "side": "left",
     "sub_parts": [ "vine_sublimb_ll" ]
   },

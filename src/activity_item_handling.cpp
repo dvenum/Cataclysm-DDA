@@ -2518,6 +2518,12 @@ activity_reason_info multi_butchery_activity_actor::multi_activity_can_do( Chara
     return activity_reason_info::fail( do_activity_reason::NO_ZONE );
 }
 
+// set_up_butchery refuses to dissect these, so a dissection job leaves them alone
+static bool can_be_dissected( const item &corpse )
+{
+    return !corpse.has_flag( flag_QUARTERED ) && !corpse.has_flag( flag_FIELD_DRESS_FAILED );
+}
+
 activity_reason_info multi_dissection_activity_actor::multi_activity_can_do( Character &you,
         const tripoint_bub_ms &src_loc )
 {
@@ -2526,9 +2532,8 @@ activity_reason_info multi_dissection_activity_actor::multi_activity_can_do( Cha
     std::vector<item> corpses;
     for( const item &i : here.i_at( src_loc ) ) {
         // make sure nobody else is working on that corpse right now
-        if( i.is_corpse() &&
+        if( i.is_corpse() && can_be_dissected( i ) &&
             ( !i.has_var( "activity_var" ) || i.get_var( "activity_var" ) == you.name ) ) {
-            const mtype corpse = *i.get_mtype();
             corpses.push_back( i );
         }
     }
@@ -3734,7 +3739,7 @@ static bool butcher_corpse_activity( Character &you, const tripoint_bub_ms &src_
     map_stack items = here.i_at( src_loc );
     std::vector<butchery_data> bd;
     for( item &elem : items ) {
-        if( elem.is_corpse() &&
+        if( elem.is_corpse() && ( type != butcher_type::DISSECT || can_be_dissected( elem ) ) &&
             ( !elem.has_var( "activity_var" ) || elem.get_var( "activity_var" ) == you.name ) ) {
             const mtype corpse = *elem.get_mtype();
             if( corpse.size > creature_size::medium && reason != do_activity_reason::NEEDS_BIG_BUTCHERING

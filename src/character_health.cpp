@@ -2637,11 +2637,6 @@ bool Character::has_wound( wound_type_id wd, const bodypart_str_id &part ) const
     return get_part( part )->has_wound( wd );
 }
 
-bool Character::has_bleeding_wound( const bodypart_str_id &part ) const
-{
-    return get_part( part )->has_bleeding_wound();
-}
-
 bool Character::has_wounds( const bodypart_str_id &part ) const
 {
     return get_part( part )->has_wounds();
@@ -2741,13 +2736,8 @@ void Character::update_wounds( time_duration time_passed )
 
 bool Character::is_bleeding( const bodypart_id bp ) const
 {
-    for( const wound &wd : get_part( bp )->get_wounds() ) {
-        if( wd.type->is_bleeding_wound() ) {
-            return true;
-        }
-    }
-
-    return false;
+    const bodypart *part = get_part( bp );
+    return part != nullptr && part->has_bleeding_wound();
 }
 
 /*
@@ -2855,12 +2845,22 @@ static weighted_int_list<wound_type_id> populate_potential_wounds( const Charact
     return possible_wounds;
 }
 
-void Character::apply_random_wound_from_damage( bodypart_id bp, const dealt_damage_instance &d )
+void Character::apply_random_wound_from_damage( bodypart_id bp, const dealt_damage_instance &d,
+        int hp_lost )
 {
+    // The wounds share hp_lost in proportion to their damage, so together they hold it back
+    int damage_left = 0;
     for( const std::pair<const damage_type_id, int> &p : d.dealt_dams ) {
-        if( p.second == 0 ) {
+        damage_left += std::max( p.second, 0 );
+    }
+    int hp_left = std::clamp( hp_lost, 0, damage_left );
+    for( const std::pair<const damage_type_id, int> &p : d.dealt_dams ) {
+        if( p.second <= 0 ) {
             continue;
         }
+        const int held_back = std::min( hp_left, p.second * hp_left / damage_left );
+        hp_left -= held_back;
+        damage_left -= p.second;
 
         dealt_damage_instance new_d;
         new_d.set_damage( p.first, p.second );
@@ -2869,8 +2869,11 @@ void Character::apply_random_wound_from_damage( bodypart_id bp, const dealt_dama
         weighted_int_list<wound_type_id> list = populate_potential_wounds( this, bp, new_d );
         if( !list.empty() ) {
             wound_type_id wd_id = *list.pick();
-            wound wd( wd_id, this, bp.id(), new_d );
-            apply_wound( bp, wd, new_d );
+            dealt_damage_instance held_d;
+            held_d.set_damage( p.first, held_back );
+            held_d.bp_hit = bp;
+            wound wd( wd_id, this, bp.id(), held_d );
+            apply_wound( bp, wd, held_d );
         }
     }
 }
@@ -2884,8 +2887,13 @@ dealt_damage_instance Character::deal_damage( Creature *source, bodypart_id bp,
         return dealt_damage_instance();
     }
 
+    // The struck part's wounds hold back only the HP it loses, which is less than the hit when
+    // DISTRIBUTED_DAMAGE spreads it or the part has less HP left
+    const bodypart_id hp_part = bp == bodypart_str_id::NULL_ID() ? body_part_torso : bp->main_part;
+    const int hp_before = get_part_hp_cur( hp_part );
     //damage applied here
     dealt_damage_instance dealt_dams = Creature::deal_damage( source, bp, d, attack );
+    const int hp_lost = std::max( hp_before - get_part_hp_cur( hp_part ), 0 );
     //block reduction should be by applied this point
     int dam = dealt_dams.total_damage();
 
@@ -2993,7 +3001,7 @@ dealt_damage_instance Character::deal_damage( Creature *source, bodypart_id bp,
 
     // hey, why do we pass bp, if dealt_dams should contain dealt_dams.bp_hit?
     // because the code doesn't assign one, and i do not know if it is intentionally
-    apply_random_wound_from_damage( bp, dealt_dams );
+    apply_random_wound_from_damage( bp, dealt_dams, hp_lost );
 
     on_hurt( source );
     return dealt_dams;
@@ -3559,9 +3567,12 @@ bool Character::immune_to( const bodypart_id &bp, damage_unit dam ) const
 int Character::get_pain() const
 {
     int p = 0;
-    for( const std::pair<const bodypart_str_id, bodypart> &bp : get_body() ) {
-        for( const wound &wd : bp.second.get_wounds() ) {
-            p += wd.get_pain( this );
+    // wound::get_pain( this ) is 0 for every wound then: checked once, not per wound
+    if( !has_flag( json_flag_PAIN_IMMUNE ) && !has_effect( effect_narcosis ) ) {
+        for( const std::pair<const bodypart_str_id, bodypart> &bp : get_body() ) {
+            for( const wound &wd : bp.second.get_wounds() ) {
+                p += wd.get_pain( nullptr );
+            }
         }
     }
 

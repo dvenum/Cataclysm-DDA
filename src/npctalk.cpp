@@ -2587,15 +2587,20 @@ talk_effect_fun_t::func f_add_wound( const JsonObject &jo, std::string_view memb
     mandatory( jo, false, member, bodypart_var );
 
     str_or_var wound_to_be_added_var;
-    optional( jo, false, "wound_id", wound_to_be_added_var );
+    mandatory( jo, false, "wound_id", wound_to_be_added_var );
 
+    bool may_worsen = jo.get_bool( "may_worsen", false );
+
+    // worsening a wound goes by the damage that does it, which has a type
     str_or_var damage_type;
-    optional( jo, false, "damage_type", damage_type );
+    if( may_worsen ) {
+        mandatory( jo, false, "damage_type", damage_type );
+    } else {
+        optional( jo, false, "damage_type", damage_type );
+    }
 
     dbl_or_var damage_amount;
     optional( jo, false, "damage_amount", damage_amount, 0 );
-
-    bool may_worsen = jo.get_bool( "may_worsen", false );
 
     return [is_npc, bodypart_var, wound_to_be_added_var, damage_type, damage_amount,
             may_worsen]( dialogue & d ) {
@@ -2607,11 +2612,22 @@ talk_effect_fun_t::func f_add_wound( const JsonObject &jo, std::string_view memb
             return;
         }
 
-        wound_type_id wound_to_be_added = wound_type_id( wound_to_be_added_var.evaluate( d ) );
+        const wound_type_id wound_to_be_added( wound_to_be_added_var.evaluate( d ) );
+        if( !wound_to_be_added.is_valid() ) {
+            debugmsg( "add_wound: unknown wound \"%s\".  %s", wound_to_be_added.str(),
+                      d.get_callstack() );
+            return;
+        }
 
         if( may_worsen ) {
+            const damage_type_id type( damage_type.evaluate( d ) );
+            if( !type.is_valid() ) {
+                debugmsg( "add_wound: unknown damage type \"%s\".  %s", type.str(),
+                          d.get_callstack() );
+                return;
+            }
             dealt_damage_instance ddi;
-            ddi.set_damage( damage_type_id( damage_type.evaluate( d ) ), damage_amount.evaluate( d ) );
+            ddi.set_damage( type, damage_amount.evaluate( d ) );
             bp->add_or_worsen_wound( wound_to_be_added, guy, ddi );
         } else {
             bp->add_wound( wound_to_be_added, *guy, damage_amount.evaluate( d ) );

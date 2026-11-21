@@ -500,7 +500,7 @@
     "name": "Call the Children of the Winds",
     "description": "A lesser air elemental is summoned to support you.",
     "valid_targets": [ "ground" ],
-    "flags": [ "SOMATIC", "VERBAL", "SPAWN_GROUP", "SPAWN_GROUP" ],
+    "flags": [ "SOMATIC", "VERBAL", "SPAWN_GROUP" ],
     "skill": "gramarye",
     "teachable": false,
     "spell_class": "SYLPH",

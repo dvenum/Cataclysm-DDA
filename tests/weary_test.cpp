@@ -12,6 +12,7 @@
 #include "coordinates.h"
 #include "creature_tracker.h"
 #include "game.h"
+#include "options_helpers.h"
 #include "player_helpers.h"
 #include "point.h"
 #include "type_id.h"
@@ -150,6 +151,8 @@ TEST_CASE( "weary_assorted_tasks", "[weary][activities]" )
     }
 
     SECTION( "Extreme tasks - 48 minute boxing match" ) {
+        // Fighting only wears you out this fast at upstream's combat exertion
+        override_option combat_exertion( "COMBAT_EXERTION", "combat" );
         clear_avatar();
         guy.activity_history.set_intake( ( guy.base_bmr() * 1000 * 19 ) / 24 );
         INFO( guy.debug_weary_info() );

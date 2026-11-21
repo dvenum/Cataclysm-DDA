@@ -29,6 +29,7 @@
 #include "flag.h"
 #include "flexbuffer_json.h"
 #include "game.h"
+#include "init.h"
 #include "global_vars.h"
 #include "item.h"
 #include "json_error.h"
@@ -62,6 +63,8 @@ static const efftype_id effect_narcosis( "narcosis" );
 static const effect_on_condition_id
 effect_on_condition_EOC_TEST_MON_USE_SPECIAL( "EOC_TEST_MON_USE_SPECIAL" );
 
+static const faction_id faction_audit_rt_mf_copy( "audit_rt_mf_copy" );
+static const faction_id faction_audit_rt_mf_owner( "audit_rt_mf_owner" );
 static const faction_id faction_audit_sync_monfaction_copy( "audit_sync_monfaction_copy" );
 static const faction_id faction_audit_sync_monfaction_owner( "audit_sync_monfaction_owner" );
 static const faction_id faction_free_merchants( "free_merchants" );
@@ -78,6 +81,7 @@ static const mfaction_str_id
 monfaction_audit_sync_owned_monfaction( "audit_sync_owned_monfaction" );
 static const mfaction_str_id monfaction_human( "human" );
 static const mfaction_str_id monfaction_robofac( "robofac" );
+static const mfaction_str_id monfaction_test_monfaction5( "test_monfaction5" );
 
 static const mtype_id mon_dog( "mon_dog" );
 
@@ -100,6 +104,15 @@ static const wound_type_id wound_audit_sync_pain_wound( "audit_sync_pain_wound" 
 static const wound_type_id wound_bleeding_cut_bad( "bleeding_cut_bad" );
 static const wound_type_id wound_bleeding_cut_medium( "bleeding_cut_medium" );
 static const wound_type_id wound_bone_broken_mend_all( "bone_broken_mend_all" );
+
+namespace
+{
+class sync_data_loader : public DynamicDataLoader
+{
+    public:
+        using DynamicDataLoader::load_object;
+};
+} // namespace
 
 static conditional_t::func load_condition( const std::string &json )
 {
@@ -258,6 +271,35 @@ TEST_CASE( "sync-89557_each_treated_wound_keeps_its_own_hp_damage", "[wounds][he
     }
     std::sort( held_back.begin(), held_back.end() );
     CHECK( held_back == std::vector<int> { 10, 30 } );
+}
+
+// sync-89557 (review): when fewer wounds were left than the treatment was started for (one
+// healed meanwhile), each missing one still got a treated wound out of nothing.
+TEST_CASE( "sync-89557_treatment_adds_no_wound_for_a_wound_that_is_gone",
+           "[wounds][health][audit]" )
+{
+    clear_map();
+    clear_avatar();
+    npc &guy = spawn_npc( ( get_avatar().pos_bub() + tripoint::east ).xy(), "test_talker" );
+    clear_character( guy, true );
+    on_out_of_scope restore( []() {
+        clear_npcs();
+        clear_avatar();
+    } );
+    bodypart &part = *guy.get_part( body_part_arm_l );
+    part.get_wounds().clear();
+    part.add_wound( wound_audit_sync_fix_target, guy, 10 );
+    part.add_wound( wound_audit_sync_fix_target, guy, 30 );
+
+    // started for three wounds, but only two are left
+    player_activity act( fix_wound_activity_actor( 1_seconds, body_part_arm_l,
+                         wound_audit_sync_fix_target, wound_fix_audit_sync_fix, 3 ) );
+    act.actor->finish( act, guy );
+
+    CHECK( part.get_wounds().size() == 2 );
+    for( const wound &wd : part.get_wounds() ) {
+        CHECK( wd.type == wound_audit_sync_fix_result );
+    }
 }
 
 // sync-89557: u_add_wound read wound_id as optional (an empty id), and with may_worsen and no
@@ -645,6 +687,35 @@ TEST_CASE( "sync-88359_faction_copy_shares_but_does_not_own_its_monfaction", "[n
     CHECK_FALSE( owner->mon_faction_inherited );
     CHECK( monfaction_audit_sync_owned_monfaction->associated_faction ==
            faction_audit_sync_monfaction_owner );
+}
+
+// sync-88359 (review): a mod that changes a faction with "copy-from" naming the faction itself,
+// as doc/JSON/FACTIONS.md shows, marked its mon_faction as inherited, so the monster faction
+// lost its owner (robofac robots no longer turned on a player robofac hates).
+TEST_CASE( "sync-88359_faction_redefined_from_itself_keeps_owning_its_monfaction",
+           "[npc][audit]" )
+{
+    sync_data_loader loader;
+    loader.load_object( json_loader::from_string( R"({ "type": "faction",
+        "id": "audit_rt_mf_owner", "name": "Owners", "likes_u": 0, "respects_u": 0,
+        "known_by_u": true, "size": 1, "power": 1, "wealth": 0,
+        "mon_faction": "test_monfaction5", "description": "Owns a monster faction." })" ),
+                        "audit_mod_a" );
+    loader.load_object( json_loader::from_string( R"({ "type": "faction",
+        "id": "audit_rt_mf_owner", "copy-from": "audit_rt_mf_owner",
+        "relative": { "likes_u": -5 } })" ), "audit_mod_b" );
+    loader.load_object( json_loader::from_string( R"({ "type": "faction",
+        "id": "audit_rt_mf_copy", "copy-from": "audit_rt_mf_owner", "name": "Copies" })" ),
+                        "audit_mod_b" );
+    const faction *owner = g->faction_manager_ptr->get( faction_audit_rt_mf_owner );
+    const faction *copy = g->faction_manager_ptr->get( faction_audit_rt_mf_copy );
+    REQUIRE( owner != nullptr );
+    REQUIRE( copy != nullptr );
+    REQUIRE( owner->likes_u == -5 );
+    CHECK( owner->mon_faction == monfaction_test_monfaction5 );
+    CHECK_FALSE( owner->mon_faction_inherited );
+    CHECK( copy->mon_faction == monfaction_test_monfaction5 );
+    CHECK( copy->mon_faction_inherited );
 }
 
 // sync-88359 (MONAI-J01): attack_target() now needs a HOSTILE target, so an EOC could no

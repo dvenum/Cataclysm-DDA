@@ -3002,17 +3002,13 @@ static VisitResponse add_firestarter( item_location it,
                                       std::multimap<int, item_location> &firestarters,
                                       Character &you, const tripoint_bub_ms &examp )
 {
-    if( !it->has_flag( flag_FIRESTARTER ) || !it->has_flag( flag_FIRE ) ) {
-        return VisitResponse::NEXT;
-    }
-
     const use_function *usef = it->type->get_use( "firestarter" );
-    if( usef != nullptr && usef->get_actor_ptr() != nullptr ) {
+    if( usef == nullptr || usef->get_actor_ptr() == nullptr ) {
         return VisitResponse::NEXT;
     }
 
     const firestarter_actor *actor = dynamic_cast<const firestarter_actor *>( usef->get_actor_ptr() );
-    if( actor->can_use( you, it, &get_map(), examp ).success() ) {
+    if( actor != nullptr && actor->can_use( you, it, &get_map(), examp ).success() ) {
         firestarters.emplace( actor->moves_cost_fast, it );
     }
 
@@ -3617,7 +3613,7 @@ void iexamine::fireplace( Character &you, const tripoint_bub_ms &examp )
             } );
         }
 
-        map_cursor m_cursor( examp );
+        map_cursor m_cursor( pos );
         m_cursor.visit_items( [&firestarters, &you, &examp]( const item_location & node ) {
             return add_firestarter( node, firestarters, you, examp );
         } );

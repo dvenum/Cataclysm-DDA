@@ -4617,42 +4617,49 @@
   },
   {
     "type": "speech",
+    "id": "speech_mon_LS_medbot_1",
     "speaker": [ "mon_LS_medbot", "mon_LS_fixbot" ],
     "sound": "\"I can fix it!\"",
     "volume": 10
   },
   {
     "type": "speech",
+    "id": "speech_mon_LS_medbot_2",
     "speaker": [ "mon_LS_medbot", "mon_LS_fixbot" ],
     "sound": "\"Please, hold still!\"",
     "volume": 10
   },
   {
     "type": "speech",
+    "id": "speech_mon_LS_medbot_3",
     "speaker": [ "mon_LS_medbot", "mon_LS_fixbot" ],
     "sound": "\"Gosh, that's a doozy.  Don't worry!  I can fix it.\"",
     "volume": 10
   },
   {
     "type": "speech",
+    "id": "speech_mon_LS_medbot_4",
     "speaker": [ "mon_LS_medbot", "mon_LS_fixbot", "mon_LS_spotbot" ],
     "sound": "\"I'm here to help!\"",
     "volume": 10
   },
   {
     "type": "speech",
+    "id": "speech_mon_LS_spotbot_1",
     "speaker": "mon_LS_spotbot",
     "sound": "\"Meat!  MEEAAAT!\"",
     "volume": 10
   },
   {
     "type": "speech",
+    "id": "speech_mon_LS_spotbot_2",
     "speaker": "mon_LS_spotbot",
     "sound": "\"Where are they?\"",
     "volume": 10
   },
   {
     "type": "speech",
+    "id": "speech_mon_LS_spotbot_3",
     "speaker": "mon_LS_spotbot",
     "sound": "\"I see meat!  Find it!  Fix it!\"",
     "volume": 10

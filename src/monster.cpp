@@ -1812,7 +1812,7 @@ void monster::witness_thievery( item *it )
     add_msg( m_bad, _( "%1$s saw the %2$s being stolen!" ), get_name(), it->tname() );
     std::vector<npc *> friends;
     for( npc &guy : g->all_npcs() ) {
-        if( guy.get_faction() && guy.get_faction()->mon_faction == faction.id() ) {
+        if( guy.get_faction() && guy.get_monster_faction() == faction ) {
             friends.push_back( &guy );
         }
     }

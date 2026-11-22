@@ -4026,7 +4026,11 @@ bool npc::path_avoids( const tripoint_bub_ms &p, const bool ignore_creatures ) c
 mfaction_id npc::get_monster_faction() const
 {
     if( my_fac ) {
-        if( !my_fac->mon_faction.is_null() && my_fac->mon_faction.is_valid() ) {
+        // A faction that names no monster faction has human NPCs, allies and bees too
+        if( my_fac->mon_faction.is_null() ) {
+            return monfaction_human.id();
+        }
+        if( my_fac->mon_faction.is_valid() ) {
             return my_fac->mon_faction;
         }
     }

@@ -817,6 +817,43 @@ Beyond upstream:
 
 With the sync the full suite passes, 2983 of 2983 test cases with seed 4242 and no errors logged, and every mod set loads with no errors. 61 test cases are new, in `tests/audit_sync_combat_test.cpp`, `audit_sync_wounds_test.cpp`, `audit_sync_items_test.cpp`, `audit_sync_content_test.cpp` and `audit_sync_xedra_test.cpp`.
 
+**Master merge, 2026-11-22.**
+- **What happened.** While the sync was under way, master gained PRs #7–#26 from other work:
+  - saved executions, knockouts, and fatal-hit and projectile executions
+  - the powers and abilities system
+  - the 2.0 round, covered under "The 2.0 round: medium findings" below
+- **The merge.** Before PR #27 could merge, master was merged into the sync branch (`799a1017`). It conflicted in 46 files, which six agents resolved.
+- **Carried into upstream's new code:**
+  - master's 59 `map.cpp` changes, 29 of them re-applied in the files upstream split it into
+  - master's 142 `npctalk.cpp` changes, 11 of them in the new `dialogue.cpp`
+  - master's use actions and their tests, moved to `item_location`
+  - master's blocking options, events and execution hooks, on upstream's partial dodge and sliding-scale blocks
+  - master's wound events, on upstream's wound rework
+  - master's VINT-J09 tool lending, in upstream's repair activity
+- **Checked by a separate review,** by script and by hand: nothing from either side was lost or doubled. JSON ids, registries, tests and hunks all add up.
+
+**Fixed in the same work:**
+- **Upstream's `item_location` change (#89473) broke more than the sync found:**
+  - the mining zone job crashed
+  - smokers, kilns and fireplaces couldn't be lit from carried firestarters
+  - held lockpicks were ignored
+  - the fireplace looked for firestarters only on its own tile
+  - the repair activity used the wrong tool position and could crash
+  - using a vehicle tool from the vehicle menu did nothing, because upstream had disabled the call
+  - an NPC given food or medicine used up a copy, so the stack never shrank
+- **Upstream content failed master's new load checks:**
+  - a tentacle crush technique scaled with a stat named "strength"
+  - six left tentacle parts had no valid opposites
+  - new speech lines had no ids
+- **Cash cards** are items that store money, not the id `cash_card`, which upstream removed. Vanilla has none, and Aftershock's and the test data's work through the same code.
+- **Two behaviours from before upstream's faction rework (#88359) are back:**
+  - NPCs of factions without a monster faction count as human
+  - civilians tell nearby NPCs about a theft
+- **Limb shielding (#89470)** needs a defense roll and a conscious defender, so an unseen or unrolled hit lands where it was aimed.
+- **Two tests that depended on test order** were fixed.
+
+With the merge the full suite passes, 4092 of 4092 test cases with seed 4242 and no errors logged, and every mod set loads with no errors. 18 test cases are new, in `tests/audit_mmerge_*_test.cpp`.
+
 **Verification.** Each fix was compile-checked with the project's `-Werror` flags and reviewed by a separate agent. The game and test suite were then built (`make TILES=0 RELEASE=1 PCH=0`) and run. All 35 `[audit]` test cases pass. The 31 from the first round all fail or crash on a build with their fix reverted, so they really catch the bugs; the 4 for ITEM-B02 and EVT-B02 were checked by review. The full suite passed then: 2313 of 2313 test cases with `--rng-seed 4242`.
 
 After groups 4 and 5, the round 2 performance fixes and the 48 remaining bugs, all 88 `[audit]` test cases pass and the full suite passes: 2366 of 2366 test cases with `--rng-seed 4242` and with `--rng-seed 777`. After the PR review fixes that followed (a use-after-free in zone lookups from ACT-P01, save-load errors not aborting the load, stale crafting caches after a trade, John Bailey never leaving the refugee center), the suite passes again: 2366 of 2366 with seed 4242. After the second round of remaining high-severity findings, all 109 `[audit]` test cases pass and the full suite passes: 2387 of 2387 with seed 4242. Every mod set loads as before. After the third round (modding round 1 and bug sweep 1), all 228 `[audit]` test cases pass and the full suite passes: 2506 of 2506 with seed 4242, with no errors logged. Every mod set still loads with no errors. The newer audit tests were written to fail on the old code, but unlike the first round they were not each re-run against a reverted build.

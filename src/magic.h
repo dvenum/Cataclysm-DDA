@@ -894,7 +894,7 @@ class known_magic
         void on_mutation_loss( const trait_id &mid, Character &guy );
 
         // data written by EoC
-        double caster_level_adjustment; // NOLINT(cata-serialize)
+        double caster_level_adjustment = 0.0; // NOLINT(cata-serialize)
         std::map<spell_id, double> caster_level_adjustment_by_spell; // NOLINT(cata-serialize)
         std::map<trait_id, double> caster_level_adjustment_by_school; // NOLINT(cata-serialize)
 

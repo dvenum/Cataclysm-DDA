@@ -9,6 +9,9 @@ This file is for the most important map cache operations only.
 #include <array>
 #include <bitset>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <list>
 #include <memory>
 #include <optional>
@@ -21,12 +24,16 @@ This file is for the most important map cache operations only.
 #include "character.h"
 #include "coordinates.h"
 #include "debug.h"
+#include "field.h"
+#include "field_type.h"
 #include "flat_set.h"
 #include "game.h"
 #include "game_constants.h"
 #include "level_cache.h"
 #include "lightmap.h"
+#include "line.h"
 #include "map_scale_constants.h"
+#include "mapdata.h"
 #include "mdarray.h"
 #include "monster.h"
 #include "mtype.h"
@@ -34,11 +41,14 @@ This file is for the most important map cache operations only.
 #include "overmap.h"
 #include "overmapbuffer.h"
 #include "point.h"
+#include "sounds.h"
+#include "submap.h"
 #include "tileray.h"
 #include "type_id.h"
 #include "units.h"
 #include "veh_type.h"
 #include "vehicle.h"
+#include "vpart_position.h"
 
 #if defined(TILES)
 #include "sdltiles.h"
@@ -196,6 +206,173 @@ void map::build_scene_caches()
         build_transparency_cache( z );
     }
     scene_build_pending = false;
+}
+
+void map::build_sound_attenuation_cache( const int zlev ) const
+{
+    level_cache &ch = get_cache( zlev );
+    if( ch.sound_attenuation_dirty.none() ) {
+        return;
+    }
+    cata::mdarray<uint16_t, point_bub_ms> &grid = ch.sound_attenuation_cache;
+    for( int smx = 0; smx < my_MAPSIZE; ++smx ) {
+        for( int smy = 0; smy < my_MAPSIZE; ++smy ) {
+            const size_t index = smx * MAPSIZE + smy;
+            if( !ch.sound_attenuation_dirty[index] ) {
+                continue;
+            }
+            const submap *cur_submap = get_submap_at_grid( tripoint_rel_sm( smx, smy, zlev ) );
+            int count = 0;
+            for( int sx = 0; sx < SEEX; ++sx ) {
+                for( int sy = 0; sy < SEEY; ++sy ) {
+                    const point_sm_ms sp( sx, sy );
+                    int value = 0;
+                    if( cur_submap != nullptr ) {
+                        value = cur_submap->get_ter( sp ).obj().sound_attenuation +
+                                cur_submap->get_furn( sp ).obj().sound_attenuation;
+                        const field &fields = cur_submap->get_field( sp );
+                        if( fields.displayed_field_type() ) {
+                            for( const auto &fld : fields ) {
+                                if( fld.second.is_field_alive() ) {
+                                    value += fld.second.get_intensity_level().sound_attenuation;
+                                }
+                            }
+                        }
+                    }
+                    value = std::min<int>( value, std::numeric_limits<uint16_t>::max() );
+                    grid[sx + smx * SEEX][sy + smy * SEEY] = static_cast<uint16_t>( value );
+                    count += value > 0 ? 1 : 0;
+                }
+            }
+            ch.sound_attenuating_total += count - ch.sound_attenuating_tiles[index];
+            ch.sound_attenuating_tiles[index] = static_cast<uint8_t>( count );
+        }
+    }
+    ch.sound_attenuation_dirty.reset();
+}
+
+bool map::sound_muffled_on_level( const int zlev ) const
+{
+    if( !inbounds_z( zlev ) || sound_attenuation_percent <= 0 ) {
+        return false;
+    }
+    if( sounds::terrain_can_muffle() ) {
+        build_sound_attenuation_cache( zlev );
+        if( get_cache_ref( zlev ).sound_attenuating_total > 0 ) {
+            return true;
+        }
+    }
+    return sounds::vehicles_can_muffle() && get_cache_ref( zlev ).get_veh_in_active_range();
+}
+
+// What the vehicle parts at vp muffle: each part's sound_attenuation, unless it is broken
+// or an open door, hatch or curtain
+static int vehicle_sound_attenuation( const vpart_position &vp )
+{
+    const vehicle &veh = vp.vehicle();
+    int total = 0;
+    for( const int index : veh.parts_at_relative( vp.mount_pos(), true, true ) ) {
+        const vehicle_part &part = veh.part( index );
+        const vpart_info &info = part.info();
+        if( info.sound_attenuation == 0 || part.removed || part.is_broken() ||
+            ( part.open && info.has_flag( VPFLAG_OPENABLE ) ) ) {
+            continue;
+        }
+        total += info.sound_attenuation;
+    }
+    return total;
+}
+
+// A sum of sound_attenuation values scaled by the SOUND_ATTENUATION_PERCENT external
+// option (100: as given, 0: nothing muffles)
+static int scaled_sound_attenuation( const int total )
+{
+    if( total <= 0 || sound_attenuation_percent <= 0 ) {
+        return 0;
+    }
+    const int64_t scaled = static_cast<int64_t>( total ) * sound_attenuation_percent / 100;
+    return static_cast<int>( std::min<int64_t>( scaled, std::numeric_limits<int>::max() ) );
+}
+
+int map::sound_attenuation_at( const tripoint_bub_ms &p ) const
+{
+    if( !inbounds( p ) || sound_attenuation_percent <= 0 ) {
+        return 0;
+    }
+    int total = 0;
+    if( sounds::terrain_can_muffle() ) {
+        build_sound_attenuation_cache( p.z() );
+        total += get_cache_ref( p.z() ).sound_attenuation_cache[p.x()][p.y()];
+    }
+    if( sounds::vehicles_can_muffle() ) {
+        if( const optional_vpart_position vp = veh_at( p ) ) {
+            total += vehicle_sound_attenuation( *vp );
+        }
+    }
+    return scaled_sound_attenuation( total );
+}
+
+int map::sound_attenuation_between( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
+                                    const int stop_at ) const
+{
+    const bool terrain = sounds::terrain_can_muffle();
+    const bool vehicles = sounds::vehicles_can_muffle();
+    // with nothing loaded that muffles, or SOUND_ATTENUATION_PERCENT at 0, nothing muffles
+    // sound, and adjacent tiles have nothing between
+    if( ( !terrain && !vehicles ) || sound_attenuation_percent <= 0 || stop_at <= 0 ||
+        square_dist( from, to ) <= 1 ) {
+        return 0;
+    }
+    // what may muffle on each level the line crosses; the line is walked only if any does
+    struct walk_state {
+        tripoint_bub_ms to;
+        int stop_at = 0;
+        // the cache of a level with terrain, furniture or fields that muffle, or null
+        std::array<const level_cache *, OVERMAP_LAYERS> terrain_caches{};
+        std::array<bool, OVERMAP_LAYERS> vehicle_levels{};
+        int total = 0;
+    } state;
+    state.to = to;
+    state.stop_at = stop_at;
+    bool any = false;
+    for( int z = std::min( from.z(), to.z() ); z <= std::max( from.z(), to.z() ); ++z ) {
+        if( !inbounds_z( z ) ) {
+            continue;
+        }
+        const size_t index = z + OVERMAP_DEPTH;
+        const level_cache &ch = get_cache_ref( z );
+        if( terrain ) {
+            build_sound_attenuation_cache( z );
+            if( ch.sound_attenuating_total > 0 ) {
+                state.terrain_caches[index] = &ch;
+            }
+        }
+        state.vehicle_levels[index] = vehicles && ch.get_veh_in_active_range();
+        any |= state.terrain_caches[index] != nullptr || state.vehicle_levels[index];
+    }
+    if( !any ) {
+        return 0;
+    }
+    // two pointers, so the std::function bresenham takes doesn't allocate
+    bresenham( from, to, 0, 0, [this, &state]( const tripoint_bub_ms & p ) {
+        if( p == state.to ) {
+            return false;
+        }
+        if( !inbounds( p ) ) {
+            return true;
+        }
+        const size_t index = p.z() + OVERMAP_DEPTH;
+        if( const level_cache *ch = state.terrain_caches[index] ) {
+            state.total += ch->sound_attenuation_cache[p.x()][p.y()];
+        }
+        if( state.vehicle_levels[index] ) {
+            if( const optional_vpart_position vp = veh_at( p ) ) {
+                state.total += vehicle_sound_attenuation( *vp );
+            }
+        }
+        return scaled_sound_attenuation( state.total ) < state.stop_at;
+    } );
+    return scaled_sound_attenuation( state.total );
 }
 
 void map::ensure_scene_caches() const

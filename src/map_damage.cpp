@@ -26,6 +26,8 @@
 #include "dialogue.h"
 #include "effect_on_condition.h"
 #include "enums.h"
+#include "event.h"
+#include "event_bus.h"
 #include "explosion.h"
 #include "field.h"
 #include "field_type.h"
@@ -515,6 +517,27 @@ static bool furn_is_supported( const map &m, const tripoint_bub_ms &p )
     return false;
 }
 
+// The innermost bash_cause_scope's cause, if any
+static const char *current_bash_cause = nullptr;
+
+bash_cause_scope::bash_cause_scope( const char *cause ) : previous( current_bash_cause )
+{
+    current_bash_cause = cause;
+}
+
+bash_cause_scope::~bash_cause_scope()
+{
+    current_bash_cause = previous;
+}
+
+std::string bash_cause_scope::current( const Creature *basher )
+{
+    if( current_bash_cause != nullptr ) {
+        return current_bash_cause;
+    }
+    return basher != nullptr ? "smash" : "other";
+}
+
 // Runs a bash's eoc_on_hit or eoc_on_destroy for the tile at p, with the basher (if any) as alpha.
 // With no known basher, alpha is an empty talker (as for ammo_effect EOCs): an EOC needs at least
 // one talker. Only on the main map: mapgen bashes temporary maps, where nothing happens in the
@@ -528,6 +551,7 @@ static void run_bash_eoc( const map &m, const effect_on_condition_id &eoc,
     }
     dialogue d( basher ? get_talker_for( basher ) : std::make_unique<talker>(), nullptr );
     d.set_value( "loc", m.get_abs( p ) );
+    d.set_value( "cause", bash_cause_scope::current( basher ) );
     for( const std::pair<std::string, std::string> &var : context ) {
         d.set_value( var.first, var.second );
     }
@@ -858,6 +882,18 @@ void map::bash_ter_furn( const tripoint_bub_ms &p, bash_params &params, bool rep
         run_bash_eoc( *this, bash->eoc_on_destroy, p, params.basher,
                       ter_furn_bash_context( *this, p, terid.id, furnid.id ) );
     }
+    // Only on the main map, as for the EOCs: mapgen bashes temporary maps
+    if( this == &get_map() ) {
+        const cata::event destroyed = cata::event::make<event_type::tile_destroyed>(
+                                          get_abs( p ).raw(), terid.id, furnid.id, ter( p ).id(), furn( p ).id(),
+                                          bash_cause_scope::current( params.basher ) );
+        if( params.basher != nullptr ) {
+            get_event_bus().send_with_talker( params.basher, static_cast<Creature *>( nullptr ),
+                                              destroyed );
+        } else {
+            get_event_bus().send_without_talker( destroyed );
+        }
+    }
 }
 
 bash_params map::bash( const tripoint_bub_ms &p, const int str,
@@ -906,12 +942,8 @@ bash_params map::bash( const tripoint_bub_ms &p, const std::map<damage_type_id, 
         bash_ter_furn( p, bsh, repair_missing_ground );
     }
 
-    // If the bash operation modified the tile (solid) then treat it as a
-    // deliberate map modification and clear any recorded original terrain
-    // to avoid incorrect phase-change reversion.
-    if( bsh.did_bash && bsh.bashed_solid ) {
-        clear_original_terrain_at( p );
-    }
+    // A bash that changes the terrain drops the terrain recorded under it (ter_set does). Bashing
+    // furniture, a vehicle or a field on it leaves frozen water free to thaw.
 
     return bsh;
 }
@@ -1084,7 +1116,6 @@ void map::destroy( const tripoint_bub_ms &p, const bool silent )
     while( count <= 25 && bash( p, 999, silent, true ).success ) {
         count++;
     }
-    clear_original_terrain_at( p );
 }
 
 void map::destroy_furn( const tripoint_bub_ms &p, const bool silent )
@@ -1096,8 +1127,6 @@ void map::destroy_furn( const tripoint_bub_ms &p, const bool silent )
            bash( p, 999, silent, true ).success ) {
         count++;
     }
-
-    clear_original_terrain_at( p );
 }
 
 void map::destroy_vehicle( const tripoint_bub_ms &p, const bool silent )
@@ -1184,6 +1213,7 @@ void map::crush( const tripoint_bub_ms &p )
 
 double map::shoot( const tripoint_bub_ms &p, projectile &proj, const bool hit_items )
 {
+    const bash_cause_scope shooting( "projectile" );
     if( !inbounds( p ) ) {
         debugmsg( "Called map::shoot on out-of-bounds tile %s", p.to_string() );
         return 0;
@@ -1377,21 +1407,6 @@ bool map::hit_with_acid( const tripoint_bub_ms &p )
         return false;
     } else if( t == ter_t_card_science || t == ter_t_card_military || t == ter_t_card_industrial ) {
         ter_set( p, ter_t_card_reader_broken );
-    }
-    return true;
-}
-
-// returns true if terrain stops fire
-bool map::hit_with_fire( const tripoint_bub_ms &p )
-{
-    if( passable( p ) ) {
-        return false;    // Didn't hit the tile!
-    }
-
-    // non passable but flammable terrain, set it on fire
-    if( has_flag( ter_furn_flag::TFLAG_FLAMMABLE, p ) ||
-        has_flag( ter_furn_flag::TFLAG_FLAMMABLE_ASH, p ) ) {
-        add_field( p, fd_fire, 3 );
     }
     return true;
 }

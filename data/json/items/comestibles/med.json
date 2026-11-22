@@ -134,6 +134,7 @@
     "type": "ITEM",
     "subtypes": [ "COMESTIBLE" ],
     "comestible_type": "MED",
+    "npc_use": { "pain": 15, "max_pain": 35 },
     "name": { "str": "aspirin" },
     "description": "Acetylsalicylic acid, a mild anti-inflammatory and blood thinner.  Take to relieve pain and swelling.  Careful - it can increase bleeding.",
     "weight": "1 g",
@@ -158,6 +159,7 @@
     "type": "ITEM",
     "subtypes": [ "COMESTIBLE" ],
     "comestible_type": "MED",
+    "npc_use": { "pain": 15, "max_pain": 35 },
     "name": { "str_sp": "ibuprofen" },
     "description": "Ibuprofen, a mild NSAID-based painkiller.  Take to relieve pain and swelling.",
     "weight": "1 g",
@@ -206,6 +208,7 @@
     "type": "ITEM",
     "subtypes": [ "COMESTIBLE" ],
     "comestible_type": "MED",
+    "npc_use": { "pain": 15, "max_pain": 35 },
     "name": { "str_sp": "acetaminophen" },
     "description": "Acetaminophen, a mild painkiller that works well in conjunction with NSAID-based painkillers like aspirin.  Take to relieve pain and swelling.",
     "weight": "1 g",
@@ -494,6 +497,7 @@
     "type": "ITEM",
     "subtypes": [ "COMESTIBLE" ],
     "comestible_type": "MED",
+    "npc_use": { "pain": 30 },
     "name": { "str_sp": "codeine" },
     "//": "Based on 30mg Codeine Sulfate Tablets.",
     "description": "A mild opiate used in the suppression of pain, cough, and other ailments.  While relatively weak for a narcotic, it is still addictive, with a potential for overdose.",
@@ -590,7 +594,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your nearsightedness.",
         "effect_on_conditions": [
@@ -618,7 +621,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your nearsightedness.",
         "effect_on_conditions": [
@@ -644,7 +646,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your nearsightedness.",
         "effect_on_conditions": [
@@ -670,7 +671,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your nearsightedness.",
         "effect_on_conditions": [
@@ -696,7 +696,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your farsightedness.",
         "effect_on_conditions": [
@@ -719,7 +718,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your farsightedness.",
         "effect_on_conditions": [
@@ -742,7 +740,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your farsightedness.",
         "effect_on_conditions": [
@@ -765,7 +762,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your farsightedness.",
         "effect_on_conditions": [
@@ -788,7 +784,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your nearsightedness or farsightedness.",
         "effect_on_conditions": [
@@ -814,7 +809,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your nearsightedness or farsightedness.",
         "effect_on_conditions": [
@@ -840,7 +834,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your nearsightedness or farsightedness.",
         "effect_on_conditions": [
@@ -866,7 +859,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your nearsightedness or farsightedness.",
         "effect_on_conditions": [
@@ -892,7 +884,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate your the bright light discomfort.",
         "effect_on_conditions": [
@@ -915,7 +906,6 @@
     "use_action": [
       {
         "type": "effect_on_conditions",
-        "consume": true,
         "menu_text": "Apply contact lenses",
         "description": "You can use this to mitigate the bright light discomfort.",
         "effect_on_conditions": [
@@ -1268,6 +1258,7 @@
     "type": "ITEM",
     "subtypes": [ "COMESTIBLE" ],
     "comestible_type": "MED",
+    "npc_use": { "pain": 100, "min_pain": 50 },
     "name": { "str_sp": "heroin" },
     "description": "An extremely strong opioid narcotic derived from morphine.  Incredibly addictive, the risk of overdose is extreme, and the drug is contraindicated for nearly all medical purposes.",
     "display_type": "BY_WEIGHT",
@@ -1570,6 +1561,7 @@
     "type": "ITEM",
     "subtypes": [ "COMESTIBLE" ],
     "comestible_type": "MED",
+    "npc_use": { "pain": 60, "min_pain": 50 },
     "name": { "str_sp": "oxycodone" },
     "//": "15mg Oxycodone pills",
     "description": "A strong semi-synthetic narcotic used in the treatment of intense pain.  Highly addictive.",
@@ -1890,6 +1882,7 @@
     "type": "ITEM",
     "subtypes": [ "COMESTIBLE" ],
     "comestible_type": "MED",
+    "npc_use": { "pain": 40, "preference": 2 },
     "name": { "str_sp": "tramadol" },
     "//": "60mg Ultram",
     "description": "A painkiller used to manage moderate pain.  The effects last for several hours, but are relatively subdued for an opioid.",

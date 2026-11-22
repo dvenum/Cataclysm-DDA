@@ -49,10 +49,14 @@
 #include "debug.h"
 #include "dependency_tree.h"
 #include "diary.h"
+#include "display.h"
 #include "effect_on_condition.h"
 #include "enums.h"
 #include "event.h"
 #include "event_bus.h"
+#include "execution_combat.h"
+#include "execution_runtime.h"
+#include "ability_runtime.h"
 #include "filesystem.h"
 #include "flexbuffer_json.h"
 #include "gamemode.h"
@@ -327,6 +331,8 @@ bool game::load( const save_t &name )
     map &here = get_map();
     // results kept for "evaluate_every" belong to the previous game's NPCs
     behavior::clear_evaluation_cache();
+    // and the sidebar's overmap to the previous game's world
+    display::invalidate_overmap_cache();
 
     const cata_path worldpath = PATH_INFO::world_base_save_path();
     const cata_path save_file_path = PATH_INFO::world_base_save_path() /
@@ -892,6 +898,11 @@ bool game::save_external_options_record()
 
 bool game::save()
 {
+    if( u.death_finalizing() || abilities().processing() || abilities().restoring() ||
+        executions().processing_actions() ||
+        execution_combat::attack_in_progress() ) {
+        return false;
+    }
     if( save_is_dirty ) {
         popup( _( "The game is in an unsupported state after using debug tools and cannot be saved." ) );
         return false;

@@ -1,23 +1,32 @@
+#include <cstddef>
+#include <functional>
 #include <map>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "calendar.h"
 #include "cata_catch.h"
 #include "debug.h"
+#include "dialogue_chatbin.h"
 #include "effect.h"
 #include "enums.h"
 #include "faction.h"
+#include "flat_set.h"
 #include "flexbuffer_json.h"
 #include "game.h"
 #include "init.h"
 #include "item_pocket.h"
-#include "pocket_type.h"
 #include "itype.h"
-#include "json_error.h"
 #include "json_loader.h"
+#include "math_defines.h"
 #include "mod_tracker.h"
 #include "npc.h"
+#include "pimpl.h"
+#include "pocket_type.h"
+#include "string_formatter.h"
+#include "translation.h"
 #include "type_id.h"
 #include "units.h"
 
@@ -45,20 +54,22 @@ static const flag_id json_flag_AUDIT_IMMUNE_B( "AUDIT_IMMUNE_B" );
 static const flag_id json_flag_EFFECT_LIMB_SCORE_MOD( "EFFECT_LIMB_SCORE_MOD" );
 
 static const itype_id itype_FMCNote( "FMCNote" );
-
-static const npc_class_id NC_NONE( "NC_NONE" );
-
-static const string_id<npc_template> npc_template_audit_npc_child( "audit_npc_child" );
-static const string_id<npc_template> npc_template_audit_npc_parent( "audit_npc_parent" );
-static const string_id<npc_template> npc_template_audit_rt_npc( "audit_rt_npc" );
-static const string_id<npc_template>
-npc_template_audit_rt_npc_bad_attitude( "audit_rt_npc_bad_attitude" );
-
 static const itype_id itype_audit_pocket_delete_extend( "audit_pocket_delete_extend" );
 static const itype_id itype_audit_pocket_inherit( "audit_pocket_inherit" );
 static const itype_id itype_audit_pocket_parent( "audit_pocket_parent" );
 static const itype_id itype_audit_pocket_proportional( "audit_pocket_proportional" );
 static const itype_id itype_audit_pocket_relative( "audit_pocket_relative" );
+
+static const npc_class_id NC_NONE( "NC_NONE" );
+
+static const string_id<npc_template> npc_template_audit_npc_child( "audit_npc_child" );
+
+static const string_id<npc_template> npc_template_audit_npc_parent( "audit_npc_parent" );
+
+static const string_id<npc_template> npc_template_audit_rt_npc( "audit_rt_npc" );
+
+static const string_id<npc_template>
+npc_template_audit_rt_npc_bad_attitude( "audit_rt_npc_bad_attitude" );
 
 // The max_item_length a pocket gets when its JSON gives none.
 static units::length default_item_length( const units::volume &volume )
@@ -298,12 +309,12 @@ TEST_CASE( "npc-j02_npc_and_faction_copy_from", "[audit][npc]" )
     SECTION( "an npc template copies its parent and changes what it gives" ) {
         const npc_template &parent = npc_template_audit_npc_parent.obj();
         const npc_template &child = npc_template_audit_npc_child.obj();
-        CHECK( parent.guy.get_fac_id() == faction_audit_faction_parent );
-        CHECK( child.guy.get_fac_id() == faction_audit_faction_child );
+        CHECK( parent.fac_id == faction_audit_faction_parent );
+        CHECK( child.fac_id == faction_audit_faction_child );
         CHECK( child.name_suffix.translated() == "Child" );
-        CHECK( child.guy.myclass == NC_NONE );
-        CHECK( child.guy.mission == NPC_MISSION_GUARD );
-        CHECK( child.guy.chatbin.first_topic == "TALK_DONE" );
+        CHECK( child.myclass == NC_NONE );
+        CHECK( child.mission == NPC_MISSION_GUARD );
+        CHECK( child.chatbin.first_topic == "TALK_DONE" );
         CHECK( child.str == 12 );
     }
     SECTION( "a faction copies its parent and changes what it gives" ) {
@@ -367,5 +378,5 @@ TEST_CASE( "npc-j02_invalid_npc_attitude_becomes_null", "[audit][npc]" )
             "chat": "TALK_DONE" })" ), "audit_mod_a" );
     } );
     CHECK( msg.find( "invalid attitude enum 99" ) != std::string::npos );
-    CHECK( npc_template_audit_rt_npc_bad_attitude->guy.get_attitude() == NPCATT_NULL );
+    CHECK( npc_template_audit_rt_npc_bad_attitude->attitude == NPCATT_NULL );
 }

@@ -1,12 +1,19 @@
 #include <functional>
+#include <initializer_list>
+#include <map>
+#include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
+#include "activity_tracker.h"
 #include "avatar.h"
 #include "bodypart.h"
 #include "calendar.h"
 #include "cata_catch.h"
 #include "character.h"
 #include "coordinates.h"
+#include "enums.h"
 #include "flexbuffer_json.h"
 #include "game_constants.h"
 #include "item.h"
@@ -21,6 +28,7 @@
 #include "mtype.h"
 #include "options.h"
 #include "options_helpers.h"
+#include "pimpl.h"
 #include "player_helpers.h"
 #include "point.h"
 #include "projectile.h"

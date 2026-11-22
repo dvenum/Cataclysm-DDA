@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <imgui/imgui.h>
+#include <algorithm>
 #include <cstdlib>
 #include <functional>
 #include <memory>
@@ -87,7 +88,7 @@ std::string medical_ui::get_limb_effects( const Character &you, const bodypart_i
 
     // BLEEDING block
     if( bleeding ) {
-        const effect bleed_effect = you.get_effect( effect_bleed, part );
+        const effect &bleed_effect = you.get_effect( effect_bleed, part );
         const nc_color bleeding_color = colorize_bleeding_intensity( bleed_intensity );
         description += string_format( "[ %s ] - %s\n",
                                       colorize( bleed_effect.get_speed_name(), bleeding_color ),
@@ -96,7 +97,7 @@ std::string medical_ui::get_limb_effects( const Character &you, const bodypart_i
 
     // BITTEN block
     if( bitten ) {
-        const effect bite_effect = you.get_effect( effect_bite, part );
+        const effect &bite_effect = you.get_effect( effect_bite, part );
         description += string_format( "[ %s ] - %s\n",
                                       colorize( bite_effect.get_speed_name(), c_yellow ),
                                       string_format( bite_effect.disp_short_desc(), body_part_name( part.id() ) ) );
@@ -104,7 +105,7 @@ std::string medical_ui::get_limb_effects( const Character &you, const bodypart_i
 
     // INFECTED block
     if( infected ) {
-        const effect infected_effect = you.get_effect( effect_infected, part );
+        const effect &infected_effect = you.get_effect( effect_infected, part );
         description += string_format( "[ %s ] - %s\n",
                                       colorize( infected_effect.get_speed_name(), c_pink ),
                                       string_format( infected_effect.disp_short_desc(), body_part_name( part.id() ) ) );
@@ -450,7 +451,9 @@ static std::string draw_speed_summary( const Character &you )
 
     int pen = 0;
     if( you.weight_carried() > you.weight_capacity() ) {
-        pen = 25 * ( you.weight_carried() - you.weight_capacity() ) / you.weight_capacity();
+        // As in Character::recalc_speed_bonus: a capacity of 0 counts as 1 mg
+        const units::mass weight_cap = std::max( you.weight_capacity(), 1_milligram );
+        pen = 25 * ( you.weight_carried() - weight_cap ) / weight_cap;
         pge_str = pgettext( "speed penalty", "Overburdened" );
         desc += colorize( string_format( _( "%s: -%2d%%" ), pge_str, pen ), c_red );
         desc += "\n";

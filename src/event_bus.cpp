@@ -10,15 +10,20 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <type_traits>
 
 #include "calendar.h"
 #include "cata_variant.h"
+#include "character.h"
 #include "creature.h"
 #include "debug.h"
+#include "enum_conversions.h"
 #include "event_subscriber.h"
 #include "item_location.h"
+#include "monster.h"
+#include "mtype.h"
 #include "talker.h"  // IWYU pragma: keep
 #include "vehicle.h"
 
@@ -94,6 +99,13 @@ void event_bus::send( const cata::event &e ) const
     }
 }
 
+void event_bus::send_without_talker( const cata::event &e ) const
+{
+    for( event_subscriber *s : subscribers ) {
+        s->notify( e, std::make_unique<talker>(), nullptr );
+    }
+}
+
 void event_bus::send_with_talker( Creature *alpha, Creature *beta,
                                   const cata::event &e ) const
 {
@@ -117,12 +129,36 @@ void event_bus::send_with_talker( vehicle *alpha,  Creature *beta, const cata::e
         s->notify( e, get_talker_for( alpha ), get_talker_for( beta ) );
     }
 }
+
+void event_bus::send_with_talkers( const talker *alpha, const talker *beta,
+                                   const cata::event &e ) const
+{
+    for( event_subscriber *s : subscribers ) {
+        s->notify( e, alpha ? alpha->clone() : nullptr, beta ? beta->clone() : nullptr );
+    }
+}
+
+std::pair<character_id, mtype_id> event_killer_fields( const Creature *killer )
+{
+    if( killer == nullptr ) {
+        return { character_id(), mtype_id::NULL_ID() };
+    }
+    const Character *character = killer->as_character();
+    if( character == nullptr && killer->get_summoner() != nullptr ) {
+        character = killer->get_summoner()->as_character();
+    }
+    const monster *mon = killer->as_monster();
+    return { character == nullptr ? character_id() : character->getID(),
+             mon == nullptr ? mtype_id::NULL_ID() : mon->type->id };
+}
 namespace
 {
-bool is_integer_in( const std::string &v, long long min, long long max )
+bool is_integer_in( const std::string_view v, long long min, long long max )
 {
     long long value = 0;
     const char *const end = v.data() + v.size();
+    // from_chars takes the end explicitly, so no null terminator is needed.
+    // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
     const std::from_chars_result res = std::from_chars( v.data(), end, value );
     return res.ec == std::errc() && res.ptr == end && value >= min && value <= max;
 }

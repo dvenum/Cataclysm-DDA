@@ -23,6 +23,7 @@
 #include "creature_tracker.h"
 #include "debug.h"
 #include "enums.h"
+#include "execution_fatal.h"
 #include "flag.h"
 #include "game.h"
 #include "game_constants.h"
@@ -30,6 +31,7 @@
 #include "grapple.h"
 #include "gun_mode.h"
 #include "input_context.h"
+#include "incapacitation.h"
 #include "item.h"
 #include "item_location.h"
 #include "item_pocket.h"
@@ -172,6 +174,10 @@ static bool check_water_affect_items( avatar &you )
 
 bool avatar_action::move( avatar &you, map &m, const tripoint_rel_ms &d )
 {
+    if( incapacitation::unconscious( you ) || execution_fatal::pending( you ) ||
+        you.death_finalized() ) {
+        return false;
+    }
     map &here = get_map();
 
     bool in_shell = you.has_active_mutation( trait_SHELL2 ) ||
@@ -656,18 +662,10 @@ bool avatar_action::move( avatar &you, map &m, const tripoint_rel_ms &d )
     return false;
 }
 
-void avatar_action::swim( map &m, avatar &you, const tripoint_bub_ms &p )
+// What getting into deep water does, before the move into it: puts out fire, washes off goo and
+// bile, and soaks what the avatar carries
+static void wash_in_water( avatar &you )
 {
-    map &here = get_map();
-
-    you.is_swimming = true;
-
-    if( !m.has_flag( ter_furn_flag::TFLAG_SWIMMABLE, p ) ) {
-        dbg( D_ERROR ) << "game:plswim: Tried to swim in "
-                       << m.tername( p ) << "!";
-        debugmsg( "Tried to swim in %s!", m.tername( p ) );
-        return;
-    }
     if( you.has_effect( effect_onfire ) ) {
         add_msg( _( "The water puts out the flames!" ) );
         you.remove_effect( effect_onfire );
@@ -688,9 +686,11 @@ void avatar_action::swim( map &m, avatar &you, const tripoint_bub_ms &p )
     }
 
     g->water_affect_items( you );
+}
 
-    int movecost = you.swim_speed();
-    you.practice( skill_swimming, you.is_underwater() ? 2 : 1 );
+// One who can't swim, and has nothing to keep them up, goes under
+static void sink_if_unable_to_swim( avatar &you, int movecost )
+{
     if( ( movecost >= 500 || you.has_effect( effect_winded ) ) &&
         !you.has_flag( json_flag_WATERWALKING ) && !you.worn_with_flag( json_flag_FLOTATION ) ) {
         if( !you.is_underwater() &&
@@ -700,6 +700,46 @@ void avatar_action::swim( map &m, avatar &you, const tripoint_bub_ms &p )
             you.set_underwater( true );
         }
     }
+}
+
+// The water soaks the avatar: the parts above it too when underwater
+static void soak_in_water( avatar &you )
+{
+    body_part_set flags;
+    if( !you.is_underwater() ) {
+        flags = you.get_drenching_body_parts( false, true, true );
+    } else {
+        flags = you.get_drenching_body_parts();
+    }
+
+    you.drench( 100, flags, false );
+}
+
+void avatar_action::enter_water( avatar &you )
+{
+    you.is_swimming = true;
+    wash_in_water( you );
+    sink_if_unable_to_swim( you, you.swim_speed() );
+    soak_in_water( you );
+}
+
+void avatar_action::swim( map &m, avatar &you, const tripoint_bub_ms &p )
+{
+    map &here = get_map();
+
+    you.is_swimming = true;
+
+    if( !m.has_flag( ter_furn_flag::TFLAG_SWIMMABLE, p ) ) {
+        dbg( D_ERROR ) << "game:plswim: Tried to swim in "
+                       << m.tername( p ) << "!";
+        debugmsg( "Tried to swim in %s!", m.tername( p ) );
+        return;
+    }
+    wash_in_water( you );
+
+    int movecost = you.swim_speed();
+    you.practice( skill_swimming, you.is_underwater() ? 2 : 1 );
+    sink_if_unable_to_swim( you, movecost );
     if( you.oxygen <= 5 && you.is_underwater() ) {
         if( movecost < 500 ) {
             popup( _( "You need to breathe!  (%s to surface.)" ), press_x( ACTION_MOVE_UP ) );
@@ -736,14 +776,7 @@ void avatar_action::swim( map &m, avatar &you, const tripoint_bub_ms &p )
         you.burn_move_stamina( movecost );
     }
 
-    body_part_set flags;
-    if( !you.is_underwater() ) {
-        flags = you.get_drenching_body_parts( false, true, true );
-    } else {
-        flags = you.get_drenching_body_parts();
-    }
-
-    you.drench( 100, flags, false );
+    soak_in_water( you );
 }
 
 static float rate_critter( const Creature &c )

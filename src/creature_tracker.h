@@ -3,6 +3,7 @@
 #define CATA_SRC_CREATURE_TRACKER_H
 
 #include <cstddef>
+#include <cstdint>
 #include <list>
 #include <memory>
 #include <unordered_map>
@@ -79,6 +80,7 @@ class creature_tracker
          */
         int temporary_id( const monster &critter ) const;
         shared_ptr_fast<monster> from_temporary_id( int id );
+        shared_ptr_fast<monster> find_by_uid( int64_t id ) const;
         /**
         * Adds the given monster to the tracker. @p critter must not be null.
          * If the operation succeeded, the monster pointer is now managed by this tracker.
@@ -94,8 +96,9 @@ class creature_tracker
         /** Removes the given monster from the Creature tracker, adjusting other entries as needed. */
         void remove( const monster &critter );
         void clear();
-        void clear_npcs() {
-            active_npc.clear();
+        void clear_npcs();
+        const std::list<shared_ptr_fast<npc>> &get_npcs_list() const {
+            return active_npc;
         }
         /** Swaps the positions of two monsters */
         void swap_positions( monster &first, monster &second );
@@ -154,6 +157,7 @@ class creature_tracker
          * This keeps the objects valid and they can still be accessed instead of causing UB.
          */
         std::unordered_set<shared_ptr_fast<monster>> removed_this_turn_;  // NOLINT(cata-serialize)
+        std::unordered_map<int64_t, shared_ptr_fast<monster>> monsters_by_uid; // NOLINT(cata-serialize)
 
         // Tracks the dirtiness of the visitable zones cache. This must be flipped when
         // persistent visibility from terrain or furniture changes (this excludes vehicles and fields)

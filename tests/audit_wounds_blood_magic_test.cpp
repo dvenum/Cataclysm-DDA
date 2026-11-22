@@ -1,4 +1,6 @@
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "avatar.h"
 #include "bodypart.h"
@@ -9,6 +11,7 @@
 #include "flexbuffer_json.h"
 #include "json_loader.h"
 #include "magic.h"
+#include "magic_type.h"
 #include "npc.h"
 #include "pimpl.h"
 #include "player_helpers.h"

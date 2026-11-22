@@ -206,7 +206,7 @@ class talker_character_const: virtual public const_talker
         int get_ugliness() const override;
         int get_height() const override;
         int get_bmi_permil() const override;
-        int get_weight() const override;
+        units::mass get_weight() const override;
         int get_volume() const override;
         const move_mode_id &get_move_mode() const override;
         int get_fine_detail_vision_mod() const override;
@@ -319,6 +319,7 @@ class talker_character: virtual public talker
                          time_duration decay_started, bool capped ) override;
         void remove_morale( const morale_type &old_morale ) override;
         void set_addiction_turns( const addiction_id &add_id, int amount ) override;
+        void set_addiction_intensity( const addiction_id &add_id, int amount ) override;
         void mod_focus( int ) override;
         void set_rad( int ) override;
         void set_stim( int ) override;

@@ -72,6 +72,7 @@ class monster;
 class submap;
 class vehicle;
 class zone_data;
+struct dialogue;
 struct fragment_cloud;
 struct partial_con;
 struct spawn_data;
@@ -199,6 +200,24 @@ struct bash_params {
     bool bashing_from_above = false;
     // The creature doing the bashing, if any: the alpha talker of the bash EOCs
     Creature *basher = nullptr;
+};
+
+/**
+ * What bashes tiles while this lives: "explosion", "fire", "vehicle", "collapse" or
+ * "projectile". Bash EOCs and the tile_destroyed event get it as their "cause". A bash with no
+ * cause given is a "smash" when a creature does it, and "other" when nothing is known.
+ */
+class bash_cause_scope
+{
+    public:
+        explicit bash_cause_scope( const char *cause );
+        ~bash_cause_scope();
+        bash_cause_scope( const bash_cause_scope & ) = delete;
+        bash_cause_scope &operator=( const bash_cause_scope & ) = delete;
+        /** The cause of a bash now, by @p basher if a creature does it */
+        static std::string current( const Creature *basher );
+    private:
+        const char *previous;
 };
 
 /** Draw parameters used by map::drawsq() and similar methods. */
@@ -464,16 +483,14 @@ class map
                 int );
 
         //FIXME some field processor use private methods
-        friend void field_processor_fd_fire( const tripoint_bub_ms &, field_entry &, field_proc_data & );
+        friend void field_processor_fire( const tripoint_bub_ms &, field_entry &, field_proc_data & );
         friend void field_processor_spread_gas( const tripoint_bub_ms &, field_entry &, field_proc_data & );
         friend void field_processor_wandering_field( const tripoint_bub_ms &, field_entry &,
                 field_proc_data & );
-        friend void field_processor_fd_fire_vent( const tripoint_bub_ms &, field_entry &,
-                field_proc_data & );
-        friend void field_processor_fd_flame_burst( const tripoint_bub_ms &, field_entry &,
-                field_proc_data & );
-        friend void field_processor_fd_incendiary( const tripoint_bub_ms &, field_entry &,
-                field_proc_data & );
+        friend void field_processor_vent_cycle( const tripoint_bub_ms &, field_entry &,
+                                                field_proc_data & );
+        friend void field_processor_incendiary( const tripoint_bub_ms &, field_entry &,
+                                                field_proc_data & );
         friend void field_processor_monster_spawn( const tripoint_bub_ms &, field_entry &,
                 field_proc_data & );
 
@@ -496,6 +513,10 @@ class map
         // Apply phase-change logic for a single map square based on historical
         // weather (10-day average at 08:00). Currently implements "water_freeze".
         void temp_based_phase_change_at( const tripoint_bub_ms &p, const class weather_generator &wgen );
+        // The same for every loaded tile with phase rules, skipping tiles with a creature or a
+        // vehicle on them. Loading a submap does it for that submap; the game does it for the
+        // reality bubble once a day, when the average changes.
+        void refresh_phase_changes();
 
         // Original terrain recording for phase changes
         bool has_original_terrain_at( const tripoint_bub_ms &p ) const;
@@ -538,6 +559,29 @@ class map
         void set_lightmap_cache_dirty_below( int zlev );
         void set_pathfinding_cache_dirty( int zlev );
         void set_pathfinding_cache_dirty( const tripoint_bub_ms &p );
+        // the sound_attenuation of tile p's terrain, furniture or fields changed; every
+        // change that dirties the transparency cache dirties this one too
+        void set_sound_attenuation_dirty( const tripoint_bub_ms &p );
+        /*@}*/
+
+        /**
+         * Sound muffling: the sound_attenuation of terrain, furniture, fields and vehicle
+         * parts. Terrain, furniture and fields come from a per-level cache built on first
+         * use after a change; vehicle parts are read where a sound crosses them. The sums
+         * are scaled by the SOUND_ATTENUATION_PERCENT external option (0: nothing muffles).
+         */
+        /*@{*/
+        // Volume a sound loses crossing tile p
+        int sound_attenuation_at( const tripoint_bub_ms &p ) const;
+        // Volume a sound from `from` loses on its way to `to`: the sum of
+        // sound_attenuation_at over the tiles strictly between them on the line from one
+        // to the other. 0 without a walk when nothing loaded muffles sound, or when nothing
+        // on the levels the line crosses does. The walk stops once the sum reaches stop_at,
+        // for a caller to whom any more makes no difference.
+        int sound_attenuation_between( const tripoint_bub_ms &from, const tripoint_bub_ms &to,
+                                       int stop_at = INT_MAX ) const;
+        // Whether anything on level zlev may muffle sound; brings its cache up to date
+        bool sound_muffled_on_level( int zlev ) const;
         /*@}*/
 
         void invalidate_map_cache( int zlev );
@@ -672,10 +716,10 @@ class map
         void spread_gas( field_entry &cur, const tripoint_bub_ms &p, int percent_spread,
                          const time_duration &outdoor_age_speedup, scent_block &sblk,
                          const oter_id &om_ter );
-        void create_hot_air( const tripoint_bub_ms &p, int intensity );
+        // Spreads the hot_air_field of the field's current intensity around p
+        void create_hot_air( const tripoint_bub_ms &p, const field_entry &cur );
         bool gas_can_spread_to( field_entry &cur, const maptile &dst );
         void gas_spread_to( field_entry &cur, maptile &dst, const tripoint_bub_ms &p );
-        int burn_body_part( Character &you, field_entry &cur, const bodypart_id &bp, int scale );
     public:
 
         // Movement and LOS
@@ -1195,6 +1239,9 @@ class map
         bool has_flag_furn( ter_furn_flag flag, const tripoint_bub_ms &p ) const;
         // Checks terrain or furniture
         bool has_flag_ter_or_furn( ter_furn_flag flag, const tripoint_bub_ms &p ) const;
+        // Whether a creature of this size fits on the tile: its terrain and furniture both let it
+        // (SMALL_PASSAGE, max_creature_size)
+        bool fits_creature_size( const tripoint_bub_ms &p, creature_size size ) const;
 
         // terrain opening a gap in its level's floor
         // floor cache and its rebuild check both read this one list
@@ -1358,7 +1405,6 @@ class map
         // Effects of attacks/items
         // TODO: this function should not be using dozens of individual terrain IDs
         bool hit_with_acid( const tripoint_bub_ms &p );
-        bool hit_with_fire( const tripoint_bub_ms &p );
 
         /**
          * Returns true if there is furniture for which filter returns true in a 1 tile radius of p.
@@ -1468,14 +1514,16 @@ class map
          *  @param obj Item to add
          *  @param copies_remaining Number of identical copies of the item to create
          *  @param overflow if destination is full attempt to drop on adjacent tiles
+         *  @param dropper Character responsible for placement, or nullptr for environmental placement
          *  @return reference to dropped (and possibly stacked) item or null item on failure
          *  @warning function is relatively expensive and meant for user initiated actions, not mapgen
          */
         item_location add_item_or_charges_ret_loc( const tripoint_bub_ms &pos, item obj,
-                bool overflow = true );
-        item &add_item_or_charges( const tripoint_bub_ms &pos, item obj, bool overflow = true );
+                bool overflow = true, Character *dropper = nullptr );
+        item &add_item_or_charges( const tripoint_bub_ms &pos, item obj, bool overflow = true,
+                                   Character *dropper = nullptr );
         item &add_item_or_charges( const tripoint_bub_ms &pos, item obj, int &copies_remaining,
-                                   bool overflow = true );
+                                   bool overflow = true, Character *dropper = nullptr );
 
         /**
          * Gets spawn_rate value for item category of 'itm'.
@@ -1761,9 +1809,11 @@ class map
         void clear_fields( const tripoint_bub_ms &p );
 
         /**
-         * Get applicable fd_electricity field type for a given point
+         * The field placed at p for the given type: its opaque_variant on a tile that isn't
+         * transparent, the field it is the opaque_variant of on a transparent one, else itself
+         * (fd_electricity and fd_electricity_unlit).
          */
-        const field_type_str_id &get_applicable_electricity_field( const tripoint_bub_ms &p ) const;
+        field_type_id placed_field_type( const tripoint_bub_ms &p, const field_type_id &type ) const;
 
     private:
         // Is called when field intensity is changed.
@@ -1775,7 +1825,7 @@ class map
             Map &m, const tripoint_bub_ms &p, const field_type_id &type );
 
         std::pair<item *, tripoint_bub_ms> _add_item_or_charges( const tripoint_bub_ms &pos, item obj,
-                int &copies_remaining, bool overflow = true );
+                int &copies_remaining, bool overflow = true, Character *dropper = nullptr );
     public:
 
         // Splatters of various kind
@@ -1793,8 +1843,13 @@ class map
          * @param pos Location of emission
          * @param src Id of object producing the emission
          * @param mul Multiplies the chance and possibly qty (if `chance*mul > 100`) of the emission
+         * @param source Actual emitting creature, or nullptr for environmental emissions
          */
-        void emit_field( const tripoint_bub_ms &pos, const emit_id &src, float mul = 1.0f );
+        void emit_field( const tripoint_bub_ms &pos, const emit_id &src, float mul = 1.0f,
+                         Creature *source = nullptr );
+        // Evaluate in the supplied source context, adding the emission tile's location and IDs.
+        void emit_field( const tripoint_bub_ms &pos, const emit_id &src, float mul,
+                         const dialogue &context );
 
         // Scent propagation helpers
         /**
@@ -1885,6 +1940,7 @@ class map
                             bool lootable = false, bool powered = false, bool networked = false );
         // places an NPC, if static NPCs are enabled or if force is true
         character_id place_npc( const point_bub_ms &p, const string_id<npc_template> &type );
+        character_id place_npc( const tripoint_bub_ms &p, const string_id<npc_template> &type );
         void apply_faction_ownership( const point_bub_ms &p1, const point_bub_ms &p2,
                                       const faction_id &id );
         void do_vehicle_caching( int z );
@@ -2020,6 +2076,12 @@ class map
          * If false, monsters are not spawned in view of player character.
          */
         void spawn_monsters( bool ignore_sight, bool spawn_nonlocal = false );
+        /**
+         * Places the monsters queued on this map's submaps (by fields, rotting items, births
+         * and the like) now, instead of at the next map shift. Saved monsters and overmap
+         * groups are left to spawn_monsters. Does nothing unless this is the game's map.
+         */
+        void spawn_queued_monsters();
 
         /**
         * Checks to see if the corpse that is rotting away generates items when it does.
@@ -2046,6 +2108,8 @@ class map
         // Helper #1 - spawns monsters on one submap
         void spawn_monsters_submap( const tripoint_rel_sm &gp, bool ignore_sight,
                                     bool spawn_nonlocal = false );
+        // Helper #1b - places the monsters queued on one submap's spawn points
+        void spawn_queued_monsters_submap( const tripoint_rel_sm &gp, submap &current_submap );
         // Helper #2 - spawns monsters on one submap and from one group on this submap
         void spawn_monsters_submap_group( const tripoint_rel_sm &gp, mongroup &group,
                                           bool ignore_sight );
@@ -2136,6 +2200,8 @@ class map
         // true if any value changed.
         bool build_transparency_cache( int zlev );
         bool build_vision_transparency_cache( int zlev );
+        // rebuilds the dirty submaps of level zlev's sound_attenuation_cache
+        void build_sound_attenuation_cache( int zlev ) const;
         // cover cells the avatar's posture overrides in vision_transparency_cache
         // on level zlev, with the value each takes
         std::vector<std::pair<point_bub_ms, float>> observer_vision_overrides( int zlev ) const;

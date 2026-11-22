@@ -21,6 +21,9 @@
 #include "damage.h"
 #include "debug.h"
 #include "enums.h"
+#include "event.h"
+#include "event_bus.h"
+#include "execution_fatal.h"
 #include "field.h"
 #include "field_type.h"
 #include "fragment_cloud.h"
@@ -77,6 +80,7 @@ void map::set_transparency_cache_dirty( const int zlev )
     if( inbounds_z( zlev ) ) {
         if( level_cache *ch = get_cache_lazy( zlev ) ) {
             ch->transparency_cache_dirty.set();
+            ch->sound_attenuation_dirty.set();
         }
         scene_build_pending = true;
         set_lightmap_cache_dirty_below( zlev );
@@ -90,12 +94,23 @@ void map::set_transparency_cache_dirty( const tripoint_bub_ms &p, bool field )
         const tripoint_bub_sm smp = coords::project_to<coords::sm>( p );
         if( level_cache *ch = get_cache_lazy( smp.z() ) ) {
             ch->transparency_cache_dirty.set( smp.x() * MAPSIZE + smp.y() );
+            ch->sound_attenuation_dirty.set( smp.x() * MAPSIZE + smp.y() );
         }
         scene_build_pending = true;
         set_lightmap_cache_dirty_below( smp.z() );
         if( !field ) {
             get_creature_tracker().invalidate_reachability_cache();
             bump_geometry_revision( smp.z() );
+        }
+    }
+}
+
+void map::set_sound_attenuation_dirty( const tripoint_bub_ms &p )
+{
+    if( inbounds( p ) ) {
+        const tripoint_bub_sm smp = coords::project_to<coords::sm>( p );
+        if( level_cache *ch = get_cache_lazy( smp.z() ) ) {
+            ch->sound_attenuation_dirty.set( smp.x() * MAPSIZE + smp.y() );
         }
     }
 }
@@ -405,8 +420,6 @@ void map::drop_items( const tripoint_bub_ms &p )
         double damage = sqrt( impact_energy );
         damage_total += damage;
 
-        add_item_or_charges( below, i );
-
         // Bash creature standing below
         if( creature_below ) {
             // creature's dodge modifier
@@ -452,9 +465,17 @@ void map::drop_items( const tripoint_bub_ms &p )
 
         // Bash items at bottom since currently bash_items only bash glass items
         // FIXME: Hardcoded damage type!
-        int chance = static_cast<int>( 200 * i.resist( damage_bash, true ) / damage + 1 );
-        if( one_in( chance ) ) {
-            i.inc_damage();
+        bool destroyed = false;
+        if( damage > 0.0 ) {
+            const double chance = 200.0 * i.resist( damage_bash, true ) / damage + 1.0;
+            if( one_in( static_cast<int>( std::clamp( chance, 1.0, static_cast<double>( INT_MAX ) ) ) ) ) {
+                destroyed = i.inc_damage();
+            }
+        }
+        if( destroyed ) {
+            i.spill_contents( this, below );
+        } else {
+            add_item_or_charges( below, i );
         }
     }
 
@@ -739,6 +760,7 @@ int map::collapse_check( const tripoint_bub_ms &p ) const
 void map::collapse_at( const tripoint_bub_ms &p, const bool silent, const bool was_supporting,
                        const bool destroy_pos )
 {
+    const bash_cause_scope collapsing( "collapse" );
     const bool supports = was_supporting || has_flag( ter_furn_flag::TFLAG_SUPPORTS_ROOF, p );
     const bool wall_tree = was_supporting || has_flag( ter_furn_flag::TFLAG_WALL, p ) ||
                            has_flag( ter_furn_flag::TFLAG_TREE, p );
@@ -1044,6 +1066,9 @@ bool map::try_fall( const tripoint_bub_ms &p, Creature *c )
     if( c == nullptr ) {
         return false;
     }
+    if( is_open_air( p ) && !execution_fatal::before_gravity( *c ) ) {
+        return false;
+    }
 
     if( c->has_effect_with_flag( json_flag_LEVITATION ) && !c->has_effect( effect_slow_descent )
         && !c->has_effect( effect_stunned ) && !c->has_effect( effect_psi_stunned ) ) {
@@ -1115,6 +1140,8 @@ bool map::try_fall( const tripoint_bub_ms &p, Creature *c )
         return false;
     }
 
+    // CHAR-J10: sent after the landing, with the Z-levels fallen
+    const int levels_fallen = height;
     if( you->is_avatar() ) {
         add_msg( m_bad, n_gettext( "You fall down %d story!", "You fall down %d stories!", height ),
                  height );
@@ -1171,5 +1198,6 @@ bool map::try_fall( const tripoint_bub_ms &p, Creature *c )
         you->add_msg_player_or_npc( _( "You dive into water." ), _( "<npcname> dives into water." ) );
     }
 
+    get_event_bus().send<event_type::character_falls>( you->getID(), levels_fallen );
     return true;
 }

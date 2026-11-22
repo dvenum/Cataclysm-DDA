@@ -77,6 +77,8 @@ disp_overmap_cache::disp_overmap_cache()
     _center = tripoint_abs_omt::invalid;
     _mission = tripoint_abs_omt::invalid;
     _width = 0;
+    _height = 0;
+    _turn = calendar::before_time_starts;
 }
 
 void display::invalidate_overmap_cache()
@@ -1148,13 +1150,7 @@ std::pair<std::string, nc_color> display::move_count_and_mode_text_color( const 
 // Weight carried, relative to capacity, in %, like "90%".
 std::pair<std::string, nc_color> display::carry_weight_text_color( const avatar &u )
 {
-    int carry_wt;
-
-    if( u.weight_capacity() > 0_gram ) {
-        carry_wt = ( 100 * u.weight_carried() ) / u.weight_capacity();
-    } else {
-        carry_wt = 100;
-    }
+    const int carry_wt = u.weight_carried_percent();
 
     std::string weight_text = string_format( "%d%%", carry_wt );
 
@@ -1304,7 +1300,7 @@ std::string display::colorized_overmap_text( const avatar &u, const int width, c
     const tripoint_abs_omt &center_xyz = u.pos_abs_omt();
     const tripoint_abs_omt &mission_xyz = u.get_active_mission_target();
     // Retrieve cached string instead of constantly rebuilding it
-    if( disp_om_cache.is_valid_for( center_xyz, mission_xyz, width ) ) {
+    if( disp_om_cache.is_valid_for( center_xyz, mission_xyz, width, height, calendar::turn ) ) {
         return disp_om_cache.get_val();
     }
 
@@ -1348,7 +1344,7 @@ std::string display::colorized_overmap_text( const avatar &u, const int width, c
     }
 
     // Rebuild the cache so we can reuse it if nothing changes
-    disp_om_cache.rebuild( center_xyz, mission_xyz, width, overmap_text );
+    disp_om_cache.rebuild( center_xyz, mission_xyz, width, height, calendar::turn, overmap_text );
 
     return overmap_text;
 }

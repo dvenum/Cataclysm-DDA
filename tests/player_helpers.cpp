@@ -9,6 +9,7 @@
 
 #include "avatar.h"
 #include "bionics.h"
+#include "body_part_set.h"
 #include "calendar.h"
 #include "cata_catch.h"
 #include "character.h"
@@ -23,8 +24,8 @@
 #include "item_location.h"
 #include "itype.h"
 #include "magic.h"
-#include "map_helpers.h"
 #include "map.h"
+#include "map_helpers.h"
 #include "map_iterator.h"
 #include "npc.h"
 #include "perf.h"
@@ -39,6 +40,7 @@
 #include "stomach.h"
 #include "temp_crafting_inventory.h"
 #include "type_id.h"
+#include "units.h"
 #include "value_ptr.h"
 
 static const itype_id itype_debug_backpack( "debug_backpack" );
@@ -83,6 +85,9 @@ bool character_has_item_with_var_val( const Character &they, const std::string &
 
 void clear_character( Character &dummy, bool skip_nutrition )
 {
+    if( avatar *player = dummy.as_avatar() ) {
+        player->reset_death_state();
+    }
     map &here = get_map();
 
     dummy.set_body();
@@ -93,6 +98,8 @@ void clear_character( Character &dummy, bool skip_nutrition )
     dummy.calc_encumbrance();
     dummy.invalidate_crafting_inventory();
     dummy.remove_weapon();
+    dummy.eoc_added_bodyparts = body_part_set();
+    dummy.eoc_removed_bodyparts = body_part_set();
     dummy.clear_mutations();
     // clear_mutations() removes traits but does not rebuild bodypart topology.
     // Rebuild anatomy now so tests see baseline human limbs (e.g. feet, not talons).
@@ -163,6 +170,9 @@ void clear_character( Character &dummy, bool skip_nutrition )
     dummy.per_bonus_hardcoded = 0;
     dummy.set_dodges_left( dummy.get_num_dodges() );
     dummy.set_underwater( false );
+    // Set by moving into water and only cleared by moving out of it, so a swimming test that
+    // ends in the water would leave every later test swimming.
+    dummy.is_swimming = false;
 
     // Make stats nominal.
     dummy.set_str_base( 8 );

@@ -32,6 +32,7 @@
 #include "type_id.h"
 #include "units.h"
 
+class Creature;
 class JsonObject;
 class JsonOut;
 class advanced_inv_area;
@@ -39,6 +40,7 @@ class advanced_inv_listitem;
 class advanced_inventory_pane;
 class cata_path;
 class diary;
+class map;
 class map_memory;
 class memorized_tile;
 class mission;
@@ -135,6 +137,20 @@ class avatar : public Character
         const avatar *as_avatar() const override {
             return this;
         }
+
+        void die( map *here, Creature *source ) override;
+        void prevent_death() override;
+        /** Run native prevention/events once; presentation waits for the game loop. */
+        bool finalize_death( Creature *source );
+        bool death_finalized() const {
+            return death_finalized_;
+        }
+        bool death_finalizing() const {
+            return death_finalizing_;
+        }
+        void place_final_corpse( map &here );
+        /** New character/body or a genuine rescue, never a cinematic HP adjustment. */
+        void reset_death_state();
 
         mfaction_id get_monster_faction() const override;
 
@@ -461,6 +477,15 @@ class avatar : public Character
         time_duration time_since_relocated() const;
 
     private:
+        friend class game;
+        enum class death_presentation : unsigned char { pending, presented, watching, corpse_placed };
+        bool death_committed_ = false;
+        bool death_finalized_ = false;
+        death_presentation death_presentation_ = death_presentation::pending;
+        bool death_finalizing_ = false; // NOLINT(cata-serialize)
+        // EVT-B01: while the AVATAR_DEATH EOCs run, the player may take over a follower's body
+        // (the death switch); control_npc refuses at any other point of a death
+        bool death_switch_open_ = false; // NOLINT(cata-serialize)
         void on_move( const tripoint_abs_ms &old_pos ) override;
         // where the avatar has stood around since relocated_at; not serialized
         std::optional<tripoint_abs_ms> relocation_anchor;

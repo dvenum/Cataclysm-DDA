@@ -14,10 +14,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <initializer_list>
 #include <map>
+#include <memory>
+#include <ratio>
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,12 +31,14 @@
 #include "build_reqs.h"
 #include "calendar.h"
 #include "cata_catch.h"
-#include "character.h"
 #include "clzones.h"
 #include "construction.h"
 #include "coordinates.h"
 #include "crafting.h"
 #include "crafting_enums.h"
+#include "crafting_gui_helpers.h"
+#include "enums.h"
+#include "flexbuffer_json.h"
 #include "game.h"
 #include "item.h"
 #include "item_location.h"
@@ -42,6 +48,8 @@
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "map_iterator.h"
+#include "map_scale_constants.h"
 #include "map_selector.h"
 #include "memory_fast.h"
 #include "monster.h"
@@ -62,6 +70,12 @@
 #include "weather.h"
 #include "weather_type.h"
 
+class Character;
+
+static const faction_id faction_your_followers( "your_followers" );
+
+static const furn_str_id furn_f_plant_seed( "f_plant_seed" );
+
 static const itype_id itype_2x4( "2x4" );
 static const itype_id itype_apple( "apple" );
 static const itype_id itype_backpack( "backpack" );
@@ -75,12 +89,20 @@ static const itype_id itype_rock( "rock" );
 static const itype_id itype_scrap( "scrap" );
 static const itype_id itype_seed_buckwheat( "seed_buckwheat" );
 
-static const faction_id faction_your_followers( "your_followers" );
-
-static const recipe_id recipe_cudgel_test_unattended_with_qual(
-    "cudgel_test_unattended_with_qual" );
+static const recipe_id recipe_bat( "bat" );
+static const recipe_id recipe_crossbow( "crossbow" );
+static const recipe_id
+recipe_cudgel_test_unattended_with_qual( "cudgel_test_unattended_with_qual" );
 
 static const spell_id spell_test_spell_random_damage( "test_spell_random_damage" );
+
+static const ter_str_id ter_t_brick_wall( "t_brick_wall" );
+static const ter_str_id ter_t_dirtmound( "t_dirtmound" );
+static const ter_str_id ter_t_utility_light( "t_utility_light" );
+
+static const trait_id trait_DEBUG_NODMG( "DEBUG_NODMG" );
+
+static const vproto_id vehicle_prototype_bus( "bus" );
 
 static const zone_type_id zone_type_FARM_PLOT( "FARM_PLOT" );
 static const zone_type_id zone_type_LOOT_AMMO( "LOOT_AMMO" );
@@ -93,16 +115,6 @@ static const zone_type_id zone_type_LOOT_SPARE_PARTS( "LOOT_SPARE_PARTS" );
 static const zone_type_id zone_type_LOOT_TOOLS( "LOOT_TOOLS" );
 static const zone_type_id zone_type_LOOT_WEAPONS( "LOOT_WEAPONS" );
 
-static const furn_str_id furn_f_plant_seed( "f_plant_seed" );
-
-static const ter_str_id ter_t_brick_wall( "t_brick_wall" );
-static const ter_str_id ter_t_dirtmound( "t_dirtmound" );
-static const ter_str_id ter_t_utility_light( "t_utility_light" );
-
-static const trait_id trait_DEBUG_NODMG( "DEBUG_NODMG" );
-
-static const vproto_id vehicle_prototype_bus( "bus" );
-
 namespace
 {
 
@@ -111,7 +123,7 @@ constexpr unsigned int scenario_seed = 4242;
 int bench_reps()
 {
     const char *env = std::getenv( "BENCH_REPS" );
-    const int reps = env ? std::atoi( env ) : 5;
+    const int reps = env ? static_cast<int>( std::strtol( env, nullptr, 10 ) ) : 5;
     return std::max( reps, 1 );
 }
 
@@ -126,9 +138,9 @@ void run_scenario( const std::string &name, const std::string &work_description,
     for( int r = -1; r < reps; ++r ) {
         rng_set_engine_seed( scenario_seed );
         setup();
-        const auto start = std::chrono::steady_clock::now();
+        const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
         work();
-        const auto end = std::chrono::steady_clock::now();
+        const std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
         if( r >= 0 ) {
             samples.push_back( std::chrono::duration<double, std::milli>( end - start ).count() );
         }
@@ -137,7 +149,7 @@ void run_scenario( const std::string &name, const std::string &work_description,
     std::printf( "BENCH %s median_ms=%.2f min_ms=%.2f max_ms=%.2f reps=%d work=\"%s\"\n",
                  name.c_str(), samples[samples.size() / 2], samples.front(), samples.back(), reps,
                  work_description.c_str() );
-    std::fflush( stdout );
+    static_cast<void>( std::fflush( stdout ) );
 }
 
 // Fixed, mild weather, so results don't depend on the natural weather at the test map.
@@ -462,6 +474,53 @@ TEST_CASE( "bench_crafting_recompute_scoped", "[.][benchmark_scenario]" )
         }
         CHECK( checksum != 0 );
     } );
+}
+
+// UIINV-P01: the crafting menu redraws about 100 times a second. Its info panel for one
+// selection, redrawn 100 times for each of two recipes (one with tools, qualities and
+// proficiencies, one with steps), in a dense base, inside the menu's query cache scope.
+// "rebuilt" builds the panel on every redraw, as the menu did before (a lower bound: the old
+// draw code also asked for the time and the success chance several times per redraw);
+// "cached" reads it from the menu's panel cache.
+TEST_CASE( "bench_crafting_panel_redraws", "[.][benchmark_scenario]" )
+{
+    fixed_weather weather;
+    const std::vector<const recipe *> recipes = { &recipe_crossbow.obj(), &recipe_bat.obj() };
+    const auto setup = []() {
+        clear_avatar();
+        clear_map();
+        avatar &u = get_avatar();
+        const tripoint_bub_ms center( MAPSIZE_X / 2, MAPSIZE_Y / 2, 0 );
+        u.setpos( get_map(), center );
+        build_dense_base( center );
+        fill_inventory( u );
+    };
+    const auto redraws = [&recipes]( const bool cached ) {
+        return [&recipes, cached]() {
+            temp_crafting_inventory::query_cache_scope cache_scope;
+            avatar &u = get_avatar();
+            const std::vector<Character *> group = u.get_crafting_group();
+            std::map<const recipe *, availability> availability_cache;
+            const recipe_panel_context ctx{ u, group, u.get_group_available_recipes(),
+                                            availability_cache };
+            recipe_panel_cache panel_cache;
+            size_t checksum = 0;
+            for( const recipe *rec : recipes ) {
+                const availability avail( u, rec );
+                for( int redraw = 0; redraw < 100; ++redraw ) {
+                    checksum += cached ? panel_cache.get( *rec, avail, 1, ctx ).stats_plain.size() :
+                                build_recipe_panel( *rec, avail, 1, ctx ).stats_plain.size();
+                }
+            }
+            CHECK( checksum > 0 );
+        };
+    };
+    run_scenario( "crafting_panel_redraws_rebuilt",
+                  "info panel of 2 recipes, 100 redraws each, rebuilt each time, in a dense base",
+                  setup, redraws( false ) );
+    run_scenario( "crafting_panel_redraws_cached",
+                  "info panel of 2 recipes, 100 redraws each, from the panel cache, in a dense base",
+                  setup, redraws( true ) );
 }
 
 // ACT-P01: zone sorting asks, for every item, which nearby loot zone takes it.

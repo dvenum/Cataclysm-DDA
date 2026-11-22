@@ -3,30 +3,39 @@
 #include <algorithm>
 #include <array>
 #include <climits>
+#include <cmath>
 #include <cstddef>
 #include <exception>
 #include <functional>
+#include <list>
 #include <map>
 #include <memory>
 #include <optional>
 #include <queue>
 #include <set>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "ability.h"
+#include "ability_runtime.h"
 #include "avatar.h"
 #include "basecamp.h"
 #include "bionics.h"
 #include "bodypart.h"
 #include "calendar.h"
+#include "cata_scope_helpers.h"
 #include "character.h"
 #include "character_id.h"
+#include "clzones.h"
 #include "coordinates.h"
 #include "creature.h"
+#include "creature_ref.h"
 #include "debug.h"
 #include "dialogue.h"
 #include "dialogue_helpers.h"
@@ -35,6 +44,10 @@
 #include "enum_conversions.h"
 #include "enum_traits.h"
 #include "errand.h"
+#include "event.h"
+#include "event_bus.h"
+#include "execution_fatal.h"
+#include "execution_runtime.h"
 #include "faction.h"
 #include "field.h"
 #include "flag.h"
@@ -44,19 +57,22 @@
 #include "generic_factory.h"
 #include "global_vars.h"
 #include "grapple.h"
+#include "incapacitation.h"
 #include "item.h"
 #include "item_category.h"
 #include "item_location.h"
+#include "itype.h"
 #include "map.h"
 #include "map_iterator.h"
 #include "map_scale_constants.h"
 #include "mapdata.h"
 #include "martialarts.h"
 #include "math_parser.h"
+#include "math_parser_diag_value.h"
 #include "math_parser_type.h"
+#include "mattack_common.h"
 #include "memory_fast.h"
 #include "messages.h"
-#include "math_parser_diag_value.h"
 #include "mission.h"
 #include "mod_setting.h"
 #include "monster.h"
@@ -67,12 +83,15 @@
 #include "npc_ai_ids.h"
 #include "npc_decision_category.h"
 #include "npc_json_goal.h"
+#include "omdata.h"
 #include "options.h"
 #include "output.h"
 #include "overmap.h"
 #include "overmap_ui.h"
 #include "overmapbuffer.h"
+#include "pimpl.h"
 #include "player_activity.h"
+#include "pocket_type.h"
 #include "point.h"
 #include "profession.h"
 #include "recipe_groups.h"
@@ -80,19 +99,20 @@
 #include "string_formatter.h"
 #include "talker.h"
 #include "temp_crafting_inventory.h"
+#include "timed_event.h"
 #include "translation.h"
+#include "trap.h"
 #include "type_id.h"
 #include "units.h"
+#include "value_ptr.h"
 #include "vehicle.h"
 #include "viewer.h"
 #include "vpart_position.h"
 #include "weather.h"
-#include "widget.h"
+#include "widget.h" // IWYU pragma: keep
 #include "worldfactory.h"
 #include "wound.h"
 
-// IWYU pragma: no_forward_declare cardinal_direction // need its enum_traits
-class recipe;
 struct mapgen_arguments;
 
 static const efftype_id effect_currently_busy( "currently_busy" );
@@ -106,9 +126,13 @@ struct deferred_math {
     std::string str;
     math_type_t type;
     std::shared_ptr<math_exp> exp;
+    // "optional_ids": the ids the math names may not be loaded (another mod's), so aren't checked
+    bool optional_ids = false;
 
-    deferred_math( JsonObject const &jo_, std::string_view str_, math_type_t type_ )
-        : jo( jo_ ), str( str_ ), type( type_ ), exp( std::make_shared<math_exp>() ) {
+    deferred_math( JsonObject const &jo_, std::string_view str_, math_type_t type_,
+                   bool optional_ids_ )
+        : jo( jo_ ), str( str_ ), type( type_ ), exp( std::make_shared<math_exp>() ),
+          optional_ids( optional_ids_ ) {
 
         jo.allow_omitted_members();
     }
@@ -170,10 +194,27 @@ void clear_deferred_math()
 }
 
 std::shared_ptr<math_exp> &defer_math( JsonObject const &jo, std::string_view str,
-                                       math_type_t type )
+                                       math_type_t type, bool optional_ids )
 {
-    get_deferred_math().emplace( jo, str, type );
+    get_deferred_math().emplace( jo, str, type, optional_ids );
     return get_deferred_math().back().exp;
+}
+
+// MATH-J04: an id a dialogue function names as a literal must be loaded. Reported where the
+// math is written, but loading goes on: only that function's result is wrong.
+void report_unknown_literal_ids( deferred_math &math )
+{
+    if( math.optional_ids ) {
+        return;
+    }
+    for( const std::string &err : math.exp->check_literal_ids() ) {
+        try {
+            math.jo.throw_error_at( "math",
+                                    err + R"(.  If the id is another mod's, add "optional_ids": true.)" );
+        } catch( const JsonError &e ) {
+            debugmsg( "%s", e.what() );
+        }
+    }
 }
 
 }  // namespace
@@ -292,6 +333,52 @@ var_info read_var_info( const JsonObject &jo )
     return temp;
 }
 
+// A number is written in full, as trigger_event passes it (1000000, not 1e+06)
+static std::string var_changed_value( const diag_value &v )
+{
+    if( v.is_dbl() ) {
+        const double d = v.dbl();
+        if( std::isfinite( d ) && d == std::trunc( d ) && std::fabs( d ) < 1e15 ) {
+            return std::to_string( static_cast<long long>( d ) );
+        }
+    }
+    return v.to_string();
+}
+
+void notify_var_written( const std::string &name, const diag_value &value, talker *owner )
+{
+    const std::set<std::string> &watched = get_globals().watched;
+    // set while var_changed's EOCs run: what they write sends nothing
+    static bool sending = false;
+    if( sending || watched.empty() || watched.count( name ) == 0 ) {
+        return;
+    }
+    character_id owner_id;
+    std::string scope = "global";
+    if( owner != nullptr ) {
+        if( Character *ch = owner->get_character() ) {
+            owner_id = ch->getID();
+            scope = "character";
+        } else if( owner->get_monster() != nullptr ) {
+            scope = "monster";
+        } else if( owner->get_item() != nullptr ) {
+            scope = "item";
+        } else if( owner->get_vehicle() != nullptr ) {
+            scope = "vehicle";
+        } else {
+            scope = "other";
+        }
+    }
+    const cata::event e = cata::event::make<event_type::var_changed>( owner_id, scope, name,
+                          var_changed_value( value ) );
+    sending = true;
+    const on_out_of_scope done( []() {
+        sending = false;
+    } );
+    // a global's EOCs run on the avatar, as for any event that names no character
+    get_event_bus().send_with_talkers( owner, nullptr, e );
+}
+
 namespace
 {
 
@@ -305,15 +392,28 @@ void _write_var_value( var_type type, const std::string &name, dialogue *d,
     switch( type ) {
         case var_type::global:
             globvars.set_global_value( name, value );
+            if( !globvars.watched.empty() ) {
+                notify_var_written( name, diag_value( value ), nullptr );
+            }
             break;
         case var_type::var:
             ret = d->get_value( name ).str();
             vinfo = process_variable( ret );
+            if( vinfo.type == var_type::var ) {
+                // a var_val naming another var_val (`v_`): follow it, but not around a loop
+                vinfo = resolve_var_val( vinfo.name, *d );
+                if( vinfo.type == var_type::last ) {
+                    break;
+                }
+            }
             _write_var_value( vinfo.type, vinfo.name, d, value );
             break;
         case var_type::u:
             if( d->has_alpha ) {
                 d->actor( false )->set_value( name, value );
+                if( !globvars.watched.empty() ) {
+                    notify_var_written( name, diag_value( value ), d->actor( false ) );
+                }
             } else {
                 debugmsg( "Tried to use an invalid alpha talker.  %s", d->get_callstack() );
             }
@@ -321,6 +421,9 @@ void _write_var_value( var_type type, const std::string &name, dialogue *d,
         case var_type::npc:
             if( d->has_beta ) {
                 d->actor( true )->set_value( name, value );
+                if( !globvars.watched.empty() ) {
+                    notify_var_written( name, diag_value( value ), d->actor( true ) );
+                }
             } else {
                 debugmsg( "Tried to use an invalid beta talker.  %s", d->get_callstack() );
             }
@@ -462,6 +565,7 @@ void finalize_conditions()
             clear_deferred_math();
             jo.throw_error_at( "math", ex.what() );
         }
+        report_unknown_literal_ids( math );
         dfr.pop();
     }
 }
@@ -632,6 +736,58 @@ conditional_t::func f_has_part_flag( const JsonObject &jo, std::string_view memb
     };
 }
 
+// VEH-J01: u_vehicle_owner: "your_followers" - the vehicle talker is owned by that faction;
+// "NULL" when it is unowned. False for a talker that isn't a vehicle.
+conditional_t::func f_vehicle_owner( const JsonObject &jo, std::string_view member,
+                                     bool is_npc )
+{
+    str_or_var owner = get_str_or_var( jo.get_member( member ), member, true );
+    return [owner, is_npc]( const_dialogue const & d ) {
+        const vehicle *veh = d.const_actor( is_npc )->get_const_vehicle();
+        if( veh == nullptr ) {
+            return false;
+        }
+        std::string name = owner.evaluate( d );
+        if( name.empty() ) {
+            name = "NULL";
+        }
+        return veh->get_owner().str() == name;
+    };
+}
+
+// VINT-J01: u_vehicle_type: "humvee" - the vehicle talker was built from that vehicle
+// prototype ("none" for one built in the game or split off another). False for a talker that
+// isn't a vehicle.
+conditional_t::func f_vehicle_type( const JsonObject &jo, std::string_view member,
+                                    bool is_npc )
+{
+    str_or_var type = get_str_or_var( jo.get_member( member ), member, true );
+    return [type, is_npc]( const_dialogue const & d ) {
+        const vehicle *veh = d.const_actor( is_npc )->get_const_vehicle();
+        return veh != nullptr && veh->type.str() == type.evaluate( d );
+    };
+}
+
+// NPC-J05: u_has_fac_relation: "kill on sight" - the u_ talker's faction has that relation
+// to the npc_ talker's faction (see faction_has_relation for two named factions)
+conditional_t::func f_has_fac_relation( const JsonObject &jo, std::string_view member,
+                                        bool is_npc )
+{
+    const std::string relation = jo.get_string( std::string( member ) );
+    if( npc_factions::relation_strs.count( relation ) == 0 ) {
+        jo.throw_error_at( member, string_format( "unknown faction relation \"%s\"", relation ) );
+    }
+    const npc_factions::relationship rel = npc_factions::relation_strs.at( relation );
+    return [rel, is_npc]( const_dialogue const & d ) {
+        if( !d.has_actor( !is_npc ) ) {
+            return false;
+        }
+        const faction *from = d.const_actor( is_npc )->get_faction();
+        const faction *to = d.const_actor( !is_npc )->get_faction();
+        return from != nullptr && to != nullptr && from->has_relationship( to->id, rel );
+    };
+}
+
 conditional_t::func f_has_species( const JsonObject &jo, std::string_view member,
                                    bool is_npc )
 {
@@ -682,9 +838,39 @@ conditional_t::func f_has_activity( bool is_npc )
     };
 }
 
-conditional_t::func f_has_activity( const JsonObject &, std::string_view, bool is_npc )
+// { "u_has_activity": "ACT_READ" } or [ "ACT_BUTCHER", "ACT_BUTCHER_FULL" ]: doing one of those;
+// "any", like the bare "u_has_activity", is any activity
+conditional_t::func f_has_activity( const JsonObject &jo, std::string_view member, bool is_npc )
 {
-    return f_has_activity( is_npc );
+    std::vector<str_or_var> wanted;
+    if( jo.has_array( member ) ) {
+        for( const JsonValue &jv : jo.get_array( member ) ) {
+            wanted.emplace_back( get_str_or_var( jv, member ) );
+        }
+    } else {
+        wanted.emplace_back( get_str_or_var( jo.get_member( member ), member, true ) );
+    }
+    return [wanted, is_npc]( const_dialogue const & d ) {
+        const_talker const *actor = d.const_actor( is_npc );
+        const Character *who = actor->get_const_character();
+        for( const str_or_var &activity : wanted ) {
+            const std::string id_str = activity.evaluate( d );
+            if( id_str == "any" ) {
+                if( actor->has_activity() ) {
+                    return true;
+                }
+                continue;
+            }
+            const activity_id id( id_str );
+            if( !id.is_valid() ) {
+                debugmsg( "Unknown activity id \"%s\" in has_activity.  %s", id_str,
+                          d.get_callstack() );
+            } else if( who != nullptr && who->activity && who->activity.id() == id ) {
+                return true;
+            }
+        }
+        return false;
+    };
 }
 
 // "any" or an activity id
@@ -743,7 +929,7 @@ bool grab_condition_names_other( const JsonObject &jo, std::string_view member, 
     }
     if( value != "any" ) {
         jo.throw_error_at( member, string_format(
-                               "%s must be \"any\" or \"%s\" (the other talker), not \"%s\"",
+                               R"(%s must be "any" or "%s" (the other talker), not "%s")",
                                std::string( member ), other, value ) );
     }
     return false;
@@ -811,6 +997,25 @@ conditional_t::func f_u_has_mission( const JsonObject &jo, std::string_view memb
             }
         }
         return false;
+    };
+}
+
+// EOC-J09: whether the avatar has a mission of this type that is active, completed or failed
+conditional_t::func f_u_mission_status( const JsonObject &jo, std::string_view member )
+{
+    str_or_var mission_type = get_str_or_var( jo.get_member( member ), member, true );
+    const std::string status = jo.get_string( "status" );
+    if( status != "active" && status != "completed" && status != "failed" ) {
+        jo.throw_error_at( "status", R"(status must be "active", "completed" or "failed")" );
+    }
+    return [mission_type, status]( const_dialogue const & d ) {
+        const avatar &u = get_avatar();
+        const std::vector<mission *> missions = status == "active" ? u.get_active_missions() :
+                                                status == "completed" ? u.get_completed_missions() : u.get_failed_missions();
+        const mission_type_id type( mission_type.evaluate( d ) );
+        return std::any_of( missions.begin(), missions.end(), [&type]( const mission * miss ) {
+            return miss->mission_id() == type;
+        } );
     };
 }
 
@@ -1414,8 +1619,8 @@ conditional_t::func f_overmap_at_point( const JsonObject &jo, std::string_view m
 }
 
 // OMAP-J01: which overmap special a tile belongs to, and how well the player has seen it.
-static tripoint_abs_omt read_omt_or_alpha( const std::optional<var_info> &loc_var,
-        const_dialogue const &d )
+tripoint_abs_omt read_omt_or_alpha( const std::optional<var_info> &loc_var,
+                                    const_dialogue const &d )
 {
     if( loc_var.has_value() ) {
         return project_to<coords::omt>( read_var_value( *loc_var, d ).tripoint() );
@@ -1435,6 +1640,41 @@ conditional_t::func f_map_in_overmap_special( const JsonObject &jo, std::string_
     };
 }
 
+// The map extra recorded on the OMT at "loc" (or alpha's) is this one (MGEN-J03)
+conditional_t::func f_map_has_extra( const JsonObject &jo, std::string_view member )
+{
+    str_or_var extra = get_str_or_var( jo.get_member( member ), member, true );
+    std::optional<var_info> loc_var;
+    optional( jo, false, "loc", loc_var );
+    return [extra, loc_var]( const_dialogue const & d ) {
+        const tripoint_abs_omt omt = read_omt_or_alpha( loc_var, d );
+        return overmap_buffer.has_extra( omt ) &&
+               overmap_buffer.extra( omt ).str() == extra.evaluate( d );
+    };
+}
+
+// UIHUD-J04: the overmap tile at the location has a note (with this text, if "text" is given)
+conditional_t::func f_map_has_note( const JsonObject &jo, std::string_view member )
+{
+    var_info loc_var = read_var_info( jo.get_object( member ) );
+    std::optional<str_or_var> text;
+    if( jo.has_member( "text" ) ) {
+        text = get_str_or_var( jo.get_member( "text" ), "text" );
+    }
+    return [loc_var, text]( const_dialogue const & d ) {
+        const tripoint_abs_omt omt = project_to<coords::omt>( read_var_value( loc_var, d ).tripoint() );
+        if( !overmap_buffer.has_note( omt ) ) {
+            return false;
+        }
+        if( !text ) {
+            return true;
+        }
+        const std::string &note = overmap_buffer.note( omt );
+        const size_t text_start = std::get<2>( overmap_ui::get_note_display_info( note ) );
+        return note.substr( text_start ) == text->evaluate( d );
+    };
+}
+
 conditional_t::func f_map_omt_seen( const JsonObject &jo, std::string_view member )
 {
     om_vision_level level = om_vision_level::full;
@@ -1443,6 +1683,18 @@ conditional_t::func f_map_omt_seen( const JsonObject &jo, std::string_view membe
     optional( jo, false, "loc", loc_var );
     return [level, loc_var]( const_dialogue const & d ) {
         return overmap_buffer.seen( read_omt_or_alpha( loc_var, d ) ) >= level;
+    };
+}
+
+// OMAP-J12: whether the overmap tile has an overmap terrain flag (an engine flag or a mod's own).
+conditional_t::func f_map_omt_has_flag( const JsonObject &jo, std::string_view member )
+{
+    str_or_var flag = get_str_or_var( jo.get_member( member ), member, true );
+    std::optional<var_info> loc_var;
+    optional( jo, false, "loc", loc_var );
+    return [flag, loc_var]( const_dialogue const & d ) {
+        const oter_id &omt = overmap_buffer.ter( read_omt_or_alpha( loc_var, d ) );
+        return omt->has_flag( flag.evaluate( d ) );
     };
 }
 
@@ -1681,6 +1933,132 @@ conditional_t::func f_is_warm( bool is_npc )
     };
 }
 
+conditional_t::func f_death_pending( bool is_npc )
+{
+    return [is_npc]( const_dialogue const & d ) {
+        const Creature *who = d.has_actor( is_npc ) ? d.const_actor( is_npc )->get_const_creature() :
+                              nullptr;
+        return who && execution_fatal::pending( *who );
+    };
+}
+
+conditional_t::func f_is_knocked_out( bool is_npc )
+{
+    return [is_npc]( const_dialogue const & d ) {
+        if( !d.has_actor( is_npc ) ) {
+            return false;
+        }
+        const Creature *who = d.const_actor( is_npc )->get_const_creature();
+        return who && incapacitation::unconscious( *who );
+    };
+}
+
+// HLTH-J14: asleep, lying down or trying to sleep, or unconscious: the opposite of the "while
+// awake" the C++ trait effects used, for the processed_eocs that replace them
+conditional_t::func f_in_sleep_state( bool is_npc )
+{
+    return [is_npc]( const_dialogue const & d ) {
+        if( !d.has_actor( is_npc ) ) {
+            return false;
+        }
+        const Creature *who = d.const_actor( is_npc )->get_const_creature();
+        return who && who->in_sleep_state();
+    };
+}
+
+conditional_t::func f_can_be_knocked_out( bool is_npc )
+{
+    return [is_npc]( const_dialogue const & d ) {
+        if( !d.has_actor( is_npc ) ) {
+            return false;
+        }
+        const Creature *who = d.const_actor( is_npc )->get_const_creature();
+        return who && incapacitation::eligibility( *who ) == "eligible";
+    };
+}
+
+conditional_t::func f_can_request_ability( const JsonObject &jo, std::string_view member )
+{
+    const JsonObject args = jo.get_object( member );
+    const str_or_var id = get_str_or_var( args.get_member( "id" ), "id" );
+    const std::string mode = args.get_string( "invocation", "action" );
+    if( mode != "action" && mode != "effect_only" ) {
+        args.throw_error_at( "invocation", "expected action or effect_only" );
+    }
+    std::optional<var_info> loc;
+    optional( args, false, "loc", loc );
+    return [id, mode, loc]( const_dialogue const & d ) {
+        ability_request request;
+        request.ability = ability_id( id.evaluate( d ) );
+        request.invocation = mode == "action" ? ability_invocation::action :
+                             ability_invocation::effect_only;
+        request.context = d.get_context();
+        if( d.has_actor( false ) ) {
+            if( const Creature *caster = d.const_actor( false )->get_const_creature() ) {
+                if( !g->shared_from( *caster ) ) {
+                    return false;
+                }
+                request.caster = creature_ref::bind( *caster );
+            }
+        }
+        if( d.has_actor( true ) ) {
+            if( const Creature *target = d.const_actor( true )->get_const_creature() ) {
+                if( !g->shared_from( *target ) ) {
+                    return false;
+                }
+                request.target = creature_ref::bind( *target );
+            }
+        }
+        if( loc ) {
+            request.point = read_var_value( *loc, d ).tripoint();
+        }
+        return g->abilities().check( request ).empty();
+    };
+}
+
+conditional_t::func f_in_ability( bool is_npc )
+{
+    return [is_npc]( const_dialogue const & d ) {
+        const Creature *who = d.has_actor( is_npc ) ?
+                              d.const_actor( is_npc )->get_const_creature() : nullptr;
+        return who && g->abilities().controls( *who );
+    };
+}
+
+conditional_t::func f_in_execution( bool is_npc )
+{
+    return [is_npc]( const_dialogue const & d ) {
+        if( !d.has_actor( is_npc ) ) {
+            return false;
+        }
+        const Creature *who = d.const_actor( is_npc )->get_const_creature();
+        return who && g->executions().contains( *who );
+    };
+}
+
+conditional_t::func f_execution_can_fall( const JsonObject &jo, std::string_view member )
+{
+    const JsonObject args = jo.get_object( member );
+    const std::string role = args.get_string( "role", "target" );
+    if( role != "actor" && role != "target" ) {
+        args.throw_error_at( "role", "expected actor or target" );
+    }
+    if( args.get_string( "direction", "backward" ) != "backward" ) {
+        args.throw_error_at( "direction", "only the captured backward direction is supported" );
+    }
+    return [role]( const_dialogue const & d ) {
+        const diag_value *value = d.maybe_get_value( "execution_instance" );
+        if( !value ) {
+            return false;
+        }
+        try {
+            return g->executions().can_fall( std::stoll( value->str() ), role );
+        } catch( const std::exception & ) {
+            return false;
+        }
+    };
+}
+
 conditional_t::func f_exists( bool is_npc )
 {
     return [is_npc]( const_dialogue const & d ) {
@@ -1731,6 +2109,90 @@ conditional_t::func f_is_furniture( bool is_npc )
 {
     return [is_npc]( const_dialogue const & d ) {
         return d.const_actor( is_npc )->get_const_computer();
+    };
+}
+
+// MATH-J08: a zone talker, as u_run_fixed_zone_eocs gives
+conditional_t::func f_is_zone( bool is_npc )
+{
+    return [is_npc]( const_dialogue const & d ) {
+        return d.const_actor( is_npc )->get_const_zone() != nullptr;
+    };
+}
+
+// ACT-J09: whether a zone talker's zone is enabled; false for another talker
+conditional_t::func f_zone_enabled( bool is_npc )
+{
+    return [is_npc]( const_dialogue const & d ) {
+        const zone_data *zone = d.const_actor( is_npc )->get_const_zone();
+        return zone != nullptr && zone->get_enabled();
+    };
+}
+
+// ACT-J09: whether `where` is in an enabled zone of `type` ("" for any type) that `fac` owns;
+// personal and vehicle zones count too
+bool in_enabled_zone( const tripoint_abs_ms &where, const std::string &type,
+                      const faction_id &fac )
+{
+    const zone_manager &mgr = zone_manager::get_manager();
+    for( const zone_data &zone : mgr.get_zones( fac ) ) {
+        if( zone.get_enabled() && ( type.empty() || zone.get_type().str() == type ) &&
+            zone.has_inside( where ) ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// ACT-J09: the faction a zone condition looks at, "your_followers" by default
+str_or_var read_zone_faction( const JsonObject &jo )
+{
+    if( jo.has_member( "faction" ) ) {
+        return get_str_or_var( jo.get_member( "faction" ), "faction", true );
+    }
+    str_or_var fac;
+    fac = your_fac.str();
+    return fac;
+}
+
+// ACT-J09: a zone type that a zone condition names must exist; "" is any type
+void check_zone_type_at_load( const str_or_var &type, const JsonObject &jo,
+                              std::string_view member )
+{
+    if( !type.is_constant() || type.constant().empty() ) {
+        return;
+    }
+    const std::string name = type.constant();
+    const std::string where = jo.get_member( member ).get_root_source_path();
+    effect_on_conditions::add_load_check( [name, where]() {
+        if( !zone_type_id( name ).is_valid() ) {
+            debugmsg( "Unknown zone type \"%s\" (%s)", name, where );
+        }
+    } );
+}
+
+// ACT-J09: { "u_in_zone": "LOOT_FOOD" }, at the talker's position
+conditional_t::func f_in_zone( const JsonObject &jo, std::string_view member, bool is_npc )
+{
+    const str_or_var type = get_str_or_var( jo.get_member( member ), member, true );
+    check_zone_type_at_load( type, jo, member );
+    const str_or_var fac = read_zone_faction( jo );
+    return [type, fac, is_npc]( const_dialogue const & d ) {
+        return in_enabled_zone( d.const_actor( is_npc )->pos_abs(), type.evaluate( d ),
+                                faction_id( fac.evaluate( d ) ) );
+    };
+}
+
+// ACT-J09: { "map_in_zone": "LOOT_FOOD", "loc": { "context_val": "loc" } }
+conditional_t::func f_map_in_zone( const JsonObject &jo, std::string_view member )
+{
+    const str_or_var type = get_str_or_var( jo.get_member( member ), member, true );
+    check_zone_type_at_load( type, jo, member );
+    const str_or_var fac = read_zone_faction( jo );
+    const var_info loc_var = read_var_info( jo.get_object( "loc" ) );
+    return [type, fac, loc_var]( const_dialogue const & d ) {
+        return in_enabled_zone( read_var_value( loc_var, d ).tripoint(), type.evaluate( d ),
+                                faction_id( fac.evaluate( d ) ) );
     };
 }
 
@@ -2136,6 +2598,20 @@ conditional_t::func f_tile_is_outside( const JsonObject &jo, std::string_view me
     };
 }
 
+// UIHUD-J08: in sunlight, as traits that react to the sun count it (math: sun_irradiance)
+conditional_t::func f_in_sunlight( bool is_npc )
+{
+    return [is_npc]( const_dialogue const & d ) {
+        const Creature *c = require_creature( d, is_npc, "in_sunlight" );
+        if( c == nullptr ) {
+            return false;
+        }
+        map &here = get_map();
+        const tripoint_bub_ms pos = c->pos_bub( here );
+        return here.inbounds( pos ) && g->is_in_sunlight( &here, pos );
+    };
+}
+
 conditional_t::func f_is_underwater( bool is_npc )
 {
     return [is_npc]( const_dialogue const & d ) {
@@ -2298,6 +2774,9 @@ conditional_t::func f_map_ter_furn_id( const JsonObject &jo, std::string_view me
         } else if( member == "map_field_id" ) {
             const field &fields_here = here.field_at( loc );
             return !!fields_here.find_field( field_type_id( furn_type.evaluate( d ) ) );
+        } else if( member == "map_trap_id" ) {
+            // also true for a trap nobody has seen yet
+            return here.tr_at( loc ).id == trap_str_id( furn_type.evaluate( d ) );
         } else {
             debugmsg( "Invalid map id: %s", member );
             return false;
@@ -2345,6 +2824,16 @@ conditional_t::func f_mod_is_loaded( const JsonObject &jo, std::string_view memb
             }
         }
         return false;
+    };
+}
+
+// Whether a timed event with this key is queued: the key an EOC gave mapgen_update,
+// revert_location, copy_location, transform_radius, place_override or custom_light_level
+conditional_t::func f_timed_event_queued( const JsonObject &jo, std::string_view member )
+{
+    str_or_var key = get_str_or_var( jo.get_member( member ), member, true );
+    return [key]( const_dialogue const & d ) {
+        return get_timed_events().count_keyed( key.evaluate( d ) ) > 0;
     };
 }
 
@@ -2473,6 +2962,18 @@ conditional_t::func f_is_container_empty( bool is_npc )
     };
 }
 
+// HLTH-J03: the comestible type ("FOOD", "DRINK", "MED" or "INVALID") of an item talker
+conditional_t::func f_comestible_type( const JsonObject &jo, std::string_view member,
+                                       bool is_npc )
+{
+    str_or_var type = get_str_or_var( jo.get_member( member ), member, true );
+    return [type, is_npc]( const_dialogue const & d ) {
+        item const *it = talker_item_or_null( d, is_npc );
+        return it != nullptr && it->is_comestible() &&
+               it->get_comestible()->comesttype == type.evaluate( d );
+    };
+}
+
 conditional_t::func f_contains_item( const JsonObject &jo, std::string_view member,
                                      bool is_npc )
 {
@@ -2515,6 +3016,33 @@ conditional_t::func f_is_contained_in( const JsonObject &jo, std::string_view me
             }
         }
         return false;
+    };
+}
+
+conditional_t::func f_has_fault( const JsonObject &jo, std::string_view member, bool is_npc )
+{
+    str_or_var fault_var = get_str_or_var( jo.get_member( member ), member, true );
+    return [fault_var, is_npc]( const_dialogue const & d ) {
+        item const *it = talker_item_or_null( d, is_npc );
+        if( it == nullptr ) {
+            return false;
+        }
+        const fault_id fault( fault_var.evaluate( d ) );
+        if( !fault.is_valid() ) {
+            debugmsg( "Unknown fault \"%s\" in has_fault.  %s", fault.str(), d.get_callstack() );
+            return false;
+        }
+        return it->has_fault( fault );
+    };
+}
+
+conditional_t::func f_has_fault_of_type( const JsonObject &jo, std::string_view member,
+        bool is_npc )
+{
+    str_or_var fault_type = get_str_or_var( jo.get_member( member ), member, true );
+    return [fault_type, is_npc]( const_dialogue const & d ) {
+        item const *it = talker_item_or_null( d, is_npc );
+        return it != nullptr && it->has_fault_of_type( fault_type.evaluate( d ) );
     };
 }
 
@@ -2584,13 +3112,12 @@ conditional_t::func f_roll_contested( const JsonObject &jo, std::string_view mem
     };
 }
 
-conditional_t::func f_u_know_recipe( const JsonObject &jo, std::string_view member )
+conditional_t::func f_know_recipe( const JsonObject &jo, std::string_view member, bool is_npc )
 {
     str_or_var known_recipe_id = get_str_or_var( jo.get_member( member ), member, true );
-    return [known_recipe_id]( const_dialogue const & d ) {
-        const recipe &rep = recipe_id( known_recipe_id.evaluate( d ) ).obj();
-        // should be a talker function but recipes aren't in Character:: yet
-        return get_player_character().knows_recipe( &rep );
+    return [known_recipe_id, is_npc]( const_dialogue const & d ) {
+        // CRAFT-J06: the talker's recipes, not always the avatar's
+        return d.const_actor( is_npc )->has_recipe( recipe_id( known_recipe_id.evaluate( d ) ) );
     };
 }
 
@@ -2761,7 +3288,7 @@ conditional_t::func f_can_reach( const JsonObject &jo, std::string_view member, 
 {
     if( !jo.has_object( member ) ) {
         jo.throw_error_at( member, string_format(
-                               "%s takes a location variable, like { \"context_val\": \"spot\" }", std::string( member ) ) );
+                               R"(%s takes a location variable, like { "context_val": "spot" })", std::string( member ) ) );
     }
     const var_info target = read_var_info( jo.get_object( member ) );
     const dbl_or_var range = get_dbl_or_var( jo, "range", false, 0 );
@@ -2843,7 +3370,7 @@ conditional_t::func f_is_walking_to( const JsonObject &jo, std::string_view memb
     if( jo.has_string( member ) ) {
         if( jo.get_string( member ) != "any" ) {
             jo.throw_error_at( member, string_format(
-                                   "%s takes \"any\" or a location variable, like { \"context_val\": \"spot\" }",
+                                   R"(%s takes "any" or a location variable, like { "context_val": "spot" })",
                                    std::string( member ) ) );
         }
     } else if( jo.has_object( member ) ) {
@@ -2882,7 +3409,7 @@ conditional_t::func f_npc_goal( const JsonObject &jo, std::string_view member, b
 }
 
 // the NPC u or npc is, nullptr for none, another kind of talker, or no talker at all
-static const npc *talker_npc( const_dialogue const &d, const bool is_npc )
+const npc *talker_npc( const_dialogue const &d, const bool is_npc )
 {
     return d.has_actor( is_npc ) ? d.const_actor( is_npc )->get_const_npc() : nullptr;
 }
@@ -3019,7 +3546,7 @@ conditional_t::func f_mod_setting_on( const JsonObject &jo, std::string_view mem
 {
     const str_or_var id = get_str_or_var( jo.get_member( member ), member, true );
     check_mod_setting_id( jo.get_member( member ), id, "mod_setting_on",
-    { mod_setting::kind_t::boolean }, "a switch (\"kind\": \"bool\")" );
+    { mod_setting::kind_t::boolean }, R"(a switch ("kind": "bool"))" );
     return [id]( const_dialogue const & d ) {
         const mod_setting_id setting( id.evaluate( d ) );
         if( !setting.is_valid() ) {
@@ -3152,6 +3679,57 @@ static std::function<T( const_dialogue const & )> get_get_str_( const JsonObject
         return [ret_func]( const_dialogue const & d ) {
             return ret_func( d.cur_item.str() );
         };
+    } else if( mutator == "u_vehicle_type" || mutator == "npc_vehicle_type" ) {
+        // VINT-J01: the vehicle prototype the talker was built from, "" for another talker
+        const bool is_npc = mutator == "npc_vehicle_type";
+        return [is_npc, ret_func]( const_dialogue const & d ) {
+            const vehicle *veh = d.const_actor( is_npc )->get_const_vehicle();
+            return ret_func( veh != nullptr ? veh->type.str() : std::string() );
+        };
+    } else if( mutator == "u_activity" || mutator == "npc_activity" ) {
+        // MATH-J05: the id of the character's current activity, "" without one
+        const bool is_npc = mutator == "npc_activity";
+        return [is_npc, ret_func]( const_dialogue const & d ) {
+            const Character *who = d.const_actor( is_npc )->get_const_character();
+            return ret_func( who != nullptr && who->activity ? who->activity.id().str() :
+                             std::string() );
+        };
+    } else if( mutator == "u_monster_faction" || mutator == "npc_monster_faction" ) {
+        // MATH-J06: this monster's own faction (u_set_monster_faction changes it), not its type's
+        const bool is_npc = mutator == "npc_monster_faction";
+        return [is_npc, ret_func]( const_dialogue const & d ) {
+            const monster *mon = d.const_actor( is_npc )->get_const_monster();
+            return ret_func( mon != nullptr ? mon->faction.id().str() : std::string() );
+        };
+    } else if( mutator == "u_monster_type" || mutator == "npc_monster_type" ) {
+        // MONDT-J12: the monster's type id (u_is_mtype tests it), "" for a talker that isn't one
+        const bool is_npc = mutator == "npc_monster_type";
+        return [is_npc, ret_func]( const_dialogue const & d ) {
+            const monster *mon = d.const_actor( is_npc )->get_const_monster();
+            return ret_func( mon != nullptr ? mon->type->id.str() : std::string() );
+        };
+    } else if( mutator == "u_loaded_ammo" || mutator == "npc_loaded_ammo" ) {
+        // MATH-J07: the id of the ammo loaded in the item, "" for none or another talker
+        const bool is_npc = mutator == "npc_loaded_ammo";
+        return [is_npc, ret_func]( const_dialogue const & d ) {
+            const item_location *it = d.const_actor( is_npc )->get_const_item();
+            const itype *ammo = it != nullptr && *it ? ( *it )->ammo_data() : nullptr;
+            return ret_func( ammo != nullptr ? ammo->get_id().str() : std::string() );
+        };
+    } else if( mutator == "u_zone_type" || mutator == "npc_zone_type" ) {
+        // MATH-J08: the zone type of a zone talker (u_run_fixed_zone_eocs), "" for another talker
+        const bool is_npc = mutator == "npc_zone_type";
+        return [is_npc, ret_func]( const_dialogue const & d ) {
+            const zone_data *zone = d.const_actor( is_npc )->get_const_zone();
+            return ret_func( zone != nullptr ? zone->get_type().str() : std::string() );
+        };
+    } else if( mutator == "u_zone_faction" || mutator == "npc_zone_faction" ) {
+        // ACT-J09: the faction that owns a zone talker's zone, "" for another talker
+        const bool is_npc = mutator == "npc_zone_faction";
+        return [is_npc, ret_func]( const_dialogue const & d ) {
+            const zone_data *zone = d.const_actor( is_npc )->get_const_zone();
+            return ret_func( zone != nullptr ? zone->get_faction().str() : std::string() );
+        };
     }
 
     return nullptr;
@@ -3283,7 +3861,6 @@ std::unordered_map<std::string_view, int ( const_talker::* )() const> const f_ge
     { "count", &const_talker::get_count },
     { "vehicle_facing", &const_talker::get_vehicle_facing },
     { "current_speed", &const_talker::get_current_speed },
-    { "unloaded_weight", &const_talker::get_unloaded_weight },
     { "friendly_passenger_count", &const_talker::get_friendly_passenger_count },
     { "hostile_passenger_count", &const_talker::get_hostile_passenger_count }
 };
@@ -3342,6 +3919,10 @@ double  conditional_t::get_legacy_dbl( const_dialogue const &d, std::string_view
         return static_cast<double>( d.const_actor( is_npc )->pos_abs().x() );
     } else if( checked_value == "pos_y" ) {
         return static_cast<double>( d.const_actor( is_npc )->pos_abs( ).y() );
+    } else if( checked_value == "unloaded_weight" ) {
+        // in milligrams; most vehicles weigh more than an int holds
+        return static_cast<double>( units::to_milligram(
+                                        d.const_actor( is_npc )->get_unloaded_weight() ) );
     }
     throw math::runtime_error( string_format( R"(Invalid aspect "%s" for val())", checked_value ) );
 }
@@ -3393,6 +3974,15 @@ void conditional_t::set_legacy_dbl( dialogue &d, double input, std::string_view 
         d.actor( is_npc )->add_debt( input - d.actor( is_npc )->debt() );
     } else if( checked_value == "sold" ) {
         d.actor( is_npc )->add_sold( input - d.actor( is_npc )->sold() );
+    } else if( checked_value == "strength" ) {
+        // the current value is base + bonus: the base is set, so it reads back as set
+        d.actor( is_npc )->set_str_max( input - d.actor( is_npc )->get_str_bonus() );
+    } else if( checked_value == "dexterity" ) {
+        d.actor( is_npc )->set_dex_max( input - d.actor( is_npc )->get_dex_bonus() );
+    } else if( checked_value == "intelligence" ) {
+        d.actor( is_npc )->set_int_max( input - d.actor( is_npc )->get_int_bonus() );
+    } else if( checked_value == "perception" ) {
+        d.actor( is_npc )->set_per_max( input - d.actor( is_npc )->get_per_bonus() );
     } else if( checked_value == "pos_x" ) {
         tripoint_abs_ms const tr = d.actor( is_npc )->pos_abs();
         d.actor( is_npc )->set_pos( tripoint_abs_ms( static_cast<int>( input ), tr.y(), tr.z() ) );
@@ -3408,6 +3998,16 @@ void conditional_t::set_legacy_dbl( dialogue &d, double input, std::string_view 
     } else if( checked_value == "power_percentage" ) {
         // Energy in milijoule
         d.actor( is_npc )->set_power_cur( ( d.actor( is_npc )->power_max() * input ) / 100 );
+    } else if( checked_value == "count" ) {
+        // MATH-J07: the size of a stack counted by charges (ammo, thread, ...), at least 1
+        item_location *it = d.actor( is_npc )->get_item();
+        if( it == nullptr || !*it || !( *it )->count_by_charges() ) {
+            throw math::runtime_error( R"(val("count") can only be set on an item counted by charges)" );
+        }
+        const int count = std::max( 1, static_cast<int>( std::lround( input ) ) );
+        ( *it )->mod_charges( count - ( *it )->charges );
+        // refresh the stack, its container and, for vehicle cargo, the vehicle mass
+        it->on_contents_changed();
     } else if( checked_value == "focus" ) {
         d.actor( is_npc )->mod_focus( input - d.actor( is_npc )->focus_cur() );
     } else if( checked_value == "mana_percentage" ) {
@@ -3438,7 +4038,7 @@ void eoc_math::from_json( const JsonObject &jo, std::string_view member, math_ty
     for( size_t i = 0; i < objects.size(); i++ ) {
         combined.append( objects.get_string( i ) );
     }
-    exp = defer_math( jo, combined, type_ );
+    exp = defer_math( jo, combined, type_, jo.get_bool( "optional_ids", false ) );
 }
 
 void eoc_math::deserialize( JsonValue const &jsin )
@@ -3467,6 +4067,8 @@ template double eoc_math::act( const_dialogue const &d ) const;
 static const
 std::vector<condition_parser>
 parsers = {
+    {"execution_can_fall", jarg::object, &conditional_fun::f_execution_can_fall },
+    {"can_request_ability", jarg::object, &conditional_fun::f_can_request_ability },
     {"u_has_any_trait", "npc_has_any_trait", jarg::array, &conditional_fun::f_has_any_trait },
     {"u_has_trait", "npc_has_trait", jarg::member, &conditional_fun::f_has_trait },
     {"u_has_active_trait", "npc_has_active_trait", jarg::member, &conditional_fun::f_has_active_trait },
@@ -3486,12 +4088,13 @@ parsers = {
     {"u_bodytype", "npc_bodytype", jarg::member, &conditional_fun::f_bodytype },
     {"u_has_class", "npc_has_class", jarg::member, &conditional_fun::f_npc_has_class },
     {"u_is_in_faction", "npc_is_in_faction", jarg::member, &conditional_fun::f_is_in_faction },
-    {"u_has_activity", "npc_has_activity", jarg::string, &conditional_fun::f_has_activity },
+    {"u_has_activity", "npc_has_activity", jarg::member, &conditional_fun::f_has_activity },
     {"u_is_doing_activity", "npc_is_doing_activity", jarg::member, &conditional_fun::f_is_doing_activity },
     {"u_is_riding", "npc_is_riding", jarg::string, &conditional_fun::f_is_riding },
     {"u_is_grabbing", "npc_is_grabbing", jarg::member, &conditional_fun::f_is_grabbing },
     {"u_is_grabbed", "npc_is_grabbed", jarg::member, &conditional_fun::f_is_grabbed },
     {"u_has_mission", jarg::string, &conditional_fun::f_u_has_mission },
+    {"u_mission_status", jarg::member, &conditional_fun::f_u_mission_status },
     {"u_monsters_in_direction", jarg::string, &conditional_fun::f_u_monsters_in_direction },
     {"u_safe_mode_trigger", jarg::member, &conditional_fun::f_u_safe_mode_trigger },
     {"u_has_strength", "npc_has_strength", jarg::member | jarg::array, &conditional_fun::f_has_strength },
@@ -3540,7 +4143,7 @@ parsers = {
     {"u_mission_goal", "mission_goal", jarg::member, &conditional_fun::f_mission_goal },
     {"u_mission_goal", "npc_mission_goal", jarg::member, &conditional_fun::f_mission_goal },
     {"roll_contested", jarg::member, &conditional_fun::f_roll_contested },
-    {"u_know_recipe", jarg::member, &conditional_fun::f_u_know_recipe },
+    {"u_know_recipe", "npc_know_recipe", jarg::member, &conditional_fun::f_know_recipe },
     {"one_in_chance", jarg::member | jarg::array, &conditional_fun::f_one_in_chance },
     {"x_in_y_chance", jarg::object, &conditional_fun::f_x_in_y_chance },
     {"line_of_sight", jarg::member, &conditional_fun::f_line_of_sight },
@@ -3553,6 +4156,7 @@ parsers = {
     {"u_is_on_terrain", "npc_is_on_terrain", jarg::member, &conditional_fun::f_is_on_terrain },
     {"u_is_on_terrain_with_flag", "npc_is_on_terrain_with_flag", jarg::member, &conditional_fun::f_is_on_terrain_with_flag },
     {"u_is_on_furniture", "npc_is_on_furniture", jarg::member, &conditional_fun::f_is_on_furniture },
+    {"u_in_zone", "npc_in_zone", jarg::member, &conditional_fun::f_in_zone },
     {"u_is_on_furniture_with_flag", "npc_is_on_furniture_with_flag", jarg::member, &conditional_fun::f_is_on_furniture_with_flag },
     {"u_is_in_field", "npc_is_in_field", jarg::member, &conditional_fun::f_is_in_field },
     {"u_has_move_mode", "npc_has_move_mode", jarg::member, &conditional_fun::f_has_move_mode },
@@ -3573,21 +4177,33 @@ parsers = {
     {"map_terrain_id", jarg::member, &conditional_fun::f_map_ter_furn_id },
     {"map_furniture_id", jarg::member, &conditional_fun::f_map_ter_furn_id },
     {"map_field_id", jarg::member, &conditional_fun::f_map_ter_furn_id },
+    {"map_trap_id", jarg::member, &conditional_fun::f_map_ter_furn_id },
     {"map_is_outside", jarg::member, &conditional_fun::f_map_is_outside },
     {"map_in_city", jarg::member, &conditional_fun::f_map_in_city },
+    {"map_in_zone", jarg::member, &conditional_fun::f_map_in_zone },
     {"mod_is_loaded", jarg::member, &conditional_fun::f_mod_is_loaded },
+    {"timed_event_queued", jarg::member, &conditional_fun::f_timed_event_queued },
     {"u_has_faction_trust", jarg::member | jarg::array, &conditional_fun::f_has_faction_trust },
     {"math", jarg::member, &conditional_fun::f_math },
     {"overmap_at_point", jarg::member, &conditional_fun::f_overmap_at_point },
     {"map_in_overmap_special", jarg::member, &conditional_fun::f_map_in_overmap_special },
+    {"map_has_extra", jarg::member, &conditional_fun::f_map_has_extra },
     {"map_omt_seen", jarg::member, &conditional_fun::f_map_omt_seen },
+    {"map_has_note", jarg::object, &conditional_fun::f_map_has_note },
+    {"map_omt_has_flag", jarg::member, &conditional_fun::f_map_omt_has_flag },
     {"compare_string", jarg::member, &conditional_fun::f_compare_string },
     {"compare_string_match_all", jarg::member, &conditional_fun::f_compare_string_match_all },
     {"get_condition", jarg::member, &conditional_fun::f_get_condition },
     {"test_eoc", jarg::member, &conditional_fun::f_test_eoc },
     {"u_has_part_flag", "npc_has_part_flag", jarg::string, &conditional_fun::f_has_part_flag },
+    {"u_vehicle_owner", "npc_vehicle_owner", jarg::member, &conditional_fun::f_vehicle_owner },
+    {"u_vehicle_type", "npc_vehicle_type", jarg::member, &conditional_fun::f_vehicle_type },
+    {"u_has_fac_relation", "npc_has_fac_relation", jarg::string, &conditional_fun::f_has_fac_relation },
+    {"u_comestible_type", "npc_comestible_type", jarg::member, &conditional_fun::f_comestible_type },
     {"u_contains_item", "npc_contains_item", jarg::member, &conditional_fun::f_contains_item },
     {"u_is_contained_in", "npc_is_contained_in", jarg::member, &conditional_fun::f_is_contained_in },
+    {"u_has_fault", "npc_has_fault", jarg::member, &conditional_fun::f_has_fault },
+    {"u_has_fault_of_type", "npc_has_fault_of_type", jarg::member, &conditional_fun::f_has_fault_of_type },
 };
 
 // When updating this, please also update `dynamic_line_string_keys` in
@@ -3636,6 +4252,7 @@ parsers_simple = {
     {"u_has_stolen_item", "npc_has_stolen_item", &conditional_fun::f_has_stolen_item },
     {"u_is_outside", "npc_is_outside", &conditional_fun::f_is_outside },
     {"u_is_underwater", "npc_is_underwater", &conditional_fun::f_is_underwater },
+    {"u_in_sunlight", "npc_in_sunlight", &conditional_fun::f_in_sunlight },
     {"u_is_swimming", "npc_is_swimming", &conditional_fun::f_is_swimming },
     {"u_is_bleeding", "npc_is_bleeding", &conditional_fun::f_is_bleeding },
     {"u_has_camp", &conditional_fun::f_u_has_camp },
@@ -3650,12 +4267,22 @@ parsers_simple = {
     {"u_is_alive", "npc_is_alive", &conditional_fun::f_is_alive },
     {"u_is_warm", "npc_is_warm", &conditional_fun::f_is_warm },
     {"u_exists", "npc_exists", &conditional_fun::f_exists },
+    {"u_in_execution", "npc_in_execution", &conditional_fun::f_in_execution },
+    {"u_in_ability", "npc_in_ability", &conditional_fun::f_in_ability },
+    {"u_is_knocked_out", "npc_is_knocked_out", &conditional_fun::f_is_knocked_out },
+    {"u_in_sleep_state", "npc_in_sleep_state", &conditional_fun::f_in_sleep_state },
+    {"u_death_pending", "npc_death_pending", &conditional_fun::f_death_pending },
+    {"u_can_be_knocked_out", "npc_can_be_knocked_out", &conditional_fun::f_can_be_knocked_out },
     {"u_is_avatar", "npc_is_avatar", &conditional_fun::f_is_avatar },
     {"u_is_npc", "npc_is_npc", &conditional_fun::f_is_npc },
     {"u_is_character", "npc_is_character", &conditional_fun::f_is_character },
     {"u_is_monster", "npc_is_monster", &conditional_fun::f_is_monster },
     {"u_is_item", "npc_is_item", &conditional_fun::f_is_item },
     {"u_is_furniture", "npc_is_furniture", &conditional_fun::f_is_furniture },
+    // the "furniture" talker is a computer's: u_is_computer says so
+    {"u_is_computer", "npc_is_computer", &conditional_fun::f_is_furniture },
+    {"u_is_zone", "npc_is_zone", &conditional_fun::f_is_zone },
+    {"u_zone_enabled", "npc_zone_enabled", &conditional_fun::f_zone_enabled },
     {"u_is_vehicle", "npc_is_vehicle", &conditional_fun::f_is_vehicle },
     {"u_has_ammo", "npc_has_ammo", &conditional_fun::f_has_ammo },
     // legacy spelling of npc_has_ammo

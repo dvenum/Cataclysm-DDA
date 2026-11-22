@@ -25,14 +25,20 @@
 #include "character_id.h"
 #include "character_martial_arts.h"
 #include "color.h"
+#include "condition.h"
 #include "coordinates.h"
 #include "craft_command.h"
 #include "craft_reservation.h"
 #include "creature.h"
 #include "debug.h"
+#include "dialogue.h"
+#include "dialogue_helpers.h"
 #include "effect.h" // for weed_msg
+#include "effect_on_condition.h"
 #include "enum_bitset.h"
 #include "enums.h"
+#include "event.h"
+#include "event_bus.h"
 #include "faction.h"
 #include "fault.h"
 #include "field_type.h"
@@ -44,12 +50,14 @@
 #include "item_category.h"
 #include "item_factory.h"
 #include "item_group.h"
+#include "item_location.h"
 #include "item_tname.h"
 #include "item_transformation.h"
 #include "item_wakeup.h"
 #include "itype.h"
 #include "iuse.h"
 #include "iuse_actor.h"
+#include "json.h"
 #include "localized_comparator.h"
 #include "magic.h"
 #include "magic_enchantment.h"
@@ -70,6 +78,7 @@
 #include "pimpl.h"
 #include "pocket_type.h"
 #include "point.h"
+#include "power_grant.h"
 #include "proficiency.h"
 #include "recipe.h"
 #include "recipe_dictionary.h"
@@ -81,6 +90,7 @@
 #include "stomach.h"
 #include "string_formatter.h"
 #include "subbodypart.h"
+#include "talker.h"
 #include "text_snippets.h"
 #include "trait_group.h"
 #include "translation.h"
@@ -105,8 +115,8 @@ static const efftype_id effect_weed_high( "weed_high" );
 
 static const fault_id fault_emp_reboot( "fault_emp_reboot" );
 
-static const furn_str_id furn_f_metal_smoking_rack_active( "f_metal_smoking_rack_active" );
-static const furn_str_id furn_f_smoking_rack_active( "f_smoking_rack_active" );
+static const flag_id json_flag_NO_UNCRAFT( "NO_UNCRAFT" );
+
 static const furn_str_id furn_f_water_mill_active( "f_water_mill_active" );
 static const furn_str_id furn_f_wind_mill_active( "f_wind_mill_active" );
 
@@ -435,6 +445,8 @@ item &item::convert( const itype_id &new_type, Character *carrier )
 {
     // Carry over relative rot similar to crafting
     const double rel_rot = get_relative_rot();
+    // read before the type changes: afterwards it would read the new type too
+    const bool was_count_by_charges = count_by_charges();
     type = find_type( new_type );
     set_relative_rot( rel_rot );
     requires_tags_processing = true; // new type may have "active" flags
@@ -449,7 +461,9 @@ item &item::convert( const itype_id &new_type, Character *carrier )
     temp.contents.combine( contents, true );
     contents = temp.contents;
     current_phase = new_type->phase;
-    if( count_by_charges() != new_type->count_by_charges() ) {
+    // A stack counted by charges that becomes a type that isn't is one item here: whoever holds it
+    // (item_pocket::process, map item processing) adds a copy for each other charge it had.
+    if( was_count_by_charges != new_type->count_by_charges() ) {
         charges = new_type->charges_default();
     }
 
@@ -2714,14 +2728,16 @@ bool item::ready_to_revive( map &here, const tripoint_bub_ms &pos ) const
     if( damage_level() > 0 ) {
         age_in_hours /= ( damage_level() + 1 );
     }
-    int rez_factor = 48 - age_in_hours;
+    // the monster's revive_delay: not before min, and surely by guaranteed
+    int rez_factor = to_hours<int>( corpse->revive_guaranteed ) - age_in_hours;
 
     // Arbitrary limit allowing you to take breaks to eat, instruct companions, etc., but not long enough to
     // easily be abused to keep corpses from rising as a strategy.
     bool butchery_block = calendar::turn - ( calendar::start_of_cataclysm +
                           time_duration::from_turns<double>(
                               get_var( butcher_progress_time_var(), 0.0 ) ) ) < 30_minutes;
-    if( age_in_hours > 6 && !butchery_block && ( rez_factor <= 0 || one_in( rez_factor ) ) ) {
+    if( age_in_hours > to_hours<int>( corpse->revive_min_age ) && !butchery_block &&
+        ( rez_factor <= 0 || one_in( rez_factor ) ) ) {
         // If we're a special revival zombie, wait to get up until the player is nearby.
         const bool isReviveSpecial = has_flag( flag_REVIVE_SPECIAL );
         if( isReviveSpecial ) {
@@ -3313,7 +3329,7 @@ std::string item::get_book_skill() const
 bool item::is_map() const
 {
     return get_category_shallow().get_id() == item_category_maps ||
-           type->use_methods.count( "reveal_map" );
+           type->can_use( "reveal_map" );
 }
 
 bool item::is_engine() const
@@ -3343,6 +3359,9 @@ int item::wheel_area() const
 
 bool item::is_salvageable() const
 {
+    if( has_var( "power_grant_application" ) ) {
+        return false;
+    }
     if( is_null() ) {
         return false;
     }
@@ -3358,7 +3377,9 @@ bool item::is_salvageable() const
 
 bool item::is_disassemblable() const
 {
-    return !ethereal && ( recipe_dictionary::get_uncraft( typeId() ) || typeId() == itype_disassembly );
+    // CRAFT-J03: NO_UNCRAFT opts an item out of disassembly
+    return !ethereal && !has_var( "power_grant_application" ) && !has_flag( json_flag_NO_UNCRAFT ) &&
+           ( recipe_dictionary::get_uncraft( typeId() ) || typeId() == itype_disassembly );
 }
 
 bool item::is_craft() const
@@ -3392,7 +3413,7 @@ bool item::is_deployable() const
 
 bool item::is_transformable() const
 {
-    return type->use_methods.find( "transform" ) != type->use_methods.end();
+    return type->can_use( "transform" );
 }
 
 bool item::is_relic() const
@@ -3925,6 +3946,9 @@ bool item::use_amount_internal( const itype_id &it, int &quantity, std::list<ite
 
 bool item::allow_crafting_component() const
 {
+    if( has_var( "power_grant_application" ) ) {
+        return false;
+    }
     if( has_flag( flag_PSEUDO ) ) {
         return false;
     }
@@ -4277,7 +4301,7 @@ int item::processing_speed() const
         return to_turns<int>( 10_minutes );
     }
 
-    if( active || ethereal || wetness || has_link_data() ||
+    if( active || ethereal || has_var( "power_grant_application" ) || wetness || has_link_data() ||
         has_flag( flag_RADIO_ACTIVATION ) || has_relic_recharge() ||
         has_fault_flag( flag_BLACKPOWDER_FOULING_DAMAGE ) || get_var( "gun_heat", 0 ) > 0 ||
         has_fault( fault_emp_reboot ) ) {
@@ -4525,7 +4549,14 @@ void item::overwrite_relic( const relic &nrelic )
 
 bool item::use_relic( Character &guy, const tripoint_bub_ms &pos )
 {
-    return relic_data->activate( guy, pos );
+    // relic::activate refuses when the charges can't pay for it
+    const bool activates = relic_data->charges_per_use() == 0 ||
+                           relic_data->charges() >= relic_data->charges_per_use();
+    const int charges_used = relic_data->activate( guy, pos );
+    if( activates ) {
+        get_event_bus().send<event_type::activates_artifact>( guy.getID(), tname(), typeId() );
+    }
+    return charges_used != 0;
 }
 
 void item::process_relic( Character *carrier, const tripoint_bub_ms &pos )
@@ -4609,9 +4640,9 @@ bool item::process_fake_mill( map &here, Character * /*carrier*/, const tripoint
 
 bool item::process_fake_smoke( map &here, Character * /*carrier*/, const tripoint_bub_ms &pos )
 {
+    // ACT-J11: a lit smoking rack, by its "smoker" object
     const furn_id &f = here.furn( pos );
-    if( f != furn_f_smoking_rack_active &&
-        f != furn_f_metal_smoking_rack_active ) {
+    if( !f->smoker || f->smoker->unlit.is_empty() ) {
         item_counter = 0;
         return true; //destroy fake smoke
     }
@@ -4624,6 +4655,18 @@ bool item::process_fake_smoke( map &here, Character * /*carrier*/, const tripoin
     return false;
 }
 
+// The EOCs of a lit smokable's "smoke" block, with the smoker (if any) as u and the lit item's
+// id as _id. The item isn't a talker: an EOC could destroy it while it's processed.
+static void run_smoke_eocs( const std::vector<effect_on_condition_id> &eocs, Character *smoker,
+                            const itype_id &lit )
+{
+    for( const effect_on_condition_id &eoc : eocs ) {
+        dialogue d( smoker != nullptr ? get_talker_for( *smoker ) : nullptr, nullptr );
+        write_var_value( var_type::context, "id", &d, lit.str() );
+        eoc->activate( d );
+    }
+}
+
 bool item::process_litcig( map &here, Character *carrier, const tripoint_bub_ms &pos )
 {
     // cig dies out
@@ -4631,11 +4674,18 @@ bool item::process_litcig( map &here, Character *carrier, const tripoint_bub_ms 
         if( carrier != nullptr ) {
             carrier->add_msg_if_player( m_neutral, _( "You finish your %s." ), type_name() );
         }
+        // read before the item turns into its butt
+        const itype_smoke_data *const smoke = type->smoke.get();
+        const itype_id lit = typeId();
         if( type->transform_into ) {
             type->transform_into.value().transform( carrier, *this, true );
         } else {
-            item_location loc( *carrier, this );
+            // a cigarette left on the ground burns out with no carrier
+            item_location loc = item_location::form_loc( carrier, &here, pos, *this );
             type->invoke( carrier, loc, pos, "transform" );
+        }
+        if( smoke != nullptr ) {
+            run_smoke_eocs( smoke->burn_out_eocs, carrier, lit );
         }
         if( typeId() == itype_joint_lit && carrier != nullptr ) {
             carrier->add_effect( effect_weed_high, 1_minutes ); // one last puff
@@ -4680,7 +4730,23 @@ bool item::process_litcig( map &here, Character *carrier, const tripoint_bub_ms 
             duration = 30_seconds;
         }
         carrier->add_msg_if_player( m_neutral, _( "You take a puff of your %s." ), type_name() );
-        if( has_flag( flag_TOBACCO ) ) {
+        if( const itype_smoke_data *const smoke = type->smoke.get() ) {
+            // USE-J09: the item's own puff, with the traits scaling it as they do the default
+            duration = smoke->puff_duration;
+            if( carrier->has_trait( trait_TOLERANCE ) ) {
+                duration = duration / 2;
+            } else if( carrier->has_trait( trait_LIGHTWEIGHT ) ) {
+                duration = duration * 2;
+            }
+            if( !smoke->puff_effect.is_null() ) {
+                carrier->add_effect( smoke->puff_effect, duration );
+            }
+            run_smoke_eocs( smoke->puff_eocs, carrier, typeId() );
+            // the puff's EOCs may have put it out
+            if( !active ) {
+                return false;
+            }
+        } else if( has_flag( flag_TOBACCO ) ) {
             carrier->add_effect( effect_cig, duration );
         } else {
             carrier->add_effect( effect_weed_high, duration / 2 );
@@ -4781,7 +4847,8 @@ bool item::process_extinguish( map &here, Character *carrier, const tripoint_bub
     if( type->transform_into ) {
         type->transform_into.value().transform( carrier, *this, true );
     } else {
-        item_location loc( *carrier, this );
+        // rain puts out a cigarette on the ground, with no carrier
+        item_location loc = item_location::form_loc( carrier, &here, pos, *this );
         type->invoke( carrier, loc, pos, "transform" );
     }
     active = false;
@@ -4816,6 +4883,11 @@ void item::actualize_scheduled( item_wakeup_kind kind, time_point now,
 bool item::process( map &here, Character *carrier, const tripoint_bub_ms &pos, float insulation,
                     temperature_flag flag, float spoil_multiplier_parent, bool watertight_container, bool recursive )
 {
+    const power_grant_item_scope grant_dispatch( has_var( "power_grant_application" ) );
+    if( has_var( "power_grant_application" ) && !get_power_grants().item_active( *this ) ) {
+        expire_power_equipment( *this, here, pos );
+        return true;
+    }
     process_relic( carrier, pos );
     if( recursive ) {
         contents.process( here, carrier, pos, insulation, flag,
@@ -4833,6 +4905,9 @@ void item::set_last_temp_check( const time_point &pt )
 bool item::process_internal( map &here, Character *carrier, const tripoint_bub_ms &pos,
                              float insulation, const temperature_flag flag, float spoil_modifier, bool watertight_container )
 {
+    if( has_var( "power_grant_application" ) ) {
+        return false;
+    }
     if( ethereal ) {
         diag_value const &eth = get_value( "ethereal" );
         if( eth.is_empty() ) {
@@ -4900,7 +4975,10 @@ bool item::process_internal( map &here, Character *carrier, const tripoint_bub_m
         }
 
         for( const emit_id &e : type->emits ) {
-            here.emit_field( pos, e );
+            item_location source = carrier ? item_location( *carrier, this ) :
+                                   item_location( map_cursor( &here, pos ), this );
+            const dialogue context( get_talker_for( source ), carrier ? get_talker_for( carrier ) : nullptr );
+            here.emit_field( pos, e, 1.0f, context );
         }
 
         if( requires_tags_processing ) {
@@ -5259,7 +5337,7 @@ bool item::on_drop( const tripoint_bub_ms &pos )
     return on_drop( pos, get_map() );
 }
 
-bool item::on_drop( const tripoint_bub_ms &pos, map &m )
+bool item::on_drop( const tripoint_bub_ms &pos, map &m, Character *dropper )
 {
     // dropping liquids, even currently frozen ones, on the ground makes them
     // dirty
@@ -5268,10 +5346,9 @@ bool item::on_drop( const tripoint_bub_ms &pos, map &m )
         set_flag( flag_DIRTY );
     }
 
-    avatar &player_character = get_avatar();
-    map_cursor mc( pos );
-    item_location loc( mc, this );
-    return type->drop_action && type->drop_action.call( &player_character, loc, &m, pos );
+    // The item may not be on the tile yet: a drop callback can run before it is placed.
+    item_location loc( map_cursor( &m, pos ), this );
+    return type->drop_action && type->drop_action.call( dropper, loc, &m, pos ).value_or( 0 ) > 0;
 }
 
 bool item::is_upgrade() const

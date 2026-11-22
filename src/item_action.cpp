@@ -122,6 +122,27 @@ item_action_map item_action_generator::map_actions_to_items( Character &you ) co
     return map_actions_to_items( you, std::vector<item_location>() );
 }
 
+// The item, `outer` or one inside it, with a use action whose id is exactly `use` (not one only
+// of that type: a use action with an "id" has its own entry, under the id).
+static item_location item_with_use_id( const item_location &outer, const std::string &use )
+{
+    const auto has_use_id = [&use]( const item & it ) {
+        return it.type != nullptr && it.type->use_methods.count( use ) != 0;
+    };
+    if( has_use_id( *outer ) ) {
+        return outer;
+    }
+    item_location ret;
+    outer.visit_contents( [&ret, &has_use_id]( const item_location & node ) {
+        if( has_use_id( *node ) ) {
+            ret = node;
+            return VisitResponse::ABORT;
+        }
+        return VisitResponse::NEXT;
+    } );
+    return ret;
+}
+
 item_action_map item_action_generator::map_actions_to_items( Character &you,
         const std::vector<item_location> &pseudos, const bool use_player_inventory ) const
 {
@@ -141,6 +162,25 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
         items = pseudos;
     }
 
+    // A use action with an "id" of a type listed here is listed too, under its id.
+    for( const item_location &i : items ) {
+        if( !i->item_has_uses_recursive() ) {
+            continue;
+        }
+        i->visit_items( [this, &unmapped_actions]( const item * it, const item * ) {
+            if( it == nullptr ) {
+                return VisitResponse::SKIP;
+            }
+            for( const std::pair<const std::string, use_function> &use : it->type->use_methods ) {
+                const iuse_actor *actor = use.second.get_actor_ptr();
+                if( actor != nullptr && use.first != actor->type && action_exists( actor->type ) ) {
+                    unmapped_actions.insert( use.first );
+                }
+            }
+            return VisitResponse::NEXT;
+        } );
+    }
+
     std::unordered_set< item_action_id > to_remove;
     for( item_location i : items ) {
         if( !i->item_has_uses_recursive() ) {
@@ -150,12 +190,12 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
         for( const item_action_id &use : unmapped_actions ) {
             // Actually used item can be different from the "outside item"
             // For example, sheathed knife
-            item_location actual_item = i->get_usable_item_loc( i, use );
+            item_location actual_item = item_with_use_id( i, use );
             if( !actual_item ) {
                 continue;
             }
 
-            const use_function *func = actual_item->get_use( use );
+            const use_function *func = actual_item->type->get_use( use );
             if( !( func && func->get_actor_ptr() &&
                    func->get_actor_ptr()->can_use( you, actual_item, &get_map(), you.pos_bub() ).success() ) ) {
                 continue;
@@ -334,15 +374,15 @@ void game::item_action_menu( item_location loc )
             if( elem.second->has_flag( flag_USES_BIONIC_POWER ) ) {
                 ss += string_format( "(%d kJ)", elem.second->ammo_required() );
             } else {
-                auto iter = elem.second->type->ammo_scale.find( elem.first );
-                ss += string_format( "(-%d)", elem.second->ammo_required() * ( iter ==
-                                     elem.second->type->ammo_scale.end() ? 1 : iter->second ) );
+                ss += string_format( "(-%d)", elem.second->ammo_required() *
+                                     elem.second->type->get_ammo_scale( elem.first ) );
             }
         }
 
-        const use_function *method = elem.second->get_use( elem.first );
+        // By the action's id, which is its type unless it has an "id".
+        const use_function *method = elem.second->type->get_use( elem.first );
         if( method ) {
-            return std::make_tuple( method->get_type(), method->get_name(), ss, method->get_description() );
+            return std::make_tuple( elem.first, method->get_name(), ss, method->get_description() );
         } else {
             return std::make_tuple( errstring, std::string( "NO USE FUNCTION" ), ss, std::string() );
         }
@@ -369,7 +409,9 @@ void game::item_action_menu( item_location loc )
         std::string ss_ctxt;
         ss_ctxt += std::get<2>( elem );
 
-        const std::optional<input_event> bind = key_bound_to( ctxt, std::get<0>( elem ) );
+        // A use action listed by its "id" has no key binding of its own.
+        const std::optional<input_event> bind = item_actions.count( std::get<0>( elem ) ) != 0 ?
+                                                key_bound_to( ctxt, std::get<0>( elem ) ) : std::nullopt;
         const bool enabled = assigned_action( std::get<0>( elem ) );
         const std::string desc =  std::get<3>( elem ) ;
 
@@ -422,13 +464,20 @@ std::string iuse_actor::get_description() const
     return std::string();
 }
 
+std::string use_function::get_id() const
+{
+    return actor ? actor->id : std::string();
+}
+
 std::string use_function::get_name() const
 {
-    if( actor ) {
-        return actor->get_name();
-    } else {
+    if( !actor ) {
         return errstring;
     }
+    if( !actor->menu_text.empty() ) {
+        return actor->menu_text.translated();
+    }
+    return actor->get_name();
 }
 
 std::string use_function::get_description() const

@@ -891,7 +891,7 @@ class item
          * @param map A map object associated with that position.
          * @return true if the item was destroyed during placement.
          */
-        bool on_drop( const tripoint_bub_ms &pos, map &map );
+        bool on_drop( const tripoint_bub_ms &pos, map &map, Character *dropper = nullptr );
 
         /**
          * Consume a specific amount of items of a specific type.
@@ -2695,8 +2695,11 @@ class item
          * ammo capacity for a specific ammo
          * @param ammo The ammo type to get the capacity for
          * @param include_linked If linked up, return linked electricity grid's capacity
+         * @param carrier Who holds the item: a USES_BIONIC_POWER item holds their bionic power.
+         *                Without one, the avatar's is used (item info).
          */
-        int ammo_capacity( const ammotype &ammo, bool include_linked = false ) const;
+        int ammo_capacity( const ammotype &ammo, bool include_linked = false,
+                           const Character *carrier = nullptr ) const;
 
         /**
          * how much more ammo can fit into this item
@@ -2894,6 +2897,11 @@ class item
         const item_pocket *pocket_by_id( const std::string &id ) const;
 
         int ammo_remaining_in_pocket( const std::string &id ) const;
+        /**
+         * How much of one ammo the item holds: loaded in its integral magazine pockets and in the
+         * magazines in its magazine wells. Nothing else is counted: not containers, links or UPS.
+         */
+        int ammo_remaining_of( const itype_id &ammo ) const;
         int ammo_consume_in_pocket( const std::string &id, int qty, map &here,
                                     const tripoint_bub_ms &pos );
 
@@ -3217,6 +3225,13 @@ class item
         bool is_old_owner( const Character &c, bool available_to_take = false ) const;
         std::string get_old_owner_name() const;
         std::string get_owner_name() const;
+        /**
+         * Strength needed to use this item.  For a gun it depends on who uses it: their archery
+         * proficiency lowers a bow's requirement and their posture applies the prone modifiers
+         * of the gunmods.
+         */
+        int get_min_str( const Character &who ) const;
+        /** As above, for the avatar (item info and other UI). */
         int get_min_str() const;
 
         const cata::value_ptr<islot_comestible> &get_comestible() const;
@@ -3371,10 +3386,10 @@ class item
 
         // "parent" will be self plus the required other ref for the item_location constructor
         VisitResponse visit_contents( const std::function<VisitResponse( const item_location & )> &func,
-                                      const item_location &parent, const std::set<pocket_type> &allowed_pockets = {pocket_type::CONTAINER} );
+                                      const item_location &parent, pocket_type_set allowed_pockets = { pocket_type::CONTAINER } );
         VisitResponse visit_contents_legacy( const std::function<VisitResponse( item *, item * )> &func,
                                              item *parent,
-                                             const std::set<pocket_type> &allowed_pockets = { pocket_type::CONTAINER } );
+                                             pocket_type_set allowed_pockets = { pocket_type::CONTAINER } );
         std::vector<const item *> items_with( const item_filter &filter ) const;
         bool has_quality( const quality_id &qual, int level = 1, int qty = 1 ) const;
         bool has_item_with( const std::function<bool( const item & )> &filter ) const;
@@ -3795,8 +3810,8 @@ class item
 
         void set_favorite( bool favorite );
         bool has_clothing_mod() const;
+        /** Encumbrance or warmth the clothing mods (flags) of the item add. */
         float get_clothing_mod_val( clothing_mod_type type ) const;
-        void update_clothing_mod_val();
 };
 
 extern template float item::resist<bodypart_id>( const damage_type_id &dmg_type, bool to_self,
@@ -3841,7 +3856,8 @@ inline units::mass lifting_quality_to_mass( int quality_level )
  */
 inline bool is_crafting_component( const item &component )
 {
-    return ( component.allow_crafting_component() || component.count_by_charges() ) &&
+    return !component.has_var( "power_grant_application" ) &&
+           ( component.allow_crafting_component() || component.count_by_charges() ) &&
            !component.is_filthy();
 }
 

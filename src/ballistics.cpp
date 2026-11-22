@@ -23,6 +23,7 @@
 #include "debug.h"
 #include "dispersion.h"
 #include "enums.h"
+#include "execution_combat.h"
 #include "explosion.h"
 #include "field.h"
 #include "game.h"
@@ -46,6 +47,7 @@
 #include "trap.h"
 #include "type_id.h"
 #include "units.h"
+#include "value_ptr.h"
 #include "vpart_position.h"
 
 static const ammo_effect_str_id ammo_effect_ACT_ON_RANGED_HIT( "ACT_ON_RANGED_HIT" );
@@ -68,16 +70,12 @@ static const ammo_effect_str_id ammo_effect_STREAM_TINY( "STREAM_TINY" );
 static const ammo_effect_str_id ammo_effect_TANGLE( "TANGLE" );
 static const ammo_effect_str_id ammo_effect_WIDE( "WIDE" );
 
-static const damage_type_id damage_bash( "bash" );
-static const damage_type_id damage_cut( "cut" );
-static const damage_type_id damage_stab( "stab" );
-
 static const itype_id itype_glass_shard( "glass_shard" );
 
 static const json_character_flag json_flag_HARDTOHIT( "HARDTOHIT" );
 
 static void drop_or_embed_projectile( map *here, const dealt_projectile_attack &attack,
-                                      projectile &proj_arg )
+                                      projectile &proj_arg, Creature *origin )
 {
     const projectile &proj = attack.proj;
     const item &drop_item = proj.get_drop();
@@ -150,12 +148,16 @@ static void drop_or_embed_projectile( map *here, const dealt_projectile_attack &
         embed = embed && ( critter_size > creature_size::small || vol < 500_ml );
         // And if we deal enough damage
         // Item volume bumps up the required damage too
-        // FIXME: Hardcoded damage types
-        embed = embed &&
-                ( attack.dealt_dam.type_damage( damage_cut ) / 2 ) +
-                attack.dealt_dam.type_damage( damage_stab ) >
-                attack.dealt_dam.type_damage( damage_bash ) +
-                vol * 3 / 250_ml + rng( 0, 5 );
+        // CMBT-J12: each damage type's "embed_weight" (cut 0.5, stab 1, bash -1)
+        if( embed ) {
+            int embedding = 0;
+            for( const std::pair<const damage_type_id, int> &dealt : attack.dealt_dam.dealt_dams ) {
+                if( dealt.second != 0 && dealt.first.is_valid() ) {
+                    embedding += static_cast<int>( dealt.second * dealt.first->embed_weight );
+                }
+            }
+            embed = embedding > vol * 3 / 250_ml + rng( 0, 5 );
+        }
     }
 
     if( embed ) {
@@ -182,7 +184,8 @@ static void drop_or_embed_projectile( map *here, const dealt_projectile_attack &
 
         map &here = get_map();
         if( do_drop ) {
-            craft_relocated( here.add_item_or_charges_ret_loc( attack.end_point, dropped_item ) );
+            craft_relocated( here.add_item_or_charges_ret_loc( attack.end_point, dropped_item, true,
+                             origin ? origin->as_character() : nullptr ) );
         }
 
         if( effects.count( ammo_effect_HEAVY_HIT ) ) {
@@ -575,6 +578,7 @@ static void fly_pellets_together( const pellet_shot &shot, const int count )
                 pass_over();
                 return;
             }
+            const execution_combat::projectile_target_scope execution_target( *critter );
             critter->deal_projectile_attack( here, shot.null_source ? nullptr : shot.origin, attack,
                                              cur_missed_by, shot.print_messages, shot.wp_attack );
 
@@ -808,6 +812,7 @@ void projectile_attack( dealt_projectile_attack &attack, const projectile &proj_
                         const dispersion_sources &dispersion, Creature *origin, const vehicle *in_veh,
                         const weakpoint_attack &wp_attack )
 {
+    const execution_combat::projectile_flight_scope execution_flight( attack, here, origin, source );
     const bool do_animation = get_option<bool>( "ANIMATION_PROJECTILES" );
 
     double range = rl_dist( source, target_arg );
@@ -931,7 +936,7 @@ void projectile_attack( dealt_projectile_attack &attack, const projectile &proj_
 
     static emit_id muzzle_smoke( "emit_smaller_smoke_plume" );
     if( proj_effects.count( ammo_effect_MUZZLE_SMOKE ) ) {
-        here->emit_field( trajectory.front(), muzzle_smoke );
+        here->emit_field( trajectory.front(), muzzle_smoke, 1.0f, origin );
     }
 
     if( !no_overshoot && range < extend_to_range ) {
@@ -1148,6 +1153,7 @@ void projectile_attack( dealt_projectile_attack &attack, const projectile &proj_
                     origin->check_avoid_friendly_fire() ) {
                     continue;
                 }
+                const execution_combat::projectile_target_scope execution_target( *critter );
                 critter->deal_projectile_attack( here, null_source ? nullptr : origin, attack, cur_missed_by,
                                                  print_messages, wp_attack );
 
@@ -1234,7 +1240,7 @@ void projectile_attack( dealt_projectile_attack &attack, const projectile &proj_
             tp = prev_point;
         }
 
-        drop_or_embed_projectile( here, attack, proj );
+        drop_or_embed_projectile( here, attack, proj, origin );
 
         int dealt_damage = attack.dealt_dam.total_damage();
         apply_ammo_effects( null_source ? nullptr : origin, tp, proj.proj_effects, dealt_damage );

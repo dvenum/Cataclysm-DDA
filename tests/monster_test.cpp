@@ -21,10 +21,12 @@
 #include "coordinates.h"
 #include "creature.h"
 #include "debug.h"
+#include "enums.h"
 #include "creature_tracker.h"
 #include "game.h"
 #include "horde_entity.h"
 #include "item.h"
+#include "level_cache.h"
 #include "line.h"
 #include "map.h"
 #include "map_helpers.h"
@@ -47,6 +49,8 @@
 #include "test_statistics.h"
 #include "trap.h"
 #include "type_id.h"
+#include "units.h"
+#include "vehicle.h"
 
 using move_statistics = statistics<int>;
 
@@ -56,12 +60,15 @@ static const mtype_id mon_dog_zombie_brute( "mon_dog_zombie_brute" );
 static const mtype_id mon_test_zombie( "mon_test_zombie" );
 static const mtype_id pseudo_dormant_mon_zombie_fat( "pseudo_dormant_mon_zombie_fat" );
 
+static const oter_str_id oter_empty_rock( "empty_rock" );
 static const oter_str_id oter_field( "field" );
 
 static const ter_str_id ter_t_fence( "t_fence" );
 static const ter_str_id ter_t_grass( "t_grass" );
 static const ter_str_id ter_t_palisade( "t_palisade" );
 static const ter_str_id ter_t_water_dp( "t_water_dp" );
+
+static const vproto_id vehicle_prototype_bicycle( "bicycle" );
 
 
 static int moves_to_destination( const std::string &monster_type,
@@ -978,6 +985,11 @@ static void clear_area( const tripoint_abs_omt &start, const tripoint_abs_omt &e
     clear_overmaps();
     for( const tripoint_abs_omt &to_flatten : tripoint_range<tripoint_abs_omt>( start, end ) ) {
         overmap_buffer.ter_set( to_flatten, oter_field );
+        // Under the fields too: a basement or bunker left there puts its NPCs in the solid
+        // rock wipe_map_terrain() lays at z -1, and placing them fails with a debugmsg.
+        for( int z = -1; z >= -OVERMAP_DEPTH; --z ) {
+            overmap_buffer.ter_set( tripoint_abs_omt( to_flatten.xy(), z ), oter_empty_rock );
+        }
     }
 }
 
@@ -1020,7 +1032,9 @@ static void walk_toward_monster_off_the_map( tripoint_abs_omt origin, point offs
             wipe_map_terrain();
         }
         for( monster &critter : g->all_monsters() ) {
-            if( critter.type->id != id ) {
+            // Mapgen can place other monsters of the target's type (dormant zombies come from
+            // map extras): only the one at the spot the test chose is the target.
+            if( critter.type->id != id || square_dist( critter.pos_abs(), monster_pos ) > 1 ) {
                 critter.die( &here, nullptr );
             }
         }
@@ -1039,11 +1053,13 @@ static void walk_toward_monster_off_the_map( tripoint_abs_omt origin, point offs
     CAPTURE( here.ter( expected_local ) );
     CAPTURE( here.furn( expected_local ) );
     CAPTURE( here.move_cost( expected_local ) );
+    // The target is the monster of its type nearest the spot it was put on.
     monster *tgt_monster = nullptr;
     for( monster &critter : g->all_monsters() ) {
-        if( critter.type->id == id ) {
+        if( critter.type->id == id && ( tgt_monster == nullptr ||
+                                        square_dist( critter.pos_abs(), monster_pos ) <
+                                        square_dist( tgt_monster->pos_abs(), monster_pos ) ) ) {
             tgt_monster = &critter;
-            break;
         }
     }
     REQUIRE( tgt_monster != nullptr );
@@ -1111,9 +1127,41 @@ static std::function<void()> bubble_restorer()
     return [bubble, avatar_at]() {
         clear_creatures();
         map &here = get_map();
-        here.load( bubble, false );
+        // load() keeps what the vehicle lists hold, so empty them first, as
+        // game::place_player_overmap does, and let it list the bubble's own vehicles again.
+        for( int z = -OVERMAP_DEPTH; z <= OVERMAP_HEIGHT; z++ ) {
+            here.clear_vehicle_list( z );
+        }
+        here.rebuild_vehicle_level_caches();
+        here.load( bubble, true );
         get_avatar().setpos( here, here.get_bub( avatar_at ) );
     };
+}
+
+// The restorer reloads the old bubble.  A vehicle of the bubble a test went to must not stay in
+// the vehicle lists, or map code reads it at grid positions past the bubble's edge: clear_map's
+// item processing did ("Tried to access invalid map position"), and later tests crashed.
+TEST_CASE( "bubble_restorer_leaves_no_vehicle_of_the_far_bubble_listed", "[map][vehicle]" )
+{
+    clear_map_without_vision();
+    map &here = get_map();
+    const tripoint_abs_sm home = here.get_abs_sub();
+    {
+        const on_out_of_scope restore_bubble( bubble_restorer() );
+        g->place_player_overmap( project_to<coords::omt>( home ) + point_rel_omt( 0, 40 ) );
+        REQUIRE( here.get_abs_sub() != home );
+        // Whatever mapgen put there could block the bicycle
+        clear_map_without_vision();
+        REQUIRE( here.add_vehicle( vehicle_prototype_bicycle, tripoint_bub_ms( 30, 30, 0 ),
+                                   0_degrees, 0, veh_spawn_status::UNDAMAGED ) != nullptr );
+    }
+    REQUIRE( here.get_abs_sub() == home );
+    for( int z = -OVERMAP_DEPTH; z <= OVERMAP_HEIGHT; ++z ) {
+        for( const vehicle *veh : here.access_cache( z ).vehicle_list ) {
+            CAPTURE( z, veh->name );
+            CHECK( here.inbounds( veh->pos_abs() ) );
+        }
+    }
 }
 
 TEST_CASE( "monsters_appear_on_map_as_expected", "[monster][map][hordes]" )

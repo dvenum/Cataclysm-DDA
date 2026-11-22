@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -53,6 +54,24 @@ static const flag_id json_flag_TELEPORT_LOCK( "TELEPORT_LOCK" );
 static const itype_id itype_power_cord( "power_cord" );
 
 static const std::string flag_WIRING( "WIRING" );
+
+// Whether something holds the creature where it is: DIMENSIONAL_ANCHOR from a worn item, an
+// effect, or (Character::has_flag) a trait, bionic, body part or martial arts buff, or the
+// monster flag of that name. A TELEPORT_LOCK stops only the creature's own teleport
+// (include_lock), not one that lands on it.
+static bool is_teleport_anchored( const Creature &critter, bool include_lock )
+{
+    if( critter.has_flag( json_flag_DIMENSIONAL_ANCHOR ) ||
+        critter.has_effect_with_flag( json_flag_DIMENSIONAL_ANCHOR ) ) {
+        return true;
+    }
+    if( include_lock && ( critter.has_flag( json_flag_TELEPORT_LOCK ) ||
+                          critter.has_effect_with_flag( json_flag_TELEPORT_LOCK ) ) ) {
+        return true;
+    }
+    const Character *const guy = critter.as_character();
+    return guy != nullptr && guy->worn_with_flag( json_flag_DIMENSIONAL_ANCHOR );
+}
 
 static bool TestForVehicleTeleportCollision( vehicle &veh, map &here, map *dest,
         const tripoint_abs_ms &dp )
@@ -174,9 +193,9 @@ bool teleport::teleport_creature( Creature &critter, int min_distance, int max_d
         const units::angle rangle = units::from_degrees( rng( 0, 359 ) );
         const int rdistance = rng( min_distance, max_distance );
         // Rounded, not truncated, or a 1 tile shift would land on the origin.
-        const int dx = static_cast<int>( std::lround( rdistance * units::cos( rangle ) ) );
-        const int dy = static_cast<int>( std::lround( rdistance * units::sin( rangle ) ) );
-        new_pos = { origin.x() + dx, origin.y() + dy, new_pos.z() };
+        const point d( static_cast<int>( std::lround( rdistance * units::cos( rangle ) ) ),
+                       static_cast<int>( std::lround( rdistance * units::sin( rangle ) ) ) );
+        new_pos = { origin.x() + d.x, origin.y() + d.y, new_pos.z() };
         tries++;
         // Diagonals round inwards; retry those that end up closer than min_distance.
     } while( ( new_pos == origin || square_dist( origin, new_pos ) < min_distance ||
@@ -201,6 +220,13 @@ bool teleport::teleport_to_point( Creature &critter, tripoint_bub_ms target, boo
     }
     Character *const p = critter.as_character();
     const bool c_is_u = p != nullptr && p->is_avatar();
+    // The avatar's OMT change is reported once, at the end, even if a trap where it lands moves
+    // it again.
+    const tripoint_abs_ms old_abs_pos = critter.pos_abs();
+    std::optional<cata_event_dispatch::avatar_move_scope> moving;
+    if( c_is_u ) {
+        moving.emplace();
+    }
     map &here = get_map();
     tripoint_abs_ms abs_ms( here.get_abs( target ) );
     if( abs_ms.z() > OVERMAP_HEIGHT || abs_ms.z() < -OVERMAP_DEPTH ) {
@@ -209,10 +235,8 @@ bool teleport::teleport_to_point( Creature &critter, tripoint_bub_ms target, boo
         return false;
     }
     //The teleportee is dimensionally anchored so nothing happens
-    if( !force && !force_safe && p && ( p->worn_with_flag( json_flag_DIMENSIONAL_ANCHOR ) ||
-                                        p->has_effect_with_flag( json_flag_DIMENSIONAL_ANCHOR ) ||
-                                        p->has_effect_with_flag( json_flag_TELEPORT_LOCK ) ) ) {
-        if( display_message ) {
+    if( !force && !force_safe && is_teleport_anchored( critter, true ) ) {
+        if( display_message && p ) {
             p->add_msg_if_player( m_warning, _( "You feel a strange, inward force." ) );
         }
         return false;
@@ -291,12 +315,12 @@ bool teleport::teleport_to_point( Creature &critter, tripoint_bub_ms target, boo
             }
             let_go();
             critter.apply_damage( nullptr, bodypart_id( "torso" ), 9999 );
-            if( c_is_u ) {
+            if( p != nullptr ) {
                 get_event_bus().send<event_type::teleports_into_wall>( p->getID(),
                         dest->obstacle_name( dest_target ) );
-                if( display_message ) {
-                    add_msg( m_bad, _( "You die after teleporting into a solid." ) );
-                }
+            }
+            if( c_is_u && display_message ) {
+                add_msg( m_bad, _( "You die after teleporting into a solid." ) );
             }
             critter.check_dead_state( &here );
         }
@@ -353,10 +377,8 @@ bool teleport::teleport_to_point( Creature &critter, tripoint_bub_ms target, boo
                 return false;
             }
             //if the thing that was going to be teleported into has a dimensional anchor, break out early and don't teleport.
-            if( poor_soul->as_character() &&
-                ( poor_soul->as_character()->worn_with_flag( json_flag_DIMENSIONAL_ANCHOR ) ||
-                  poor_soul->as_character()->has_effect_with_flag( json_flag_DIMENSIONAL_ANCHOR ) ) ) {
-                poor_soul->as_character()->add_msg_if_player( m_warning, _( "You feel disjointed." ) );
+            if( is_teleport_anchored( *poor_soul, false ) ) {
+                poor_soul->add_msg_if_player( m_warning, _( "You feel disjointed." ) );
                 restore_map_on_failure();
                 return false;
             }
@@ -444,6 +466,18 @@ bool teleport::teleport_to_point( Creature &critter, tripoint_bub_ms target, boo
     for( const effect &grab : critter.get_effects_with_flag( json_flag_GRAB ) ) {
         critter.remove_effect( grab.get_id() );
     }
+    if( moving ) {
+        moving.reset();
+        if( !critter.is_dead_state() ) {
+            cata_event_dispatch::avatar_changes_omt( old_abs_pos );
+        }
+    }
+    // Any creature that arrives alive: the avatar, an NPC or a monster, as the alpha talker
+    if( !critter.is_dead_state() ) {
+        const cata::event teleported = cata::event::make<event_type::creature_teleported>(
+                                           old_abs_pos.raw(), critter.pos_abs().raw() );
+        get_event_bus().send_with_talker( &critter, static_cast<Creature *>( nullptr ), teleported );
+    }
 
     return true;
 }
@@ -460,6 +494,9 @@ bool teleport::teleport_vehicle( vehicle &veh, const tripoint_abs_ms &dp, bool f
     veh.precalc_mounts( 1, veh.skidding ? veh.turn_dir : facing.dir(), veh.pivot_anchor[0] );
 
     Character &player_character = get_player_character();
+    // An avatar riding along changes OMT with the vehicle; that is reported once, at the end.
+    const tripoint_abs_ms old_avatar_pos = player_character.pos_abs();
+    cata_event_dispatch::avatar_move_scope moving;
     tripoint_bub_ms src = veh.pos_bub( here );
     auto pos_abs_offset = dp - veh.pos_abs();
 
@@ -550,6 +587,8 @@ bool teleport::teleport_vehicle( vehicle &veh, const tripoint_abs_ms &dp, bool f
     // Cables on vehicle need to translate to new postion to keep connection working
     veh.translate_cables( pos_abs_offset );
     CleanUpAfterVehicleTeleport( veh, here, dp, smzs, src );
+    moving.end();
+    cata_event_dispatch::avatar_changes_omt( old_avatar_pos );
     return true;
 }
 

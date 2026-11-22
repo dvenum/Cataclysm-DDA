@@ -28,6 +28,8 @@
 #include "creature.h"
 #include "creature_tracker.h"
 #include "debug.h"
+#include "dialogue.h"
+#include "effect_on_condition.h"
 #include "field.h"
 #include "game.h"
 #include "game_constants.h"
@@ -37,6 +39,7 @@
 #include "mapdata.h"
 #include "mapgen_primitives.h"
 #include "maptile_fwd.h"
+#include "math_parser_diag_value.h"
 #include "mdarray.h"
 #include "memory_fast.h"
 #include "messages.h"
@@ -517,6 +520,39 @@ bool map::clear_path( const tripoint_bub_ms &f, const tripoint_bub_ms &t, const 
     return is_clear;
 }
 
+void spawn_data::apply( monster &placed ) const
+{
+    if( !patrol.empty() ) {
+        placed.set_patrol_route( rolled_patrol() );
+    }
+    for( const spawn_effect &eff : effects ) {
+        if( !eff.id.is_valid() ) {
+            continue;
+        }
+        placed.add_effect( eff.id, time_duration::from_turns( eff.duration.get() ), eff.permanent,
+                           eff.intensity.get() );
+    }
+    for( const std::pair<const std::string, std::string> &var : str_variables ) {
+        placed.set_value( var.first, diag_value( var.second ) );
+    }
+    for( const std::pair<const std::string, double> &var : num_variables ) {
+        placed.set_value( var.first, diag_value( var.second ) );
+    }
+    if( !faction.is_empty() && faction.is_valid() ) {
+        placed.faction = faction.id();
+        get_creature_tracker().invalidate_reachability_cache();
+    }
+    // MGEN-J06: the spawn's EOCs, with the monster as u, once it has all of the above
+    for( const effect_on_condition_id &eoc : eocs ) {
+        if( !eoc.is_valid() ) {
+            continue;
+        }
+        dialogue d( get_talker_for( placed ), nullptr );
+        d.set_value( "loc", placed.pos_abs() );
+        eoc->activate( d );
+    }
+}
+
 void map::spawn_monsters_submap_group( const tripoint_rel_sm &gp, mongroup &group,
                                        bool ignore_sight )
 {
@@ -681,14 +717,40 @@ void map::spawn_monsters_submap( const tripoint_rel_sm &gp, bool ignore_sight, b
                   gp.z() );
         return;
     }
+    spawn_queued_monsters_submap( gp, *current_submap );
+}
+
+void map::spawn_queued_monsters()
+{
+    if( this != &get_map() ) {
+        // another map's queue waits until its submaps come into the reality bubble
+        return;
+    }
+    const int zmin = zlevels ? -OVERMAP_DEPTH : abs_sub.z();
+    const int zmax = zlevels ? OVERMAP_HEIGHT : abs_sub.z();
+    for( int gz = zmin; gz <= zmax; gz++ ) {
+        for( int gx = 0; gx < my_MAPSIZE; gx++ ) {
+            for( int gy = 0; gy < my_MAPSIZE; gy++ ) {
+                const tripoint_rel_sm gp( gx, gy, gz );
+                submap *const current_submap = get_submap_at_grid( gp );
+                if( current_submap != nullptr && !current_submap->spawns.empty() ) {
+                    spawn_queued_monsters_submap( gp, *current_submap );
+                }
+            }
+        }
+    }
+}
+
+void map::spawn_queued_monsters_submap( const tripoint_rel_sm &gp, submap &current_submap )
+{
     const tripoint_bub_ms gp_ms = rebase_bub( coords::project_to<coords::ms>( gp ) );
 
     // The list of spawns on the submap might be updated while we are iterating it.
     // For example, `monster::on_load` -> `monster::try_reproduce` calls `map::add_spawn`.
     // Therefore, this intentionally uses old-school indexed for-loop with re-check against `.size()` each step.
     // NOLINTNEXTLINE(modernize-loop-convert)
-    for( size_t sp_i = 0; sp_i < current_submap->spawns.size(); ++sp_i ) {
-        const spawn_point i = current_submap->spawns[sp_i]; // intentional copy
+    for( size_t sp_i = 0; sp_i < current_submap.spawns.size(); ++sp_i ) {
+        const spawn_point i = current_submap.spawns[sp_i]; // intentional copy
         const tripoint_bub_ms center = gp_ms + rebase_rel( i.pos );
         const tripoint_range<tripoint_bub_ms> points = points_in_radius( center, 3 );
 
@@ -732,10 +794,16 @@ void map::spawn_monsters_submap( const tripoint_rel_sm &gp, bool ignore_sight, b
 
             // This can fail, but there isn't much we can do about it if it does. We could output some
             // kind of info message, but, again, it's unlikely to result in anything that can be acted on.
-            g->place_critter_at_or_within( make_shared_fast<monster>( tmp ), this, center, points );
+            monster *placed = g->place_critter_at_or_within( make_shared_fast<monster>( tmp ), this,
+                              center, points );
+            // the rest of the spawn data needs the monster where it is: a patrol route is relative
+            // to its overmap tile
+            if( placed != nullptr ) {
+                i.data.apply( *placed );
+            }
         }
     }
-    current_submap->spawns.clear();
+    current_submap.spawns.clear();
 }
 
 void map::spawn_monsters( bool ignore_sight, bool spawn_nonlocal )
@@ -862,7 +930,9 @@ void map::update_pathfinding_cache( const tripoint_bub_ms &p ) const
         cur_value |= PathfindingFlag::Slow;
     } else if( cost <= 0 ) {
         cur_value |= PathfindingFlag::Obstacle;
-        if( terrain.has_flag( ter_furn_flag::TFLAG_CLIMBABLE ) ) {
+        // Climbing goes over furniture too (sandbag walls, barricades), as moving does
+        if( terrain.has_flag( ter_furn_flag::TFLAG_CLIMBABLE ) ||
+            furniture.has_flag( ter_furn_flag::TFLAG_CLIMBABLE ) ) {
             cur_value |= PathfindingFlag::Climbable;
         }
     }
@@ -904,12 +974,30 @@ void map::update_pathfinding_cache( const tripoint_bub_ms &p ) const
         cur_value |= PathfindingFlag::GoesDown | PathfindingFlag::RampDown;
     }
 
-    if( terrain.has_flag( ter_furn_flag::TFLAG_SHARP ) && !this->has_vehicle_floor( p ) ) {
+    if( ( terrain.has_flag( ter_furn_flag::TFLAG_SHARP ) ||
+          furniture.has_flag( ter_furn_flag::TFLAG_SHARP ) ) && !this->has_vehicle_floor( p ) ) {
         cur_value |= PathfindingFlag::Sharp;
     }
 
-    if( terrain.has_flag( ter_furn_flag::TFLAG_SMALL_PASSAGE ) ) {
-        cur_value |= ( PathfindingFlag::RestrictLarge | PathfindingFlag::RestrictHuge );
+    // Each size too big for the tile (SMALL_PASSAGE, max_creature_size) is kept off it
+    std::optional<creature_size> fit = terrain.max_fitting_size();
+    const std::optional<creature_size> furn_fit = furniture.max_fitting_size();
+    if( furn_fit && ( !fit || *furn_fit < *fit ) ) {
+        fit = furn_fit;
+    }
+    if( fit ) {
+        if( *fit < creature_size::small ) {
+            cur_value |= PathfindingFlag::RestrictSmall;
+        }
+        if( *fit < creature_size::medium ) {
+            cur_value |= PathfindingFlag::RestrictMedium;
+        }
+        if( *fit < creature_size::large ) {
+            cur_value |= PathfindingFlag::RestrictLarge;
+        }
+        if( *fit < creature_size::huge ) {
+            cur_value |= PathfindingFlag::RestrictHuge;
+        }
     }
 
     cache.special[p.x()][p.y()] = cur_value;

@@ -1,0 +1,10 @@
+[
+  {
+    "type": "MOD_INFO",
+    "id": "powers_demo",
+    "name": "Powers demonstration",
+    "description": "Demonstration abilities, shared power resources, owned effects and equipment, reversible armor forms, familiar commands, physical attacks, persistent projections and independent areas.",
+    "category": "content",
+    "dependencies": [ "dda" ]
+  }
+]

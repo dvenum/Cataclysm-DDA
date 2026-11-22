@@ -48,6 +48,7 @@
 
 static const flag_id json_flag_HINT_THE_LOCATION( "HINT_THE_LOCATION" );
 static const flag_id json_flag_LOCATION_PRECISE_CLOSEST_CITY( "LOCATION_PRECISE_CLOSEST_CITY" );
+static const flag_id json_flag_NO_ACTIVE_SUFFIX( "NO_ACTIVE_SUFFIX" );
 
 static const itype_id itype_barrel_small( "barrel_small" );
 static const itype_id itype_disassembly( "disassembly" );
@@ -369,6 +370,9 @@ std::string location_closest_city( item const &it, unsigned int /* quantity */,
 std::string ethereal( item const &it, unsigned int /* quantity */,
                       segment_bitset const &/* segments */ )
 {
+    if( it.has_var( "power_grant_application" ) ) {
+        return _( " (projected)" );
+    }
     if( it.ethereal ) {
         const time_duration turns = time_duration::from_turns(
                                         std::lround( it.get_var( "ethereal", 0.0 ) ) );
@@ -585,6 +589,7 @@ std::string active( item const &it, unsigned int /* quantity */,
                     segment_bitset const &/* segments */ )
 {
     if( it.active && ( !it.has_temperature() || it.type->countdown_interval > 0_seconds ) &&
+        !it.has_flag( json_flag_NO_ACTIVE_SUFFIX ) &&
         !string_ends_with( it.typeId().str(), "_on" ) ) {
         // Usually the items whose ids end in "_on" have the "active" or "on" string already contained
         // in their name, also food is active while it rots.

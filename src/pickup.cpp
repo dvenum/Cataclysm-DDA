@@ -15,10 +15,12 @@
 #include "auto_pickup.h"
 #include "calendar.h"
 #include "character.h"
-#include "crafting.h"
 #include "contents_change_handler.h"
+#include "crafting.h"
 #include "debug.h"
 #include "enums.h"
+#include "event.h"
+#include "event_bus.h"
 #include "faction.h"
 #include "flexbuffer_json.h"
 #include "game.h"
@@ -36,8 +38,8 @@
 #include "mapdata.h"
 #include "math_parser_diag_value.h"
 #include "messages.h"
-#include "overmapbuffer.h"
 #include "options.h"
+#include "overmapbuffer.h"
 #include "pimpl.h"
 #include "player_activity.h"
 #include "point.h"
@@ -48,6 +50,8 @@
 #include "type_id.h"
 #include "uilist.h"
 #include "units.h"
+
+class Creature;
 
 using ItemCount = std::pair<item, int>;
 using PickupMap = std::map<std::string, ItemCount>;
@@ -216,6 +220,8 @@ static bool pick_one_up( item_location &loc, int quantity, bool &got_water, bool
     Pickup::pick_info pre_info( info );
 
     pickup_answer option = CANCEL;
+    // where the item went, for character_picks_up_item
+    item_location picked_loc;
 
     // We already checked in do_pickup if this was a nullptr
     // Make copies so the original remains untouched if we bail out
@@ -314,6 +320,9 @@ static bool pick_one_up( item_location &loc, int quantity, bool &got_water, bool
             break;
         case WIELD:
             picked_up = player_character.wield( newit );
+            if( picked_up ) {
+                picked_loc = player_character.get_wielded_item();
+            }
             break;
         case SPILL:
             if( newit.is_container_empty() ) {
@@ -361,6 +370,7 @@ static bool pick_one_up( item_location &loc, int quantity, bool &got_water, bool
             if( picked_up ) {
                 // Update info
                 info.set_dst( added_it );
+                picked_loc = added_it;
             }
             break;
         }
@@ -378,9 +388,9 @@ static bool pick_one_up( item_location &loc, int quantity, bool &got_water, bool
                                            quantity ) + ( distance * info.extra_moves_per_distance ) ) );
         } else {
             // Pure cost to handling item excluding overhead.
-            player_character.mod_moves( ( -std::max( player_character.item_handling_cost( *loc, true, 0,
-                                          quantity,
-                                          true ), 1 ) + ( distance * info.extra_moves_per_distance ) ) );
+            const int handling = std::max( player_character.item_handling_cost( *loc, true, 0,
+                                           quantity, true ), 1 );
+            player_character.mod_moves( -( handling + distance * info.extra_moves_per_distance ) );
         }
         contents_change_handler handler;
         handler.unseal_pocket_containing( loc );
@@ -400,6 +410,15 @@ static bool pick_one_up( item_location &loc, int quantity, bool &got_water, bool
         const tripoint_abs_omt note_pos = player_character.pos_abs_omt();
         if( overmap_buffer.note( note_pos ) == newit.display_name() ) {
             overmap_buffer.delete_note( note_pos );
+        }
+
+        // INV-J08: last, as its EOCs may change the inventory
+        const cata::event e = cata::event::make<event_type::character_picks_up_item>(
+                                  player_character.getID(), newit.typeId(), newit.count() );
+        if( picked_loc && picked_loc != item_location::nowhere ) {
+            get_event_bus().send_with_talker( &player_character, &picked_loc, e );
+        } else {
+            get_event_bus().send_with_talker( &player_character, static_cast<Creature *>( nullptr ), e );
         }
     }
 
@@ -436,12 +455,9 @@ bool Pickup::do_pickup( std::vector<item_location> &targets, std::vector<int> &q
         problem = !pick_one_up( target, quantity, got_water, got_gas, mapPickup, autopickup,
                                 stash_successful, got_frozen_liquid, info );
         if( info.total_bulk_volume > 200_ml ) {
-            // Bulk loading is not allowed beyond a certain volume.  The limits this pickup was
-            // started with, and what it picked up so far, still count.
-            Pickup::pick_info next( info.extra_moves_per_distance, info.max_volume, info.max_mass );
-            next.picked_up_volume = info.picked_up_volume;
-            next.picked_up_mass = info.picked_up_mass;
-            info = next;
+            // Bulk loading is not allowed beyond a certain volume: start a new bulk load.  The
+            // limits this pickup was started with, and what it picked up so far, still count.
+            info.reset_bulk_load();
         }
     }
 
@@ -591,4 +607,13 @@ void Pickup::pick_info::set_src( const item_location &src_ )
 void Pickup::pick_info::set_dst( const item_location &dst_ )
 {
     dst = dst_;
+}
+
+void Pickup::pick_info::reset_bulk_load()
+{
+    total_bulk_volume = 0_ml;
+    src_type = item_location::type::invalid;
+    src_pos = tripoint_bub_ms();
+    src_container = item_location();
+    dst = item_location();
 }

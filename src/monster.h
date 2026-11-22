@@ -6,6 +6,7 @@
 #include <bitset>
 #include <climits>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <optional>
@@ -23,6 +24,7 @@
 #include "compatibility.h"
 #include "coordinates.h"
 #include "creature.h"
+#include "creature_ref.h"
 #include "type_id.h"
 #include "units_fwd.h"
 #include "value_ptr.h"
@@ -36,7 +38,9 @@ class item;
 class item_location;
 class map;
 enum class mon_trigger : int;
+enum class mon_trigger_kind : int;
 enum class phase_id : int;
+struct dealt_projectile_attack;
 struct monster_plan;
 struct mtype;
 
@@ -81,7 +85,14 @@ enum monster_horde_attraction {
 class monster : public Creature
 {
         friend class editmap_ui;
+        monster_uid persistent_uid;
     public:
+        int64_t persistent_id() const {
+            return persistent_uid.get();
+        }
+        void restore_persistent_id( int64_t id ) {
+            persistent_uid.load( id );
+        }
         monster();
         explicit monster( const mtype_id &id );
         monster( const mtype_id &id, const tripoint_bub_ms &pos );
@@ -121,6 +132,9 @@ class monster : public Creature
         void spawn( const tripoint_abs_ms &loc );
         std::vector<material_id> get_absorb_material() const;
         std::vector<material_id> get_no_absorb_material() const;
+        // ABSORB_ITEMS: may absorb this item (no material on the no_absorb_material list,
+        // and one on absorb_material when that list isn't empty)
+        bool can_absorb_item( const item &it ) const;
         creature_size get_size() const override;
         units::mass get_weight() const override;
         units::mass weight_capacity() const override;
@@ -239,7 +253,7 @@ class monster : public Creature
         // Returns point at the end of the monster's current plans
         tripoint_abs_ms get_dest() const;
         // Returns the creature at the end of plans (if hostile; while eoc_attack, if not friendly)
-        Creature *attack_target();
+        Creature *attack_target() const;
         // Set while u_attack makes this monster use a special attack: an EOC may aim one at a
         // creature the monster is only neutral to
         bool eoc_attack = false; // NOLINT(cata-serialize)
@@ -261,6 +275,22 @@ class monster : public Creature
          *          wander towards there.
          */
         void wander_to( const tripoint_abs_ms &p, int f );
+
+        /**
+         * A destination or target forced on the monster (by an EOC). plan() heads for it
+         * instead of making its own plans until the destination is reached (within `range`
+         * tiles on its z-level), `until` comes or the target is gone. One at a time: forcing
+         * one replaces the other. Saved with the monster.
+         */
+        void force_destination( const tripoint_abs_ms &p, int range,
+                                const time_point &until = calendar::turn_max );
+        void force_target( const Creature &target, const time_point &until = calendar::turn_max );
+        // Forgets the forced destination or target, and the plans made for it.
+        void clear_forced_goal();
+        bool has_forced_goal() const;
+        std::optional<tripoint_abs_ms> get_forced_destination() const;
+        // The forced target, if it is still there.
+        Creature *get_forced_target() const;
 
         // How good of a target is given creature (checks for visibility)
         float rate_target( Creature &c, float best, bool smart = false ) const;
@@ -357,6 +387,8 @@ class monster : public Creature
         monster_attitude attitude( const Character *u = nullptr ) const; // See the enum above
         Attitude attitude_to( const Creature &other ) const override;
         void process_triggers(); // Process things that anger/scare us
+        // MONAI-J08: the CONDITION triggers, with `target` (if any) as beta; from plan()
+        void process_condition_triggers( Creature *target );
 
         bool is_underwater() const override;
         bool is_on_ground() const override;
@@ -459,9 +491,15 @@ class monster : public Creature
         // Something hit us (possibly null source)
         void on_hit( map *here, Creature *source, bodypart_id bp_hit,
                      float difficulty = INT_MIN, dealt_projectile_attack const *proj = nullptr ) override;
+        // Tries the special defenses of special_when_hit against source: a hit on bp by proj,
+        // or, when proj is null, a melee hit or being grabbed or held.
+        void special_defense( Creature *source, const bodypart_id &bp,
+                              dealt_projectile_attack const *proj );
 
         /** Resets a given special to its monster type cooldown value */
         void reset_special( const std::string &special_name );
+        /** MONAI-J05: sends monster_uses_special, after a special attack worked */
+        void notify_special_used( const std::string &special_name );
         /** Resets a given special to a value between 0 and its monster type cooldown value. */
         void reset_special_rng( const std::string &special_name );
         /** Sets a given special to the given value */
@@ -588,7 +626,14 @@ class monster : public Creature
         bool death_drops = true;
         // If true, sound and message is suppressed for monster death.
         bool quiet_death = false;
+        // EOC-J10: set by u_prevent_death while die() runs the PREVENT_MONSTER_DEATH EOCs
+        bool death_prevented = false; // NOLINT(cata-serialize)
+        /** u_prevent_death: the death die() is about to cause doesn't happen (EOC-J10) */
+        void prevent_death();
         bool is_dead() const;
+        bool death_finalized() const {
+            return dead;
+        }
         bool made_footstep = false;
         //if we are a nemesis monster from the 'hunted' trait
         bool is_nemesis() const;
@@ -640,12 +685,23 @@ class monster : public Creature
         std::vector<std::pair<std::string, std::string>> get_overlay_ids() const;
     private:
         void process_trigger( mon_trigger trig, int amount );
-        void process_trigger( mon_trigger trig, const std::function<int()> &amount_func );
+        // MONAI-J08: amount_func is given the list (anger, fear, placate) it is for
+        void process_trigger( mon_trigger trig,
+                              const std::function<int( mon_trigger_kind )> &amount_func );
 
         int hp = 60;
         std::map<std::string, mon_special_attack, std::less<>> special_attacks;
         std::optional<tripoint_abs_ms> goal;
+        // See force_destination(): a forced destination, or a forced target, and when it ends.
+        std::optional<tripoint_abs_ms> forced_dest;
+        int forced_dest_range = 0;
+        creature_ref forced_target;
+        time_point forced_goal_until = calendar::turn_max;
+        // Sets the plans for the forced goal; false (and forgets it) once the goal is over.
+        bool follow_forced_goal();
         bool dead = false;
+        // die() is running the PREVENT_MONSTER_DEATH EOCs: a death they cause isn't prevented
+        bool running_prevent_death_eocs = false; // NOLINT(cata-serialize)
         /** Normal upgrades **/
         int next_upgrade_time();
         bool upgrades = false;

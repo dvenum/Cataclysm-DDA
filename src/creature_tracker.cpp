@@ -10,6 +10,8 @@
 #include "avatar.h"
 #include "cata_assert.h"
 #include "debug.h"
+#include "execution_fatal.h"
+#include "power_runtime.h"
 #include "flood_fill.h"
 #include "game.h"
 #include "map.h"
@@ -30,6 +32,25 @@ static const efftype_id effect_ridden( "ridden" );
 
 #define dbg(x) DebugLog((x),D_GAME) << __FILE__ << ":" << __LINE__ << ": "
 
+namespace
+{
+void erase_monster_uid( std::unordered_map<int64_t, shared_ptr_fast<monster>> &index,
+                        const monster &who )
+{
+    if( index.erase( who.persistent_id() ) != 0 ) {
+        return;
+    }
+    // Direct assignment creates a new identity without updating this auxiliary index.
+    for( auto it = index.begin(); it != index.end(); ) {
+        if( it->second.get() == &who ) {
+            it = index.erase( it );
+        } else {
+            ++it;
+        }
+    }
+}
+} // namespace
+
 creature_tracker::creature_tracker() = default;
 
 creature_tracker::~creature_tracker() = default;
@@ -39,7 +60,7 @@ shared_ptr_fast<monster> creature_tracker::find( const tripoint_abs_ms &pos ) co
     const auto iter = monsters_by_location.find( pos );
     if( iter != monsters_by_location.end() ) {
         const shared_ptr_fast<monster> &mon_ptr = iter->second;
-        if( !mon_ptr->is_dead() ) {
+        if( !mon_ptr->is_dead() || execution_fatal::pending( *mon_ptr ) ) {
             return mon_ptr;
         }
     }
@@ -65,6 +86,21 @@ shared_ptr_fast<monster> creature_tracker::from_temporary_id( const int id )
     } else {
         return nullptr;
     }
+}
+
+shared_ptr_fast<monster> creature_tracker::find_by_uid( int64_t id ) const
+{
+    const auto it = monsters_by_uid.find( id );
+    if( it != monsters_by_uid.end() && it->second->persistent_id() == id ) {
+        return it->second;
+    }
+    // A direct replacement/assignment of a monster invalidates the old identity.
+    for( const auto &mon : monsters_list ) {
+        if( mon->persistent_id() == id ) {
+            return mon;
+        }
+    }
+    return {};
 }
 
 bool creature_tracker::add( const shared_ptr_fast<monster> &critter_ptr )
@@ -94,6 +130,12 @@ bool creature_tracker::add( const shared_ptr_fast<monster> &critter_ptr )
         return false;
     }
 
+    const int64_t uid = critter.persistent_id();
+    if( monsters_by_uid.count( uid ) != 0 ) {
+        debugmsg( "Duplicate monster UID %lld", static_cast<long long>( uid ) );
+        return false;
+    }
+    monsters_by_uid.emplace( uid, critter_ptr );
     monsters_list.emplace_back( critter_ptr );
     monsters_by_location[critter.pos_abs()] = critter_ptr;
     return true;
@@ -109,7 +151,7 @@ bool creature_tracker::update_pos( const monster &critter, const tripoint_abs_ms
 {
     map &here = get_map();
 
-    if( critter.is_dead() ) {
+    if( critter.is_dead() && !execution_fatal::pending( critter ) ) {
         // find ignores dead critters anyway, changing their position in the
         // monsters_by_location map is useless.
         remove_from_location_map( critter );
@@ -167,22 +209,36 @@ void creature_tracker::remove_from_location_map( const monster &critter )
 
 void creature_tracker::remove( const monster &critter )
 {
+    const bool present = std::any_of( monsters_list.begin(), monsters_list.end(),
+    [&]( const shared_ptr_fast<monster> &ptr ) {
+        return ptr.get() == &critter;
+    } );
+    execution_fatal::before_removal( critter, "participant_removed" );
     const auto iter = std::find_if( monsters_list.begin(), monsters_list.end(),
     [&]( const shared_ptr_fast<monster> &ptr ) {
         return ptr.get() == &critter;
     } );
     if( iter == monsters_list.end() ) {
+        if( present ) {
+            return; // A death callback already removed it during settlement.
+        }
         debugmsg( "Tried to remove invalid monster %s", critter.name() );
         return;
     }
 
     remove_from_location_map( critter );
     removed_this_turn_.emplace( *iter );
+    erase_monster_uid( monsters_by_uid, critter );
     monsters_list.erase( iter );
 }
 
 void creature_tracker::clear()
 {
+    const auto existing = monsters_list;
+    for( const auto &mon : existing ) {
+        execution_fatal::before_removal( *mon, "tracker_cleared" );
+    }
+    monsters_by_uid.clear();
     monsters_list.clear();
     monsters_by_location.clear();
     removed_this_turn_.clear();
@@ -190,10 +246,21 @@ void creature_tracker::clear()
     invalidate_reachability_cache();
 }
 
+void creature_tracker::clear_npcs()
+{
+    const auto existing = active_npc;
+    for( const auto &person : existing ) {
+        execution_fatal::before_removal( *person, "participant_unloaded" );
+    }
+    active_npc.clear();
+}
+
 void creature_tracker::rebuild_cache()
 {
     monsters_by_location.clear();
+    monsters_by_uid.clear();
     for( const shared_ptr_fast<monster> &mon_ptr : monsters_list ) {
+        monsters_by_uid.emplace( mon_ptr->persistent_id(), mon_ptr );
         monsters_by_location[mon_ptr->pos_abs()] = mon_ptr;
     }
 }
@@ -204,7 +271,7 @@ bool creature_tracker::is_present( Creature *creature ) const
         if( const auto iter = monsters_by_location.find( creature->pos_abs() );
             iter != monsters_by_location.end() ) {
             if( static_cast<const Creature *>( iter->second.get() ) == creature ) {
-                return !iter->second->is_dead();
+                return !iter->second->is_dead() || execution_fatal::pending( *iter->second );
             }
         }
     } else if( creature->is_avatar() ) {
@@ -212,7 +279,7 @@ bool creature_tracker::is_present( Creature *creature ) const
     } else if( creature->is_npc() ) {
         for( const shared_ptr_fast<npc> &cur_npc : active_npc ) {
             if( static_cast<const Creature *>( cur_npc.get() ) == creature ) {
-                return !cur_npc->is_dead();
+                return !cur_npc->is_dead() || execution_fatal::pending( *cur_npc );
             }
         }
     }
@@ -272,7 +339,7 @@ bool creature_tracker::kill_marked_for_death()
     for( const shared_ptr_fast<monster> &mon_ptr : copy ) {
         cata_assert( mon_ptr );
         monster &critter = *mon_ptr;
-        if( !critter.is_dead() ) {
+        if( !critter.is_dead() || execution_fatal::pending( critter ) ) {
             continue;
         }
         dbg( D_INFO ) << string_format( "cleanup_dead: critter at %s hp:%d %s",
@@ -290,8 +357,10 @@ void creature_tracker::remove_dead()
     // Can't use game::all_monsters() as it would not contain *dead* monsters.
     for( auto iter = monsters_list.begin(); iter != monsters_list.end(); ) {
         monster *const critter = iter->get();
-        if( critter->is_dead() ) {
+        if( critter->is_dead() && !execution_fatal::pending( *critter ) ) {
+            get_powers().retire_actor( *critter );
             remove_from_location_map( *critter );
+            erase_monster_uid( monsters_by_uid, *critter );
             iter = monsters_list.erase( iter );
         } else {
             ++iter;
@@ -334,7 +403,7 @@ T *creature_tracker::creature_at( const tripoint_abs_ms &p, bool allow_hallucina
         }
     }
     for( auto &cur_npc : active_npc ) {
-        if( cur_npc->pos_abs() == p && !cur_npc->is_dead() ) {
+        if( cur_npc->pos_abs() == p && ( !cur_npc->is_dead() || execution_fatal::pending( *cur_npc ) ) ) {
             return dynamic_cast<T *>( cur_npc.get() );
         }
     }

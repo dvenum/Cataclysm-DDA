@@ -10,6 +10,7 @@
 #include "monster.h"
 #include "talker.h"
 #include "type_id.h"
+#include "units_fwd.h"
 
 /*
  * Talker wrapper class for monster.
@@ -73,7 +74,7 @@ class talker_monster_const: public const_talker_cloner<talker_monster_const>
 
         bool can_see_location( const tripoint_bub_ms &pos ) const override;
         int get_volume() const override;
-        int get_weight() const override;
+        units::mass get_weight() const override;
         bool is_warm() const override;
         bool is_underwater() const override;
         bool is_swimming() const override;
@@ -106,6 +107,9 @@ class talker_monster: public talker_monster_const, public talker_cloner<talker_m
                        ) override;
         void remove_effect( const efftype_id &old_effect, const std::string &bp ) override;
         void mod_pain( int amount ) override;
+        // MATH-J06: n_pain() = x and n_hp('torso') = x on a monster, which has one pool of each
+        void set_pain( int amount ) override;
+        void set_part_hp_cur( const bodypart_id &, int set ) override;
 
         void set_value( const std::string &var_name, diag_value const &value ) override;
         void remove_value( const std::string &var_name ) override;

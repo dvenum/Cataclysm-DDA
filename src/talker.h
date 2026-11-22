@@ -639,8 +639,8 @@ class const_talker
         virtual int get_volume() const {
             return 0;
         }
-        virtual int get_weight() const {
-            return 0;
+        virtual units::mass get_weight() const {
+            return 0_gram;
         }
         virtual int get_npc_trust() const {
             return 0;
@@ -742,8 +742,8 @@ class const_talker
         virtual int get_current_speed() const {
             return 0;
         }
-        virtual int get_unloaded_weight() const {
-            return 0;
+        virtual units::mass get_unloaded_weight() const {
+            return 0_gram;
         }
         virtual int get_friendly_passenger_count() const {
             return 0;
@@ -889,6 +889,7 @@ class talker: virtual public const_talker
         virtual void clear_ai_rule( const std::string &, const std::string & ) {}
         virtual void set_class( const npc_class_id & ) {}
         virtual void set_addiction_turns( const addiction_id &, int ) {}
+        virtual void set_addiction_intensity( const addiction_id &, int ) {}
         virtual void mod_stored_kcal( int, bool ) {}
         virtual void set_stored_kcal( int ) {}
         virtual void set_stim( int ) {}

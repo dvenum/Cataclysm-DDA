@@ -1,7 +1,11 @@
 #include <algorithm>
+#include <functional>
 #include <map>
+#include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "activity_actor_definitions.h"
@@ -16,18 +20,16 @@
 #include "coordinates.h"
 #include "debug.h"
 #include "faction.h"
-#include "faction_camp.h"
 #include "flexbuffer_json.h"
 #include "game.h"
 #include "game_constants.h"
 #include "global_vars.h"
-#include "json.h"
 #include "json_loader.h"
 #include "map.h"
 #include "map_helpers.h"
 #include "map_scale_constants.h"
+#include "mapgendata.h"
 #include "math_parser_diag_value.h"
-#include "memory_fast.h"
 #include "mission_companion.h"
 #include "npc.h"
 #include "overmapbuffer.h"
@@ -234,12 +236,8 @@ TEST_CASE( "craft-j01_recipe_copy_from_extends_and_deletes_proficiencies",
             "components": [ [ [ "2x4", 1 ] ] ],
             "delete": { "proficiencies": [ "prof_tempering" ] }
         })" ), JsonError );
-        // Inline requirements are never inherited, so they can't be extended or deleted.
-        CHECK_THROWS_AS( load_craft_j01_child( R"({
-            "type": "recipe", "result": "cudgel", "id_suffix": "audit_craft_j01_bad_comps",
-            "components": [ [ [ "2x4", 1 ] ] ],
-            "extend": { "components": [ [ [ "rock", 1 ] ] ] }
-        })" ), JsonError );
+        // Deleting a tool the recipe doesn't have (inline requirements are inherited and take
+        // extend and delete since, see tests/audit_partial_loading_test.cpp).
         CHECK_THROWS_AS( load_craft_j01_child( R"({
             "type": "recipe", "result": "cudgel", "id_suffix": "audit_craft_j01_bad_tools",
             "components": [ [ [ "2x4", 1 ] ] ],

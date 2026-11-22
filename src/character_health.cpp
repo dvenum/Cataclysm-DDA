@@ -1,8 +1,7 @@
-#include "character.h"
-
 #include <algorithm>
 #include <climits>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
@@ -13,10 +12,12 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "ability_runtime.h"
 #include "action.h"
 #include "activity_handlers.h"
 #include "activity_tracker.h"
@@ -26,12 +27,14 @@
 #include "calendar.h"
 #include "cata_assert.h"
 #include "cata_utility.h"
+#include "character.h"
 #include "character_attire.h"
 #include "color.h"
 #include "coordinates.h"
 #include "creature.h"
 #include "cursesdef.h"
 #include "damage.h"
+#include "damage_transaction.h"
 #include "debug.h"
 #include "disease.h"
 #include "effect.h"
@@ -39,11 +42,15 @@
 #include "enums.h"
 #include "event.h"
 #include "event_bus.h"
+#include "execution_combat.h"
+#include "execution_fatal.h"
+#include "execution_runtime.h"
 #include "field_type.h"
 #include "flag.h"
 #include "fungal_effects.h"
 #include "game.h"
 #include "game_constants.h"
+#include "incapacitation.h"
 #include "input_context.h"
 #include "item.h"
 #include "item_location.h"
@@ -211,9 +218,6 @@ static const trait_id trait_CHLOROMORPH( "CHLOROMORPH" );
 static const trait_id trait_DEBUG_LS( "DEBUG_LS" );
 static const trait_id trait_DEBUG_STAMINA( "DEBUG_STAMINA" );
 static const trait_id trait_DISRESISTANT( "DISRESISTANT" );
-static const trait_id trait_GLASSJAW( "GLASSJAW" );
-static const trait_id trait_HEAVYSLEEPER( "HEAVYSLEEPER" );
-static const trait_id trait_HEAVYSLEEPER2( "HEAVYSLEEPER2" );
 static const trait_id trait_HIBERNATE( "HIBERNATE" );
 static const trait_id trait_MASOCHIST( "MASOCHIST" );
 static const trait_id trait_M_SKIN3( "M_SKIN3" );
@@ -316,16 +320,27 @@ void Character::react_to_felt_pain( int intensity )
 
         if( has_bionic( bio_sleep_shutdown ) ) {
             pain_thresh += 999;
-        } else if( has_trait( trait_HEAVYSLEEPER ) ) {
-            pain_thresh += 2;
-        } else if( has_trait( trait_HEAVYSLEEPER2 ) ) {
-            pain_thresh += 5;
+        } else {
+            // HLTH-J12: Heavy Sleeper +2, Very Heavy Sleeper +5
+            pain_thresh += static_cast<int>( enchantment_cache->modify_value(
+                                                 enchant_vals::mod::WAKE_PAIN_THRESHOLD, 0.0 ) );
         }
 
         if( intensity >= pain_thresh ) {
             wake_up();
         }
     }
+}
+
+int Character::wake_dice() const
+{
+    return std::max( 0, static_cast<int>( enchantment_cache->modify_value(
+            enchant_vals::mod::WAKE_RESISTANCE, 2.0 ) ) );
+}
+
+double Character::sleep_light_tolerance() const
+{
+    return enchantment_cache->modify_value( enchant_vals::mod::SLEEP_LIGHT_TOLERANCE, 1.0 );
 }
 
 bool Character::is_dead_state() const
@@ -408,14 +423,26 @@ void Character::recalc_hp()
 void Character::calc_all_parts_hp( float hp_mod, float hp_adjustment, int str_max, int dex_max,
                                    int per_max, int int_max, int healthy_mod, int fat_to_max_hp )
 {
+    // The traits' bodypart_hp_multiplier, per body part (GLASSJAW's head)
+    std::map<bodypart_str_id, double> trait_hp_mult;
+    for( const std::pair<const trait_id, trait_data> &mut : cached_mutations ) {
+        if( mut.second.corrupted != 0 ) {
+            continue;
+        }
+        for( const std::pair<const bodypart_str_id, double> &bp_mult :
+             mut.first->bodypart_hp_multiplier ) {
+            trait_hp_mult.emplace( bp_mult.first, 1.0 ).first->second *= bp_mult.second;
+        }
+    }
     for( std::pair<const bodypart_str_id, bodypart> &part : body ) {
         int new_max = ( part.first->base_hp + str_max * part.first->hp_mods.str_mod + dex_max *
                         part.first->hp_mods.dex_mod + int_max * part.first->hp_mods.int_mod + per_max *
                         part.first->hp_mods.per_mod + part.first->hp_mods.health_mod * healthy_mod + fat_to_max_hp +
                         hp_adjustment ) * hp_mod;
 
-        if( has_trait( trait_GLASSJAW ) && part.first == body_part_head ) {
-            new_max *= 0.8;
+        const auto bp_mult = trait_hp_mult.find( part.first );
+        if( bp_mult != trait_hp_mult.end() ) {
+            new_max *= bp_mult->second;
         }
 
         new_max = std::max( 1, new_max );
@@ -517,6 +544,8 @@ void Character::die( map *here, Creature *nkiller )
 
 void Character::prevent_death()
 {
+    // this death didn't happen, so a later one is reported again
+    death_event_sent = false;
     for( const bodypart_id &bp : get_all_body_parts( get_body_part_flags::only_main ) ) {
         if( bp->is_vital ) {
             if( get_part_hp_cur( bp ) <= 0 ) {
@@ -1070,7 +1099,9 @@ int Character::get_sleep_deprivation() const
 
 bool Character::is_deaf() const
 {
-    return get_effect_int( effect_deaf ) > 2 || worn_with_flag( flag_DEAF ) ||
+    return ( incapacitation::unconscious( *this ) ||
+             ( !is_avatar() && execution_fatal::pending( *this ) ) ) ||
+           get_effect_int( effect_deaf ) > 2 || worn_with_flag( flag_DEAF ) ||
            has_flag( json_flag_DEAF ) || has_effect( effect_narcosis ) ||
            ( has_trait( trait_M_SKIN3 ) &&
              get_map().has_flag_ter_or_furn( ter_furn_flag::TFLAG_FUNGUS, pos_bub() )
@@ -1575,9 +1606,16 @@ void Character::update_needs( int rate_multiplier )
 
             }
         }
+        // HLTH-J12: only while resting in water, as Aqueous Repose and Embrace of the Waters say.
+        // The sleep effect used to take the same 3 off again, wherever its sleeper lay.
         if( calendar::once_every( 10_minutes ) &&
             ( has_trait( trait_WATERSLEEP ) || has_trait( trait_UNDINE_SLEEP_WATER ) ) ) {
-            mod_sleepiness( -3 ); // Fish sleep less in water
+            map &here = get_map();
+            const tripoint_bub_ms pos = pos_bub( here );
+            if( is_underwater() || here.has_flag_ter( ter_furn_flag::TFLAG_SWIMMABLE, pos ) ||
+                here.has_flag_ter( ter_furn_flag::TFLAG_DEEP_WATER, pos ) ) {
+                mod_sleepiness( -3 ); // Fish sleep less in water
+            }
         }
     }
 
@@ -1712,19 +1750,34 @@ void Character::calc_sleep_recovery_rate( needs_rates &rates ) const
 void Character::check_needs_extremes()
 {
     // Check if we've overdosed... in any deadly way.
-    if( get_stim() > 250 ) {
+    // HLTH-J06: the lethal points are external options (data/core/external_options.json)
+    static const std::string stim_high_option( "OVERDOSE_STIM_HIGH" );
+    static const std::string stim_low_option( "OVERDOSE_STIM_LOW" );
+    static const std::string pkill_option( "OVERDOSE_PAINKILLER" );
+    static const std::string jetinjector_option( "OVERDOSE_JETINJECTOR_MINUTES" );
+    static const std::string adrenaline_option( "OVERDOSE_ADRENALINE_MINUTES" );
+    static const std::string drunk_option( "OVERDOSE_DRUNK_INTENSITY" );
+    // 0 turns a death by an effect off
+    const auto lethal_minutes = []( const std::string & option ) {
+        const int minutes = get_option<int>( option );
+        return minutes > 0 ? time_duration::from_minutes( minutes ) :
+               calendar::INDEFINITELY_LONG_DURATION;
+    };
+    if( get_stim() > get_option<int>( stim_high_option ) ) {
         add_msg_player_or_npc( m_bad,
                                _( "You have a sudden heart attack!" ),
                                _( "<npcname> has a sudden heart attack!" ) );
         get_event_bus().send<event_type::dies_from_drug_overdose>( getID(), efftype_id() );
         set_part_hp_cur( body_part_torso, 0 );
-    } else if( get_stim() < -200 || get_painkiller() > 240 ) {
+    } else if( get_stim() < get_option<int>( stim_low_option ) ||
+               get_painkiller() > get_option<int>( pkill_option ) ) {
         add_msg_player_or_npc( m_bad,
                                _( "Your breathing stops completely." ),
                                _( "<npcname>'s breathing stops completely." ) );
         get_event_bus().send<event_type::dies_from_drug_overdose>( getID(), efftype_id() );
         set_part_hp_cur( body_part_torso, 0 );
-    } else if( has_effect( effect_jetinjector ) && get_effect_dur( effect_jetinjector ) > 40_minutes ) {
+    } else if( has_effect( effect_jetinjector ) &&
+               get_effect_dur( effect_jetinjector ) > lethal_minutes( jetinjector_option ) ) {
         if( !has_flag( json_flag_PAIN_IMMUNE ) ) {
             add_msg_player_or_npc( m_bad,
                                    _( "Your heart spasms painfully and stops." ),
@@ -1735,13 +1788,15 @@ void Character::check_needs_extremes()
         }
         get_event_bus().send<event_type::dies_from_drug_overdose>( getID(), effect_jetinjector );
         set_part_hp_cur( body_part_torso, 0 );
-    } else if( get_effect_dur( effect_adrenaline ) > 50_minutes ) {
+    } else if( has_effect( effect_adrenaline ) &&
+               get_effect_dur( effect_adrenaline ) > lethal_minutes( adrenaline_option ) ) {
         add_msg_player_or_npc( m_bad,
                                _( "Your heart spasms and stops." ),
                                _( "<npcname>'s heart spasms and stops." ) );
         get_event_bus().send<event_type::dies_from_drug_overdose>( getID(), effect_adrenaline );
         set_part_hp_cur( body_part_torso, 0 );
-    } else if( get_effect_int( effect_drunk ) > 4 ) {
+    } else if( has_effect( effect_drunk ) && get_option<int>( drunk_option ) > 0 &&
+               get_effect_int( effect_drunk ) >= get_option<int>( drunk_option ) ) {
         add_msg_player_or_npc( m_bad,
                                _( "Your breathing slows down to a stop." ),
                                _( "<npcname>'s breathing slows down to a stop." ) );
@@ -1992,7 +2047,9 @@ bool Character::is_hibernating() const
 
 bool Character::is_blind() const
 {
-    return worn_with_flag( flag_BLIND ) ||
+    return ( incapacitation::unconscious( *this ) ||
+             ( !is_avatar() && execution_fatal::pending( *this ) ) ) ||
+           worn_with_flag( flag_BLIND ) ||
            has_flag( json_flag_BLIND ) || get_limb_score( limb_score_vision ) <= 0;
 }
 
@@ -2534,6 +2591,23 @@ void Character::cough( bool harmful, int loudness )
     add_effect( effect_disrupted_sleep, 5_minutes );
 }
 
+static const char *current_wake_up_cause = nullptr;
+
+wake_up_cause_scope::wake_up_cause_scope( const char *cause ) : previous( current_wake_up_cause )
+{
+    current_wake_up_cause = cause;
+}
+
+wake_up_cause_scope::~wake_up_cause_scope()
+{
+    current_wake_up_cause = previous;
+}
+
+std::string wake_up_cause_scope::current()
+{
+    return current_wake_up_cause != nullptr ? current_wake_up_cause : "other";
+}
+
 void Character::wake_up()
 {
     //Can't wake up if under anesthesia
@@ -2548,7 +2622,8 @@ void Character::wake_up()
 
     if( has_effect( effect_sleep ) ) {
         get_effect( effect_sleep ).set_duration( 0_turns );
-        get_event_bus().send<event_type::character_wakes_up>( getID() );
+        get_event_bus().send<event_type::character_wakes_up>( getID(),
+                wake_up_cause_scope::current() );
     }
     remove_effect( effect_slept_through_alarm );
     remove_effect( effect_lying_down );
@@ -2649,16 +2724,75 @@ const std::vector<wound> &Character::wounds_on( const bodypart_str_id &part ) co
 
 void Character::apply_wound( bodypart_id bp, wound_type_id wd, dealt_damage_instance &ddi )
 {
-    bodypart &body_bp = body.at( bp.id() );
-    body_bp.add_or_worsen_wound( wd, this, ddi );
-    morale->on_stat_change( "perceived_pain", get_perceived_pain() );
+    apply_wound( bp, wound( wd, this, bp.id(), ddi ), ddi );
 }
 
 void Character::apply_wound( bodypart_id bp, wound wd, dealt_damage_instance &ddi )
 {
-    bodypart &body_bp = body.at( bp.id() );
-    body_bp.add_or_worsen_wound( wd, this, ddi );
+    // Nothing on a part the body doesn't have (an EOC of an earlier wound event may remove one)
+    const auto body_bp = body.find( bp.id() );
+    if( body_bp == body.end() ) {
+        return;
+    }
+    const std::optional<wound_change> done = body_bp->second.add_or_worsen_wound( wd, this, ddi );
     morale->on_stat_change( "perceived_pain", get_perceived_pain() );
+    if( done ) {
+        send_wound_events( { *done } );
+    }
+}
+
+void Character::add_wound( const bodypart_id &bp, const wound_type_id wd, const int hp_damage )
+{
+    const auto part = body.find( bp.id() );
+    if( part == body.end() ) {
+        return;
+    }
+    part->second.add_wound( wd, *this, hp_damage );
+    morale->on_stat_change( "perceived_pain", get_perceived_pain() );
+    wound_change gained;
+    gained.what = wound_change::kind::gained;
+    gained.bp = bp.id();
+    gained.wound = wd;
+    send_wound_events( { gained } );
+}
+
+void Character::remove_wounds_of_type( const bodypart_id &bp, const wound_type_id wd )
+{
+    // Quietly nothing when the part is gone (an EOC of an earlier wound event may remove it)
+    const auto part = body.find( bp.id() );
+    if( part == body.end() ) {
+        return;
+    }
+    const int removed = part->second.remove_all_wounds_of_type( wd );
+    if( removed == 0 ) {
+        return;
+    }
+    morale->on_stat_change( "perceived_pain", get_perceived_pain() );
+    wound_change gone;
+    gone.what = wound_change::kind::lost;
+    gone.bp = bp.id();
+    gone.wound = wd;
+    send_wound_events( std::vector<wound_change>( static_cast<size_t>( removed ), gone ) );
+}
+
+void Character::send_wound_events( const std::vector<wound_change> &changes ) const
+{
+    for( const wound_change &change : changes ) {
+        switch( change.what ) {
+            case wound_change::kind::gained:
+                get_event_bus().send<event_type::character_gains_wound>( getID(), change.bp,
+                        change.wound.str() );
+                break;
+            case wound_change::kind::progressed:
+                get_event_bus().send<event_type::character_wound_progresses>( getID(), change.bp,
+                        change.wound.str(), change.new_wound.str() );
+                break;
+            case wound_change::kind::lost:
+                get_event_bus().send<event_type::character_loses_wound>( getID(), change.bp,
+                        change.wound.str(), change.healed );
+                break;
+        }
+    }
 }
 
 // The part of `amount` that can be applied to `current` without taking it below `cap_min`
@@ -2680,8 +2814,10 @@ static int wound_mod_within_caps( int current, int amount, int cap_min, int cap_
 
 void Character::update_wounds( time_duration time_passed )
 {
+    // Sent once the body is no longer being looped over: their EOCs may change it
+    std::vector<wound_change> changes;
     for( auto& [bp_id, bp] : body ) {
-        bp.update_wounds( *this, time_passed );
+        bp.update_wounds( *this, time_passed, &changes );
 
         for( wound &wd : bp.get_wounds() ) {
             for( const wound_mod_values &mod_val : wd.type->get_modify_values() ) {
@@ -2732,6 +2868,9 @@ void Character::update_wounds( time_duration time_passed )
     }
 
     morale->on_stat_change( "perceived_pain", get_perceived_pain() );
+    if( !changes.empty() ) {
+        send_wound_events( changes );
+    }
 }
 
 bool Character::is_bleeding( const bodypart_id bp ) const
@@ -2747,7 +2886,10 @@ bool Character::is_bleeding( const bodypart_id bp ) const
 void Character::apply_damage( Creature *source, bodypart_id hurt, int dam,
                               const bool bypass_med )
 {
-    if( is_dead_state() || has_effect( effect_incorporeal ) ||
+    const execution_combat::damage_barrier execution_damage;
+    execution_fatal::before_damage( *this, dam > 0 );
+    if( ( is_dead_state() && !( g && g->executions().owns_fatal_gravity( *this ) ) ) ||
+        has_effect( effect_incorporeal ) ||
         has_flag( json_flag_CANNOT_TAKE_DAMAGE ) ) {
         // don't do any more damage if we're already dead
         // Or if we're debugging and don't want to die
@@ -2792,13 +2934,24 @@ void Character::apply_damage( Creature *source, bodypart_id hurt, int dam,
         mod_part_hp_cur( part_to_damage, - dam_to_bodypart );
     }
 
+    record_damage_transaction_hp_loss( *this, dam_to_bodypart );
+    execution_combat::record_hp_loss( *this, dam_to_bodypart );
+    incapacitation::wake_on_damage( *this, dam_to_bodypart );
+    if( g ) {
+        if( source == nullptr ) {
+            source = g->executions().secondary_damage_source( this );
+        }
+        g->executions().notify_damage( *this, dam_to_bodypart );
+        g->abilities().notify_damage( *this, dam_to_bodypart );
+    }
+    const damage_type_id dealt_type = Creature::applying_damage_type( *this );
     if( source ) {
         cata::event e = cata::event::make<event_type::character_takes_damage>( getID(), dam_to_bodypart,
-                        part_to_damage.id(), pain );
+                        part_to_damage.id(), pain, dealt_type );
         get_event_bus().send_with_talker( this, source, e );
     } else {
         get_event_bus().send<event_type::character_takes_damage>( getID(), dam_to_bodypart,
-                part_to_damage.id(), pain );
+                part_to_damage.id(), pain, dealt_type );
     }
 
     if( !weapon.is_null() && !can_wield( weapon ).success() &&
@@ -2866,6 +3019,10 @@ void Character::apply_random_wound_from_damage( bodypart_id bp, const dealt_dama
         new_d.set_damage( p.first, p.second );
         new_d.bp_hit = bp;
 
+        // An EOC of the last wound's event may have taken the part away
+        if( body.count( bp.id() ) == 0 ) {
+            return;
+        }
         weighted_int_list<wound_type_id> list = populate_potential_wounds( this, bp, new_d );
         if( !list.empty() ) {
             wound_type_id wd_id = *list.pick();
@@ -2881,6 +3038,8 @@ void Character::apply_random_wound_from_damage( bodypart_id bp, const dealt_dama
 dealt_damage_instance Character::deal_damage( Creature *source, bodypart_id bp,
         const damage_instance &d, const weakpoint_attack &attack, const weakpoint & )
 {
+    const damage_participant_guard participants( source, *this );
+    const execution_combat::damage_barrier execution_damage;
     const map &here = get_map();
 
     if( has_effect( effect_incorporeal ) || has_flag( json_flag_CANNOT_TAKE_DAMAGE ) ) {
@@ -2893,6 +3052,9 @@ dealt_damage_instance Character::deal_damage( Creature *source, bodypart_id bp,
     const int hp_before = get_part_hp_cur( hp_part );
     //damage applied here
     dealt_damage_instance dealt_dams = Creature::deal_damage( source, bp, d, attack );
+    if( !participants.valid() ) {
+        return dealt_dams;
+    }
     const int hp_lost = std::max( hp_before - get_part_hp_cur( hp_part ), 0 );
     //block reduction should be by applied this point
     int dam = dealt_dams.total_damage();
@@ -3055,7 +3217,8 @@ void Character::heal( const bodypart_id &healed, int dam )
         mod_part_hp_cur( healed, effective_heal );
         add_msg_debug( debugmode::DF_CHAR_HEALTH, "Final healing of %s = %d", body_part_name( healed ),
                        dam );
-        get_event_bus().send<event_type::character_heals_damage>( getID(), effective_heal );
+        get_event_bus().send<event_type::character_heals_damage>( getID(), effective_heal,
+                healed );
     }
 }
 
@@ -3069,9 +3232,15 @@ void Character::healall( int dam )
 
 void Character::hurtall( int dam, Creature *source, bool disturb /*= true*/ )
 {
+    const execution_combat::damage_barrier execution_damage;
+    execution_fatal::before_damage( *this, dam > 0 );
     if( is_dead_state() || has_effect( effect_incorporeal ) ||
         dam <= 0 || has_flag( json_flag_CANNOT_TAKE_DAMAGE ) ) {
         return;
+    }
+
+    if( source == nullptr && g ) {
+        source = g->executions().secondary_damage_source();
     }
 
     // Low pain: damage is spread all over the body, so not as painful as 6 hits in one part
@@ -3082,14 +3251,20 @@ void Character::hurtall( int dam, Creature *source, bool disturb /*= true*/ )
         // Don't use apply_damage here or it will annoy the player with 6 queries
         const int dam_to_bodypart = std::min( dam, get_part_hp_cur( bp ) );
         mod_part_hp_cur( bp, - dam_to_bodypart );
+        incapacitation::wake_on_damage( *this, dam_to_bodypart );
+
+        if( g ) {
+            g->executions().notify_damage( *this, dam_to_bodypart );
+            g->abilities().notify_damage( *this, dam_to_bodypart );
+        }
 
         if( source ) {
             cata::event e = cata::event::make<event_type::character_takes_damage>( getID(), dam_to_bodypart,
-                            bp.id(), pain / body_parts.size() );
+                            bp.id(), pain / body_parts.size(), damage_type_id() );
             get_event_bus().send_with_talker( this, source == nullptr ? nullptr : source, e );
         } else {
             get_event_bus().send<event_type::character_takes_damage>( getID(), dam_to_bodypart, bp.id(),
-                    pain / body_parts.size() );
+                    pain / body_parts.size(), damage_type_id() );
         }
 
     }
@@ -3126,6 +3301,7 @@ void Character::on_hurt( Creature *source, bool disturb /*= true*/ )
 
     if( disturb ) {
         if( in_sleep_state() && !has_bionic( bio_sleep_shutdown ) ) {
+            const wake_up_cause_scope cause( "damage" );
             wake_up();
         }
         if( uistate.distraction_attack && !is_npc() && !has_effect( effect_narcosis ) ) {
@@ -3276,6 +3452,15 @@ int Character::get_painkiller() const
     return pkill;
 }
 
+int Character::heartrate_bpm_average() const
+{
+    //Dead have no heartbeat usually and no heartbeat in omnicell
+    if( is_dead_state() || has_trait( trait_SLIMESPAWNER ) ) {
+        return 0;
+    }
+    return avg_nat_bpm * get_heartrate_index();
+}
+
 int Character::heartrate_bpm() const
 {
     //Dead have no heartbeat usually and no heartbeat in omnicell
@@ -3283,7 +3468,7 @@ int Character::heartrate_bpm() const
         return 0;
     }
 
-    int average_heartbeat = avg_nat_bpm * get_heartrate_index();
+    int average_heartbeat = heartrate_bpm_average();
 
     // minor moment-to-moment variation
     average_heartbeat += rng( -5, 5 );
@@ -3314,6 +3499,10 @@ float Character::adjust_for_focus( float amount ) const
 
 bool Character::can_hear( const tripoint_bub_ms &source, const int volume ) const
 {
+    if( incapacitation::unconscious( *this ) ||
+        ( !is_avatar() && execution_fatal::pending( *this ) ) ) {
+        return false;
+    }
     if( is_deaf() ) {
         return false;
     }
@@ -3324,7 +3513,10 @@ bool Character::can_hear( const tripoint_bub_ms &source, const int volume ) cons
     }
     const int dist = rl_dist( source, pos_bub() );
     const float volume_multiplier = hearing_ability();
-    return ( volume - get_weather().weather_id->sound_attn ) * volume_multiplier >= dist;
+    const float heard = ( volume - get_weather().weather_id->sound_attn ) * volume_multiplier;
+    // walls, doors and fields between muffle it; only looked up when it could matter
+    return heard >= dist &&
+           heard >= dist + get_map().sound_attenuation_between( source, pos_bub() );
 }
 
 float Character::hearing_ability() const

@@ -94,6 +94,8 @@ class static_popup;
 class stats_tracker;
 class timed_event_manager;
 class item_wakeup_manager;
+class execution_manager;
+class ability_manager;
 class ui_adaptor;
 class uilist;
 class vehicle;
@@ -173,7 +175,10 @@ struct pulp_data {
  * Optional behaviors of game::fling_creature, from Cataclysm: The Last Generation's throws.
  * All are off by default, so hulk smashes, vehicle crashes and the like are unchanged.
  */
+struct power_motion_result;
 struct fling_options {
+    /** Optional attributed native receipt; callers must keep it alive for this flight. */
+    power_motion_result *motion = nullptr;
     /** A landing below speed 30 is as gentle as a controlled one. */
     bool soft_low_speed_landing = false;
     /**
@@ -723,6 +728,12 @@ class game
         void reset_light_level();
         character_id assign_npc_id();
         int64_t assign_item_uid();
+        int64_t assign_monster_uid();
+        void reserve_monster_uid( int64_t uid );
+        int64_t assign_vehicle_uid();
+        void reserve_vehicle_uid( int64_t uid );
+        execution_manager &executions();
+        ability_manager &abilities();
         // Keeps the uids assign_item_uid hands out above one in use, e.g. read from a save
         void reserve_item_uid( int64_t uid );
         Creature *is_hostile_nearby();
@@ -1115,10 +1126,11 @@ class game
         // If loc is empty then use all the items in character inventory including bionics.
         void item_action_menu( item_location loc = item_location() ); // Displays item action menu
 
-        bool is_game_over();     // Returns true if the player quit or died
         void bury_screen() const;// Bury a dead character (record their last words)
         void death_screen();     // Display our stats, "GAME OVER BOO HOO"
     public:
+        /** Native death/prevention and game-over presentation at a safe loop boundary. */
+        bool is_game_over();
         /**
          * If there is a robot (that can be disabled), query the player
          * and try to disable it.
@@ -1191,6 +1203,8 @@ class game
         pimpl<scent_map> scent_ptr; // NOLINT(cata-serialize)
         pimpl<timed_event_manager> timed_event_manager_ptr; // NOLINT(cata-serialize)
         pimpl<item_wakeup_manager> item_wakeup_manager_ptr;
+        pimpl<execution_manager> execution_manager_ptr;
+        pimpl<ability_manager> ability_manager_ptr;
         pimpl<event_bus> event_bus_ptr; // NOLINT(cata-serialize)
         pimpl<stats_tracker> stats_tracker_ptr;
         pimpl<achievements_tracker> achievements_tracker_ptr;
@@ -1303,6 +1317,8 @@ class game
         character_id next_npc_id; // NOLINT(cata-serialize)
         int next_mission_id = 0; // NOLINT(cata-serialize)
         int64_t next_item_uid = 1; // NOLINT(cata-serialize)
+        int64_t next_monster_uid = 1; // NOLINT(cata-serialize)
+        int64_t next_vehicle_uid = 1; // NOLINT(cata-serialize)
 
         std::chrono::seconds time_played_at_last_load; // NOLINT(cata-serialize)
         // NOLINTNEXTLINE(cata-serialize)
@@ -1437,11 +1453,37 @@ units::temperature_delta get_convection_temperature( const tripoint_bub_ms &loca
 
 namespace cata_event_dispatch
 {
-// Constructs and dispatches an avatar movement event with the necessary parameters
+// Constructs and dispatches an avatar movement event with the necessary parameters, then
+// reports an OMT change with avatar_changes_omt
 // @param p The point the avatar moved from in absolute coordinates
 // @param u The avatar (should have already moved to the new pos)
 // @param m The map the avatar is moving on
 void avatar_moves( const tripoint_abs_ms &old_abs_pos, const avatar &u, const map &m );
+
+// If the avatar is no longer in the OMT that holds old_abs_pos, sends avatar_enters_omt and runs
+// the exit_eoc of the OMT left and then the entry_eoc of the OMT entered. Does nothing while an
+// avatar_move_scope is open: the move that opened it reports the change once, when it ends.
+void avatar_changes_omt( const tripoint_abs_ms &old_abs_pos );
+
+// For a new game: sends avatar_enters_omt for the avatar's OMT and runs that OMT's entry_eoc
+// once, with the context of an OMT change from nowhere (left_oter_id is empty).
+void avatar_starts_in_omt();
+
+// Open while a move of the avatar is under way (a step, stairs, a teleport, vehicle travel).
+// An OMT change made by a move nested inside it, such as a teleport trap stepped on, is left to
+// the outer move, which reports it from where it started.
+class avatar_move_scope
+{
+    public:
+        avatar_move_scope();
+        ~avatar_move_scope();
+        avatar_move_scope( const avatar_move_scope & ) = delete;
+        avatar_move_scope &operator=( const avatar_move_scope & ) = delete;
+        // Closes the scope early, before the caller reports the change.
+        void end();
+    private:
+        bool open = true;
+};
 } // namespace cata_event_dispatch
 
 #endif // CATA_SRC_GAME_H

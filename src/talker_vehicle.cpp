@@ -1,5 +1,7 @@
 #include <cmath>
 #include <map>
+#include <optional>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -9,7 +11,6 @@
 #include "effect.h"
 #include "effect_source.h"
 #include "game.h"
-#include "line.h"
 #include "map.h"
 #include "math_parser_diag_value.h"
 #include "talker_vehicle.h"
@@ -98,14 +99,15 @@ bool talker_vehicle_const::will_talk_to_u( const Character &you, bool ) const
     return !you.is_dead_state();
 }
 
-int talker_vehicle_const::get_weight() const
+// cargo and passengers included
+units::mass talker_vehicle_const::get_weight() const
 {
-    return units::to_milligram( me_veh_const->total_mass( get_map() ) );
+    return me_veh_const->total_mass( get_map() );
 }
 
-int talker_vehicle_const::get_unloaded_weight() const
+units::mass talker_vehicle_const::get_unloaded_weight() const
 {
-    return units::to_milligram( me_veh_const->unloaded_mass() );
+    return me_veh_const->unloaded_mass();
 }
 
 // vehicle::remote_controlled() also drops the remote link, with a message, when the avatar
@@ -124,14 +126,13 @@ static bool avatar_remote_controls( const vehicle &veh )
     return false;
 }
 
-// vehicle::player_in_control() without its fallback to remote_controlled()
-static bool avatar_at_controls( const vehicle &veh )
+// vehicle::player_in_control() without its fallback to remote_controlled(), for any character
+static bool at_controls( const vehicle &veh, const Character &u )
 {
     if( veh.tags.count( "IN_CONTROL_OVERRIDE" ) ) {
         return true;
     }
     const map &here = get_map();
-    const avatar &u = get_avatar();
     const optional_vpart_position vp = here.veh_at( u.pos_bub() );
     if( !vp || &vp->vehicle() != &veh || !u.controlling_vehicle ) {
         return false;
@@ -150,12 +151,19 @@ bool talker_vehicle_const::is_driven() const
     if( veh.is_autodriving || veh.is_following || veh.is_patrolling ) {
         return true;
     }
-    // player_in_control() ends in remote_controlled(), which drops the remote link when no
-    // remote controls are in range; that can only happen while the link is to this vehicle
-    if( g->remoteveh() != &veh ) {
-        return veh.player_in_control( get_map(), get_avatar() );
+    // Not player_in_control(): it ends in remote_controlled(), which drops the avatar's remote
+    // link, with a message, when no remote controls are in range
+    if( at_controls( veh, get_avatar() ) || avatar_remote_controls( veh ) ) {
+        return true;
     }
-    return avatar_at_controls( veh ) || avatar_remote_controls( veh );
+    // MATH-J09: an NPC at the controls drives it too
+    for( const int part : veh.boarded_parts() ) {
+        const Character *who = veh.get_passenger( part );
+        if( who != nullptr && at_controls( veh, *who ) ) {
+            return true;
+        }
+    }
+    return false;
 }
 
 int talker_vehicle_const::get_vehicle_facing() const

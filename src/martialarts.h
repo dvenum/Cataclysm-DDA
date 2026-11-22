@@ -3,6 +3,7 @@
 #define CATA_SRC_MARTIALARTS_H
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <set>
@@ -14,7 +15,7 @@
 
 #include "bonuses.h"
 #include "calendar.h"
-#include "enum_traits.h"
+#include "dialogue_helpers.h"
 #include "flat_set.h"
 #include "translation.h"
 #include "type_id.h"
@@ -26,11 +27,11 @@ class JsonObject;
 class effect;
 class item;
 class item_location;
+enum class bp_type;
 struct const_dialogue;
-struct dialogue;
 struct itype;
 template <typename T> class generic_factory;
-enum class bp_type;
+template <typename T> struct enum_traits;
 
 const matec_id tec_none( "tec_none" );
 
@@ -116,6 +117,9 @@ struct ma_event_context {
     Creature *opponent = nullptr;
     // `weapon`: id of the weapon used for the attack ("null" when unarmed)
     itype_id weapon;
+    // Stable item identity and selected style, captured by the melee attack adapter.
+    int64_t weapon_uid = 0;
+    matype_id style;
     // `technique`: id of the technique used for the attack ("tec_none" when none)
     matec_id technique;
     // `bp`: body part hit; the target's for attack events, the user's own for defensive events
@@ -132,6 +136,8 @@ struct ma_event_context {
     // `grab_part`: the body part held, for ongrab and ongrabbed events: your own when you are
     // grabbed, the victim's when you grab; unset when the one held is a monster
     bodypart_str_id grab_part;
+    // `hit_by`: what hit you, for ongethit: "melee", "projectile", "shrapnel" or "explosion"
+    std::string hit_by;
 
     // Runs the EOCs with the user as alpha, the opponent as beta and the values above
     void activate( Character &u, const std::vector<effect_on_condition_id> &eocs ) const;
@@ -502,6 +508,12 @@ class ma_buff
         bool strictly_melee = false; // can we only use it with weapons?
         bool stealthy = false; // do we make less noise when moving?
 
+        // Dialogue condition the buff also needs, gaining it and keeping it (u is the martial
+        // artist; there is no npc talker), and its description line
+        std::function<bool( const_dialogue const & )> condition;
+        std::string condition_desc;
+        bool has_condition = false;
+
         void load( const JsonObject &jo, std::string_view src );
         static void finalize_all();
 };
@@ -599,12 +611,19 @@ class martialart
         std::vector<std::pair<std::string, int>> autolearn_skills;
         skill_id primary_skill;
         bool teachable = true;
+        // How long an NPC lesson takes and what it costs, when JSON says (u is the student, npc
+        // the teacher); otherwise the built-in values
+        std::optional<duration_or_var> training_time;
+        std::optional<dbl_or_var> training_cost;
         int learn_difficulty = 0;
         int arm_block = 0;
         int leg_block = 0;
         int nonstandard_block = 0;
-        bool arm_block_with_bio_armor_arms = false;
-        bool leg_block_with_bio_armor_legs = false;
+        // Character flags that let you arm or leg block at any skill (CMBT-J08); the older
+        // "arm_block_with_bio_armor_arms" and "leg_block_with_bio_armor_legs" add the flags of
+        // the alloy plating bionics
+        std::set<json_character_flag> arm_block_char_flags;
+        std::set<json_character_flag> leg_block_char_flags;
         std::set<matec_id> techniques; // all available techniques
         std::set<itype_id> weapons; // all style weapons
         std::set<weapon_category_id> weapon_category; // all style weapon categories

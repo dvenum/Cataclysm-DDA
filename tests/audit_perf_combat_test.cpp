@@ -7,19 +7,23 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <functional>
+#include <initializer_list>
+#include <list>
+#include <map>
 #include <memory>
 #include <optional>
+#include <random>
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "avatar.h"
+#include "bodypart.h"
 #include "calendar.h"
 #include "cata_catch.h"
 #include "cata_scope_helpers.h"
-#include "character.h"
 #include "character_id.h"
 #include "coordinates.h"
 #include "creature.h"
@@ -31,6 +35,7 @@
 #include "item.h"
 #include "item_location.h"
 #include "itype.h"
+#include "iuse.h"
 #include "iuse_actor.h"
 #include "line.h"
 #include "magic.h"
@@ -38,6 +43,7 @@
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "map_iterator.h"
 #include "monster.h"
 #include "npc.h"
 #include "npc_attack.h"
@@ -49,11 +55,9 @@
 #include "test_statistics.h"
 #include "type_id.h"
 #include "units.h"
-#include "veh_type.h"
 #include "vehicle.h"
 #include "vpart_position.h"
 #include "vpart_range.h"
-#include "weather.h"
 #include "weather_type.h"
 
 static const faction_id faction_your_followers( "your_followers" );
@@ -73,10 +77,9 @@ static const itype_id itype_shot_00( "shot_00" );
 static const itype_id itype_shot_bird( "shot_bird" );
 static const itype_id itype_shotgun_s( "shotgun_s" );
 
+static const mtype_id mon_cow( "mon_cow" );
 static const mtype_id mon_zombie( "mon_zombie" );
 
-// Magiclysm's attack spells that NPCs are given or cast, checked when the mod is loaded
-// (--mods=magiclysm)
 static const spell_id spell_cone_cold( "cone_cold" );
 static const spell_id spell_fireball( "fireball" );
 static const spell_id spell_gravity_well( "gravity_well" );
@@ -93,11 +96,11 @@ static const spell_id spell_test_spell_pew( "test_spell_pew" );
 
 static const string_id<npc_template> npc_template_test_talker( "test_talker" );
 
-static const trait_id trait_TEST_HALF_AVOID_FRIENDLY_FIRE( "TEST_HALF_AVOID_FRIENDLY_FIRE" );
-
 static const ter_str_id ter_t_laminated_glass( "t_laminated_glass" );
 static const ter_str_id ter_t_wall( "t_wall" );
 static const ter_str_id ter_t_window( "t_window" );
+
+static const trait_id trait_TEST_HALF_AVOID_FRIENDLY_FIRE( "TEST_HALF_AVOID_FRIENDLY_FIRE" );
 
 static const vproto_id vehicle_prototype_wheelchair( "wheelchair" );
 
@@ -420,9 +423,11 @@ void check_matches_full_scan( const npc_attack &attack, const npc &source,
 {
     rng_set_engine_seed( seed );
     const npc_attack_rating fast = attack.evaluate( source, target );
+    // NOLINTNEXTLINE(cata-determinism)
     const cata_default_random_engine after_fast = rng_get_engine();
     rng_set_engine_seed( seed );
     const npc_attack_rating full = best_of( attack.all_evaluations( source, target ), start );
+    // NOLINTNEXTLINE(cata-determinism)
     const cata_default_random_engine after_full = rng_get_engine();
     CHECK( fast.value() == full.value() );
     CHECK( fast.target() == full.target() );
@@ -468,7 +473,7 @@ random_fight build_random_fight( npc &guy, unsigned int seed, int zombies, int w
     }
     const tripoint_bub_ms cow = free_spot( 10 );
     if( cow != center ) {
-        g->place_critter_at( mtype_id( "mon_cow" ), cow );
+        g->place_critter_at( mon_cow, cow );
     }
     const tripoint_bub_ms ally = free_spot( 8 );
     if( ally != center ) {
@@ -820,13 +825,14 @@ TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
         arm_shooter( guy, itype_modular_m16a4 );
     };
 
+    // the gun ratings are 3 higher since NPC-B08: the gun in hand pays no wield penalty
     SECTION( "gun, melee or throw, against an adjacent zombie and one 6 tiles away" ) {
         guy.set_attitude( NPCATT_KILL );
         arm_fighter();
         monster *close = zombie_at( { 1, 0, 0 } );
         zombie_at( { 6, 0, 0 } );
         here.build_map_cache( 0 );
-        check_choice( choose_attack( guy, close, 1 ), "gun", { 1, 0, 0 }, 221 );
+        check_choice( choose_attack( guy, close, 1 ), "gun", { 1, 0, 0 }, 224 );
     }
     SECTION( "zombies at 4, 9 and 15 tiles, aiming at the middle one" ) {
         guy.set_attitude( NPCATT_KILL );
@@ -835,7 +841,7 @@ TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
         monster *middle = zombie_at( { -9, 2, 0 } );
         zombie_at( { 3, -15, 0 } );
         here.build_map_cache( 0 );
-        check_choice( choose_attack( guy, middle, 2 ), "gun", { -9, 2, 0 }, 300 );
+        check_choice( choose_attack( guy, middle, 2 ), "gun", { -9, 2, 0 }, 303 );
     }
     SECTION( "a follower with the player in the line of fire" ) {
         guy.set_fac( faction_your_followers );
@@ -846,7 +852,7 @@ TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
         monster *behind = zombie_at( { 6, 0, 0 } );
         zombie_at( { 5, 4, 0 } );
         here.build_map_cache( 0 );
-        check_choice( choose_attack( guy, behind, 3 ), "gun", { 6, 0, 0 }, 269 );
+        check_choice( choose_attack( guy, behind, 3 ), "gun", { 6, 0, 0 }, 272 );
     }
     SECTION( "a follower casting a fireball with the player next to the zombies" ) {
         guy.set_fac( faction_your_followers );
@@ -860,11 +866,19 @@ TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
         zombie_at( { -7, 3, 0 } );
         zombie_at( { -7, 4, 0 } );
         here.build_map_cache( 0 );
-        const chosen_attack chosen = choose_attack( guy, near_ally, 4 );
-        check_choice( chosen, "spell", { 6, 4, 0 }, 70 );
+        // The fireball's damage is random, and how a seed becomes random numbers differs between
+        // standard libraries, so the exact tile and rating are platform-specific. What holds
+        // everywhere: a fireball, aimed so its blast misses the player and catches the far zombies.
+        const chosen_attack got = choose_attack( guy, near_ally, 4 );
+        CAPTURE( got.target, got.value );
+        CHECK( got.kind == "spell" );
+        const int blast_radius = guy.magic->get_spell( spell_test_npc_fireball ).aoe( guy );
+        CHECK( rl_dist( got.target, tripoint_rel_ms( 9, 0, 0 ) ) > blast_radius );
+        CHECK( rl_dist( got.target, tripoint_rel_ms( -7, 3, 0 ) ) <= blast_radius );
+        CHECK( got.value > 0 );
         // whichever zombies it aims at, the blast spares the player
         const std::set<tripoint_bub_ms> blast = calculate_spell_effect_area(
-                guy.magic->get_spell( spell_test_npc_fireball ), center + chosen.target, guy );
+                guy.magic->get_spell( spell_test_npc_fireball ), center + got.target, guy );
         CHECK( blast.count( get_avatar().pos_bub() ) == 0 );
     }
     SECTION( "spells or a gun, with zombies near and far" ) {
@@ -876,7 +890,17 @@ TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
         zombie_at( { 8, -3, 0 } );
         zombie_at( { -12, 6, 0 } );
         here.build_map_cache( 0 );
-        check_choice( choose_attack( guy, near_mon, 5 ), "spell", { 15, -4, 0 }, 371 );
+        // As above, the exact tile and rating depend on the standard library and on the random
+        // numbers the ratings before it draw. What holds everywhere: a fireball whose blast
+        // spares the caster and catches the far pair.
+        const chosen_attack got = choose_attack( guy, near_mon, 5 );
+        CAPTURE( got.target, got.value );
+        CHECK( got.kind == "spell" );
+        const int blast_radius = guy.magic->get_spell( spell_test_npc_fireball ).aoe( guy );
+        CHECK( rl_dist( got.target, tripoint_rel_ms::zero ) > blast_radius );
+        CHECK( rl_dist( got.target, tripoint_rel_ms( 7, -3, 0 ) ) <= blast_radius );
+        CHECK( rl_dist( got.target, tripoint_rel_ms( 8, -3, 0 ) ) <= blast_radius );
+        CHECK( got.value > 0 );
     }
     SECTION( "spells only, in a room with a doorway" ) {
         guy.set_attitude( NPCATT_KILL );

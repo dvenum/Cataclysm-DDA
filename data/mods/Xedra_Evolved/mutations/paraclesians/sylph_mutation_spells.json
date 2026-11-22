@@ -25,7 +25,7 @@
     "type": "enchantment",
     "id": "ench_sylph_fulgurating_strikes_advanced",
     "condition": { "or": [ { "math": [ "u_spell_level_sum('school': 'SYLPH') >= 10" ] } ] },
-    "hit_you_effect": [ { "id": "sylph_fulgurating_strikes_lightning_fields", "hit_self": false, "once_in": 3 } ]
+    "hit_you_effect": [ { "id": "sylph_fulgurating_strikes_lightning_fields", "hit_types": [ "melee" ], "hit_self": false, "once_in": 3 } ]
   },
   {
     "type": "enchantment",

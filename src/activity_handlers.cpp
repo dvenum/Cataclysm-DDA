@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iterator>
+#include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -36,9 +38,7 @@
 #include "overmap_ui.h"
 #include "pathfinding.h"
 #include "player_activity.h"
-#include "pocket_type.h"
 #include "point.h"
-#include "ret_val.h"
 #include "skill.h"
 #include "string_formatter.h"
 #include "temp_crafting_inventory.h"
@@ -46,6 +46,7 @@
 #include "type_id.h"
 #include "uilist.h"
 #include "units.h"
+#include "value_ptr.h"
 #include "vehicle.h"
 #include "vpart_position.h"
 #include "weather.h"
@@ -55,7 +56,6 @@ static const activity_id ACT_TRAVELLING( "ACT_TRAVELLING" );
 
 static const ammotype ammo_battery( "battery" );
 
-static const flag_id json_flag_IRREMOVABLE( "IRREMOVABLE" );
 static const flag_id json_flag_PSEUDO( "PSEUDO" );
 
 static const furn_str_id furn_f_compost_empty( "f_compost_empty" );
@@ -64,9 +64,6 @@ static const furn_str_id furn_f_fvat_empty( "f_fvat_empty" );
 static const furn_str_id furn_f_fvat_wood_empty( "f_fvat_wood_empty" );
 static const furn_str_id furn_f_fvat_wood_full( "f_fvat_wood_full" );
 
-static const itype_id itype_battery( "battery" );
-static const itype_id itype_pseudo_magazine( "pseudo_magazine" );
-static const itype_id itype_pseudo_magazine_mod( "pseudo_magazine_mod" );
 
 using namespace activity_handlers;
 
@@ -323,6 +320,12 @@ bool weldrig_hack::init( itype_id vp_tool_id, const tripoint_bub_ms &vp_pos )
 {
     map &here = get_map();
 
+    part_with_pseudo_tool = std::nullopt;
+    prepared = false;
+    multimag = false;
+    mm_bindings.clear();
+    lent = 0;
+
     const optional_vpart_position vp = here.veh_at( vp_pos );
     if( !vp ) {
         return false;
@@ -341,38 +344,49 @@ item *weldrig_hack::get_item()
     if( !part_with_pseudo_tool ) {
         return nullptr;
     }
-    pseudo_tool.set_flag( json_flag_PSEUDO );
-    item mag_mod( itype_pseudo_magazine_mod );
-    mag_mod.set_flag( json_flag_IRREMOVABLE );
-    if( !pseudo_tool.put_in( mag_mod, pocket_type::MOD ).success() ) {
-        debugmsg( "tool %s has no space for a %s, this is likely a bug",
-                  pseudo_tool.typeId().str(), mag_mod.type->nname( 1 ) );
+    if( prepared ) {
+        return &pseudo_tool;
     }
-    itype_id mag_type;
-    if( pseudo_tool.can_link_up() ) {
-        mag_type = itype_pseudo_magazine;
+    vehicle &veh = part_with_pseudo_tool->vehicle();
+    multimag = !pseudo_tool.type->firing_requirements.empty();
+    if( multimag ) {
+        pseudo_tool.set_flag( json_flag_PSEUDO );
+        mm_bindings = vehicle::prepare_multimag_pockets( veh, here, pseudo_tool );
     } else {
-        mag_type = pseudo_tool.magazine_default();
+        lent = veh.prepare_tool( here, pseudo_tool );
     }
-    item mag( mag_type );
-    mag.clear_items(); // no initial ammo
-    if( !pseudo_tool.put_in( mag, pocket_type::MAGAZINE_WELL ).success() ) {
-        debugmsg( "inserting %s into %s's MAGAZINE_WELL pocket failed",
-                  mag.typeId().str(), pseudo_tool.typeId().str() );
-        return nullptr;
-    }
-
-    pseudo_tool.ammo_set( itype_battery, part_with_pseudo_tool->vehicle().battery_left( here ) );
-
+    prepared = true;
     return &pseudo_tool;
 }
 
 void weldrig_hack::vehicle_drain()
 {
+    if( !part_with_pseudo_tool || !prepared ) {
+        return;
+    }
     map &here = get_map();
-    // no cable loss since all of this is virtual
-    part_with_pseudo_tool->vehicle().drain( here, itype_battery, pseudo_tool.ammo_required(),
-                                            return_true< vehicle_part &>, false );
+    vehicle &veh = part_with_pseudo_tool->vehicle();
+    if( multimag ) {
+        vehicle::drain_back_multimag( veh, here, pseudo_tool, mm_bindings );
+        // what is left stays lent, so a later drain bills only what is used after this one
+        for( std::pair<const std::string, multimag_pocket_state> &b : mm_bindings ) {
+            b.second.initial_qty = pseudo_tool.ammo_remaining_in_pocket( b.first );
+        }
+        return;
+    }
+    // take what was used from where it was lent (no cable loss since all of this is virtual)
+    const int remaining = pseudo_tool.ammo_remaining_linked( here, nullptr );
+    const int used = lent - remaining;
+    lent = remaining;
+    if( used <= 0 ) {
+        return;
+    }
+    const itype_id &ammo = veh.tool_ammo_available( here, pseudo_tool.typeId() ).first;
+    if( !ammo.is_null() && ammo->ammo && ammo->ammo->type == ammo_battery ) {
+        veh.discharge_battery( here, used, false );
+    } else if( !ammo.is_null() ) {
+        veh.drain( here, ammo, used, return_true< vehicle_part &>, false );
+    }
 }
 
 void repair_item_activity_actor::finish( player_activity &act, Character &who )
@@ -389,6 +403,8 @@ void repair_item_activity_actor::finish( player_activity &act, Character &who )
                                            ( use_func->get_actor_ptr() );
     if( repair_iuse == nullptr ) {
         debugmsg( "iuse_actor type descriptor and actual type mismatch" );
+        act.set_to_null();
+        return;
     }
 
     // Valid Repeat choice and target, attempt repair.
@@ -460,10 +476,11 @@ void repair_item_activity_actor::do_repair( player_activity &act, Character &who
     }
 
     if( attempt != repair_item_actor::AS_CANT ) {
-        const tripoint_bub_ms tool_pos = ( tool_to_repair_with.valid() &&
-                                           tool_to_repair_with.where() == item_location::type::map )
-                                         ? tool_to_repair_with.pos_bub( here )
-                                         : vp_tool->second;
+        // a vehicle's tool is on its tile, a tool on the ground where it lies, else it is carried
+        const tripoint_bub_ms tool_pos = vp_tool.has_value() ? vp_tool->second :
+                                         tool_to_repair_with.valid() &&
+                                         tool_to_repair_with.where() == item_location::type::map ?
+                                         tool_to_repair_with.pos_bub( here ) : who.pos_bub( here );
         repair_tool.consume_tool_uses( 1, here, tool_pos, &who );
         w_hack.vehicle_drain();
     }

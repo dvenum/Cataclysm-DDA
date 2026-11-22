@@ -23,6 +23,7 @@
 #include "debug.h"
 #include "do_turn.h"
 #include "enums.h"
+#include "event.h"
 #include "game.h"
 #include "line.h"
 #include "mapdata.h"
@@ -424,6 +425,26 @@ void map::vehmove()
     int minz = zlevels ? -OVERMAP_DEPTH : abs_sub.z();
     int maxz = zlevels ? OVERMAP_HEIGHT : abs_sub.z();
     const tripoint_abs_ms player_pos = get_player_character().pos_abs();
+    // An avatar carried (or flung) to another OMT is reported once, when the vehicles are done.
+    cata_event_dispatch::avatar_move_scope moving;
+    // A summoned vehicle's time runs down once per turn, before anything moves (it used to run
+    // in vehicle::act_on_map(), once per tile moved). One whose time is up winks out, which
+    // takes it off the vehicle lists, so they are gathered first.
+    std::vector<vehicle *> summoned;
+    for( int zlev = minz; zlev <= maxz; ++zlev ) {
+        const level_cache *cache_lazy = get_cache_lazy( zlev );
+        if( !cache_lazy ) {
+            continue;
+        }
+        for( vehicle *veh : cache_lazy->vehicle_list ) {
+            if( veh->summon_time_limit ) {
+                summoned.push_back( veh );
+            }
+        }
+    }
+    for( vehicle *veh : summoned ) {
+        veh->decrement_summon_timer( *this );
+    }
     for( int zlev = minz; zlev <= maxz; ++zlev ) {
         level_cache *cache_lazy = get_cache_lazy( zlev );
         if( !cache_lazy ) {
@@ -495,6 +516,11 @@ void map::vehmove()
 
     // refresh vehicle zones for moved vehicles
     zone_manager::get_manager().cache_vzones( this );
+
+    moving.end();
+    if( !get_player_character().is_dead_state() ) {
+        cata_event_dispatch::avatar_changes_omt( player_pos );
+    }
 }
 
 bool map::vehproceed( VehicleList &vehicle_list )
@@ -685,7 +711,12 @@ vehicle *map::move_vehicle( vehicle &veh, const tripoint_rel_ms &dp, const tiler
         for( const tripoint_abs_ms &p : veh.get_points() ) {
             const tripoint_bub_ms pos = get_bub( p );
             const ter_id &pter = ter( pos );
-            if( pter == ter_t_dirt || pter == ter_t_grass ) {
+            // MAP-J05: the terrain's churned_into, by default dirt and grass into a mound
+            if( !pter->churned_into.is_empty() ) {
+                if( pter->churned_into != pter.id() ) {
+                    ter_set( pos, pter->churned_into );
+                }
+            } else if( pter == ter_t_dirt || pter == ter_t_grass ) {
                 ter_set( pos, ter_t_dirtmound );
             }
         }
@@ -818,6 +849,9 @@ float map::vehicle_vehicle_collision( vehicle &veh, vehicle &veh2,
     }
     vehicle_part &vp1 = veh.part( c.part );
     vehicle_part &vp2 = veh2.part( c.target_part );
+    // for the vehicle_collides event (VEH-J03), before the parts are damaged
+    const std::string vp1_id = vp1.info().id.str();
+    const int velocity_before = veh.velocity;
 
     // Check whether avatar sees the collision, and log a message if so
     const avatar &you = get_avatar();
@@ -986,6 +1020,12 @@ float map::vehicle_vehicle_collision( vehicle &veh, vehicle &veh2,
     if( dmg_veh2 > 800 ) {
         veh2.skidding = true;
     }
+
+    // VEH-J03: alpha is the vehicle that hit; the one it hit gets no talker, as it may be gone
+    // by the time the event is sent
+    veh.queue_event( cata::event::make<event_type::vehicle_collides>( std::string( "vehicle" ),
+                     veh2.disp_name(), vp1_id, std::abs( velocity_before - veh.velocity ),
+                     static_cast<int>( dmg_veh1 ) ) );
 
     // Return the impulse of the collision
     return dmg_veh1;

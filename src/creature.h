@@ -4,6 +4,7 @@
 
 #include <array>
 #include <climits>
+#include <cstdint>
 #include <functional>
 #include <list>
 #include <map>
@@ -19,9 +20,9 @@
 #include "bodypart.h"
 #include "calendar.h"
 #include "cata_lazy.h"
-#include "character_id.h"
 #include "compatibility.h"
 #include "coordinates.h"
+#include "creature_ref.h"
 #include "damage.h"
 #include "debug.h"
 #include "effect_source.h"
@@ -42,8 +43,10 @@ class JsonObject;
 class JsonOut;
 class avatar;
 class body_part_set;
+class character_id;
 class const_talker;
 class effect;
+class effect_type;
 class effects_map;
 class enchant_cache;
 class field;
@@ -214,6 +217,13 @@ constexpr bool operator==( const I lhs, const creature_size rhs )
     return lhs == static_cast<I>( rhs );
 }
 
+/**
+ * How far away (in tiles) a character of @p size can still be seen behind cover of @p coverage
+ * (30 or more) when crouching or crawling, prone, or seen from another z-level: less the more of
+ * their profile the cover hides, and 0 when it hides all of it.
+ */
+int partial_cover_sight_range( int coverage, creature_size size, bool crouching, bool prone );
+
 enum class FacingDirection : int {
     NONE = 0,
     LEFT = 1,
@@ -268,6 +278,8 @@ enum class melee_dodge_rule : int {
 
 class Creature : public viewer
 {
+        // Reserved-injury settlement validates retained identity and clears stale killers on rescue.
+        friend class execution_manager;
     public:
         ~Creature() override;
 
@@ -553,6 +565,12 @@ class Creature : public viewer
         // increase pain, apply effects, etc
         virtual void apply_damage( Creature *source, bodypart_id bp, int amount,
                                    bool bypass_med = false ) = 0;
+        /**
+         * While deal_damage applies a hit to @p target: the damage type that dealt most of it, for
+         * the damage events (applied_damage_type_scope::of, so a fall or fire gives its type too).
+         * Empty for damage of no type (apply_damage called directly: bleeding, hurtall, EOCs).
+         */
+        static damage_type_id applying_damage_type( const Creature &target );
 
         virtual void heal_bp( bodypart_id bp, int dam );
 
@@ -560,8 +578,11 @@ class Creature : public viewer
          * Attempts to pull the target at point p towards this creature.
          * @param name Name of the implement used to pull the target.
          * @param p Position of the target creature.
+         * @param strength Pulling strength in place of the puller's (STR for characters,
+         * grab_strength for monsters), as a pull_target spell with damage gives.
         */
-        void longpull( const std::string &name, const tripoint_bub_ms &p );
+        void longpull( const std::string &name, const tripoint_bub_ms &p,
+                       std::optional<int> strength = std::nullopt );
 
         /**
          * If training_level is anything but 0, the check will only train target's skill to that level
@@ -684,6 +705,10 @@ class Creature : public viewer
 
         void add_effect( const effect_source &source, const effect &eff, bool force = false,
                          bool deferred = false );
+        std::string check_effect_grant( const efftype_id &id, bodypart_id bp, int intensity ) const;
+        bool add_effect_grant( int64_t token, const effect_source &source,
+                               const efftype_id &id, bodypart_id bp, int intensity );
+        void remove_effect_grant( int64_t token );
         /** Adds or modifies an effect. If intensity is given it will set the effect intensity
             to the given value, or as close as max_intensity values permit. */
         void add_effect( const effect_source &source, const efftype_id &eff_id, const time_duration &dur,
@@ -711,6 +736,24 @@ class Creature : public viewer
          * removed. */
         bool remove_effect( const efftype_id &eff_id, const bodypart_id &bp );
         bool remove_effect( const efftype_id &eff_id );
+        /** Which of an effect type's EOC lists to run (EVT-J04) */
+        enum class effect_eoc_hook : int {
+            apply,
+            intensity_change,
+            remove,
+            tick // tick_eocs, every tick_eocs_interval (HLTH-J07)
+        };
+        /** Runs the effect type's apply_eocs, intensity_change_eocs or remove_eocs with this
+         * creature as u and the creature that caused the effect, if it can be found, as npc.
+         * Their context has `effect`, `bodypart`, `intensity` (now) and `old_intensity`
+         * (before: 0 when gained, and `intensity` is 0 when lost).  While effects are held
+         * (hold_effect_eocs) they run once the last hold is released. */
+        void run_effect_eocs( effect_eoc_hook hook, const effect_type &type, const bodypart_id &bp,
+                              int intensity, int old_intensity, const effect_source &source );
+        /** While effects are being looped over, effect EOCs wait: one that removed an effect could
+         * break the loop.  Each hold must be released; the last release runs those that waited. */
+        static void hold_effect_eocs();
+        static void release_effect_eocs();
         /** Schedule effect removal */
         void schedule_effect_removal( const efftype_id &eff_id, const bodypart_id &bp );
         void schedule_effect_removal( const efftype_id &eff_id );
@@ -815,11 +858,12 @@ class Creature : public viewer
         virtual int hp_percentage() const = 0;
         virtual bool made_of( const material_id &m ) const = 0;
         virtual bool made_of_any( const std::set<material_id> &ms ) const = 0;
-        // standard creature material sets
-        static const std::set<material_id> cmat_flesh;
-        static const std::set<material_id> cmat_fleshnveg;
-        static const std::set<material_id> cmat_flammable;
-        static const std::set<material_id> cmat_flameres;
+        // standard creature material sets, from the materials' creature_flesh, breathes and
+        // creature_flammability (MONDT-J11: materials::creature_flesh() and friends)
+        static const std::set<material_id> &cmat_flesh;
+        static const std::set<material_id> &cmat_fleshnveg;
+        static const std::set<material_id> &cmat_flammable;
+        static const std::set<material_id> &cmat_flameres;
         virtual field_type_id bloodType() const = 0;
         virtual field_type_id gibType() const = 0;
         // TODO: replumb this to use a std::string along with monster flags.
@@ -1286,7 +1330,8 @@ class Creature : public viewer
         Creature *killer; // whoever killed us. this should be NULL unless we are dead
         void set_killer( Creature *killer );
         std::optional<time_point> lifespan_end = std::nullopt;
-        std::optional<character_id> summoner = std::nullopt; // whoever summoned us
+        // whoever summoned us: a character or a monster; saved (MONDT-B12)
+        creature_ref summoner;
         /**
          * Processes one effect on the Creature.
          * Must not remove the effect, but can set it up for removal.
@@ -1438,4 +1483,21 @@ class Creature : public viewer
 std::unique_ptr<talker> get_talker_for( Creature &me );
 std::unique_ptr<const_talker> get_const_talker_for( const Creature &me );
 std::unique_ptr<talker> get_talker_for( Creature *me );
+
+// MONDT-J05: while open, tells an apply_damage on target which damage type the damage is, for the
+// monster_takes_damage event (apply_damage itself has no damage type). Scopes nest, and each one
+// only applies to the creature it names.
+class applied_damage_type_scope
+{
+    public:
+        applied_damage_type_scope( const Creature &target, const damage_type_id &type );
+        ~applied_damage_type_scope();
+        applied_damage_type_scope( const applied_damage_type_scope & ) = delete;
+        applied_damage_type_scope &operator=( const applied_damage_type_scope & ) = delete;
+        // The type the innermost open scope gives target, or "" (no type) when it gives none
+        static damage_type_id of( const Creature &target );
+    private:
+        const Creature *saved_target;
+        damage_type_id saved_type;
+};
 #endif // CATA_SRC_CREATURE_H

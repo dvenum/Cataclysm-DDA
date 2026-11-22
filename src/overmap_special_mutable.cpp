@@ -12,7 +12,6 @@
 #include "cata_assert.h"
 #include "cata_utility.h"
 #include "cata_views.h"
-#include "city.h"
 #include "coordinates.h"
 #include "debug.h"
 #include "distribution.h"
@@ -74,13 +73,16 @@ std::optional<mutable_overmap_phase_remainder::can_place_result>
 mutable_overmap_phase_remainder::can_place(
     const overmap &om, const mutable_overmap_placement_rule_remainder &rule,
     const tripoint_om_omt &origin, om_direction::type dir,
-    const joins_tracker &unresolved
+    const joins_tracker &unresolved, bool must_be_unexplored
 ) const
 {
     int context_mandatory_joins_shortfall = 0;
 
     for( const mutable_overmap_piece_candidate &piece : rule.pieces( origin, dir ) ) {
         if( !overmap::inbounds( piece.pos ) ) {
+            return std::nullopt;
+        }
+        if( must_be_unexplored && om.is_omt_generated( piece.pos ) ) {
             return std::nullopt;
         }
         if( !overmap::is_amongst_locations( om.ter( piece.pos ), piece.overmap->locations ) ) {
@@ -138,7 +140,7 @@ mutable_overmap_phase_remainder::can_place(
 
 mutable_overmap_phase_remainder::satisfy_result mutable_overmap_phase_remainder::satisfy(
     const overmap &om, const tripoint_om_omt &pos,
-    const joins_tracker &unresolved )
+    const joins_tracker &unresolved, bool must_be_unexplored )
 {
     weighted_int_list<satisfy_result> options;
 
@@ -151,7 +153,7 @@ mutable_overmap_phase_remainder::satisfy_result mutable_overmap_phase_remainder:
                 tripoint_om_omt origin = pos - piece_pos;
 
                 if( std::optional<can_place_result> result = can_place(
-                            om, rule, origin, dir, unresolved ) ) {
+                            om, rule, origin, dir, unresolved, must_be_unexplored ) ) {
                     if( best_result < *result ) {
                         pos_dir_options.clear();
                         best_result = *result;
@@ -783,8 +785,10 @@ special_placement_result mutable_overmap_special_data::place(
     overmap &om, const tripoint_om_omt &origin, om_direction::type dir, bool /*blob*/,
     const city &cit, bool must_be_unexplored ) const
 {
-    // TODO: respect must_be_unexplored
     std::vector<tripoint_om_omt> result;
+    if( must_be_unexplored && om.is_omt_generated( origin ) ) {
+        return { result, {} };
+    }
 
     auto it = overmaps.find( root );
     if( it == overmaps.end() ) {
@@ -797,6 +801,7 @@ special_placement_result mutable_overmap_special_data::place(
     struct placed_connection {
         overmap_connection_id connection;
         pos_dir<tripoint_om_omt> where;
+        special_connection_route route;
     };
 
     std::vector<placed_connection> connections_placed;
@@ -837,7 +842,7 @@ special_placement_result mutable_overmap_special_data::place(
             cube_direction dir = base_dir + rot;
             tripoint_om_omt conn_pos = pos + displace( dir );
             if( overmap::inbounds( conn_pos ) ) {
-                connections_placed.push_back( { conn.connection, { conn_pos, dir } } );
+                connections_placed.push_back( { conn.connection, { conn_pos, dir }, conn.route } );
             }
         }
     };
@@ -851,7 +856,7 @@ special_placement_result mutable_overmap_special_data::place(
     while( unresolved.any_unresolved() ) {
         tripoint_om_omt next_pos = unresolved.pick_top_priority();
         mutable_overmap_phase_remainder::satisfy_result satisfy_result =
-            phase_remaining.satisfy( om, next_pos, unresolved );
+            phase_remaining.satisfy( om, next_pos, unresolved, must_be_unexplored );
         descriptions.push_back( std::move( satisfy_result.description ) );
         const mutable_overmap_placement_rule_remainder *rule = satisfy_result.rule;
         if( rule ) {
@@ -904,19 +909,9 @@ special_placement_result mutable_overmap_special_data::place(
     }
 
     // Deal with connections
-    // TODO: JSONification of logic + don't treat non roads like roads + deduplicate with fixed data
     for( const placed_connection &elem : connections_placed ) {
-        const tripoint_om_omt &pos = elem.where.p;
-        cube_direction connection_dir = elem.where.dir;
-
-        point_om_omt target;
-        if( cit ) {
-            target = cit.pos;
-        } else {
-            target = om.get_fallback_road_connection_point();
-        }
-        om.build_connection( target, pos.xy(), pos.z(), *elem.connection, must_be_unexplored,
-                             connection_dir );
+        om.build_special_connection( *elem.connection, elem.route, elem.where.p, elem.where.dir, cit,
+                                     result, must_be_unexplored );
     }
 
     return { result, unresolved.all_used() };

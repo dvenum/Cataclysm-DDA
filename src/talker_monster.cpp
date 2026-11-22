@@ -1,5 +1,9 @@
 #include "talker_monster.h"
 
+#include <functional>
+#include <map>
+#include <optional>
+#include <utility>
 #include <vector>
 
 #include "cata_scope_helpers.h"
@@ -9,6 +13,8 @@
 #include "damage.h"
 #include "debug.h"
 #include "effect.h"
+#include "execution_fatal.h"
+#include "incapacitation.h"
 #include "map.h"
 #include "math_parser_diag_value.h"
 #include "mattack_common.h"
@@ -100,6 +106,17 @@ void talker_monster::remove_effect( const efftype_id &old_effect, const std::str
 void talker_monster::mod_pain( int amount )
 {
     me_mon->mod_pain( amount );
+}
+
+void talker_monster::set_pain( int amount )
+{
+    me_mon->set_pain( amount );
+}
+
+// a monster's hit points aren't kept per body part: any part sets them all
+void talker_monster::set_part_hp_cur( const bodypart_id &, int set )
+{
+    set_all_parts_hp_cur( set );
 }
 
 diag_value const *talker_monster_const::maybe_get_value( const std::string &var_name ) const
@@ -204,9 +221,9 @@ int talker_monster_const::get_volume() const
     return units::to_milliliter( me_mon_const->get_volume() );
 }
 
-int talker_monster_const::get_weight() const
+units::mass talker_monster_const::get_weight() const
 {
-    return units::to_milligram( me_mon_const->get_weight() );
+    return me_mon_const->get_weight();
 }
 
 bool talker_monster_const::is_warm() const
@@ -259,7 +276,8 @@ void talker_monster::set_all_parts_hp_cur( int set )
 void talker_monster::attack_target( Creature &t, bool allow_special,
                                     const matec_id &force_technique, bool, int forced_movecost )
 {
-    if( me_mon->is_dead() || &t == me_mon ) {
+    if( me_mon->is_dead() || ( incapacitation::unconscious( *me_mon ) ||
+                               execution_fatal::pending( *me_mon ) ) || &t == me_mon ) {
         return;
     }
     const int moves_before = me_mon->get_moves();
@@ -287,10 +305,14 @@ void talker_monster::attack_target( Creature &t, bool allow_special,
         // Special attack actors aim at the creature at the monster's destination
         me_mon->set_dest( t.pos_abs() );
         if( !is_own ) {
-            ( *json_attack )->call( *me_mon );
-        } else if( own_special->second->call( *me_mon ) &&
-                   me_mon->special_cooldown( special_name ) ) {
-            me_mon->reset_special( special_name );
+            if( ( *json_attack )->call( *me_mon ) ) {
+                me_mon->notify_special_used( special_name );
+            }
+        } else if( own_special->second->call( *me_mon ) ) {
+            if( me_mon->special_cooldown( special_name ) ) {
+                me_mon->reset_special( special_name );
+            }
+            me_mon->notify_special_used( special_name );
         }
     } else {
         if( !me_mon->is_adjacent( &t, true ) || !me_mon->sees( get_map(), t ) ) {
@@ -306,7 +328,7 @@ void talker_monster::attack_target( Creature &t, bool allow_special,
 dealt_damage_instance talker_monster::deal_damage( Creature *source, bodypart_id bp,
         const damage_instance &dam ) const
 {
-    return source->deal_damage( source, bp, dam );
+    return me_mon->deal_damage( source, bp, dam );
 }
 
 std::vector<std::string> talker_monster_const::get_topics( bool ) const

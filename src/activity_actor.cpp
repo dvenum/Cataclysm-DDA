@@ -17,11 +17,13 @@
 #include <queue>
 #include <set>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "ability_activity_actor.h"
 #include "action.h"
 #include "activity_actor_definitions.h"
 #include "activity_actor_eoc.h"
@@ -37,11 +39,11 @@
 #include "butchery_requirements.h"
 #include "cached_options.h"
 #include "calendar.h"
-#include "cata_assert.h"
 #include "cata_utility.h"
 #include "character.h"
 #include "character_id.h"
 #include "character_martial_arts.h"
+#include "clone_ptr.h"
 #include "clzones.h"
 #include "construction.h"
 #include "contents_change_handler.h"
@@ -59,6 +61,7 @@
 #include "enums.h"
 #include "event.h"
 #include "event_bus.h"
+#include "execution_activity_actor.h"
 #include "faction.h"
 #include "fault.h"
 #include "field_type.h"
@@ -72,6 +75,7 @@
 #include "handle_liquid.h"
 #include "harvest.h"
 #include "iexamine.h"
+#include "iexamine_actors.h"
 #include "input_popup.h"
 #include "inventory_ui.h"
 #include "item.h"
@@ -153,6 +157,7 @@
 #include "weather_type.h"
 #include "wound.h"
 
+static const activity_id ACT_ABILITY( "ACT_ABILITY" );
 static const activity_id ACT_AIM( "ACT_AIM" );
 static const activity_id ACT_ATM( "ACT_ATM" );
 static const activity_id ACT_AUTODRIVE( "ACT_AUTODRIVE" );
@@ -182,6 +187,7 @@ static const activity_id ACT_DISMEMBER( "ACT_DISMEMBER" );
 static const activity_id ACT_DISSECT( "ACT_DISSECT" );
 static const activity_id ACT_DROP( "ACT_DROP" );
 static const activity_id ACT_EBOOKSAVE( "ACT_EBOOKSAVE" );
+static const activity_id ACT_EXECUTION( "ACT_EXECUTION" );
 static const activity_id ACT_E_FILE( "ACT_E_FILE" );
 static const activity_id ACT_FERTILIZE_PLANT( "ACT_FERTILIZE_PLANT" );
 static const activity_id ACT_FETCH_REQUIRED( "ACT_FETCH_REQUIRED" );
@@ -317,16 +323,8 @@ static const flag_id json_flag_ALWAYS_AIMED( "ALWAYS_AIMED" );
 static const flag_id json_flag_NO_RELOAD( "NO_RELOAD" );
 
 static const furn_str_id furn_f_crate_o( "f_crate_o" );
-static const furn_str_id furn_f_gunsafe_mj( "f_gunsafe_mj" );
-static const furn_str_id furn_f_gunsafe_ml( "f_gunsafe_ml" );
-static const furn_str_id furn_f_kiln_empty( "f_kiln_empty" );
-static const furn_str_id furn_f_kiln_metal_empty( "f_kiln_metal_empty" );
-static const furn_str_id furn_f_kiln_portable_empty( "f_kiln_portable_empty" );
-static const furn_str_id furn_f_metal_smoking_rack( "f_metal_smoking_rack" );
-static const furn_str_id furn_f_plant_seed( "f_plant_seed" );
 static const furn_str_id furn_f_safe_c( "f_safe_c" );
 static const furn_str_id furn_f_safe_o( "f_safe_o" );
-static const furn_str_id furn_f_smoking_rack( "f_smoking_rack" );
 
 static const gun_mode_id gun_mode_DEFAULT( "DEFAULT" );
 
@@ -343,13 +341,10 @@ static const itype_id itype_attachable_ear_muffs( "attachable_ear_muffs" );
 static const itype_id itype_attached_ear_plugs_off( "attached_ear_plugs_off" );
 static const itype_id itype_battery( "battery" );
 static const itype_id itype_cash_card( "cash_card" );
-static const itype_id itype_detergent( "detergent" );
 static const itype_id itype_disassembly( "disassembly" );
 static const itype_id itype_efile_junk( "efile_junk" );
 static const itype_id itype_efile_photos( "efile_photos" );
 static const itype_id itype_flight_helmet( "flight_helmet" );
-static const itype_id itype_liquid_soap( "liquid_soap" );
-static const itype_id itype_log( "log" );
 static const itype_id itype_makeshift_ear_plugs_off( "makeshift_ear_plugs_off" );
 static const itype_id itype_muscle( "muscle" );
 static const itype_id itype_paper( "paper" );
@@ -358,11 +353,7 @@ static const itype_id itype_powered_earplugs( "powered_earplugs" );
 static const itype_id itype_pseudo_bio_picklock( "pseudo_bio_picklock" );
 static const itype_id
 itype_robofac_yrax_trifacet_deactivation_manual( "robofac_yrax_trifacet_deactivation_manual" );
-static const itype_id itype_soap( "soap" );
 static const itype_id itype_splinter( "splinter" );
-static const itype_id itype_stick_long( "stick_long" );
-static const itype_id itype_water( "water" );
-static const itype_id itype_water_clean( "water_clean" );
 
 static const json_character_flag json_flag_ASOCIAL1( "ASOCIAL1" );
 static const json_character_flag json_flag_ASOCIAL2( "ASOCIAL2" );
@@ -418,18 +409,8 @@ static const skill_id skill_traps( "traps" );
 
 static const species_id species_ZOMBIE( "ZOMBIE" );
 
-static const ter_str_id ter_t_card_reader_broken( "t_card_reader_broken" );
-static const ter_str_id ter_t_dirt( "t_dirt" );
-static const ter_str_id ter_t_dirtmound( "t_dirtmound" );
 static const ter_str_id ter_t_door_c( "t_door_c" );
-static const ter_str_id ter_t_door_locked_alarm( "t_door_locked_alarm" );
-static const ter_str_id ter_t_door_metal_c( "t_door_metal_c" );
-static const ter_str_id ter_t_door_metal_locked( "t_door_metal_locked" );
-static const ter_str_id ter_t_greenhouse( "t_greenhouse" );
-static const ter_str_id ter_t_greenhouse_tilled( "t_greenhouse_tilled" );
-static const ter_str_id ter_t_stump( "t_stump" );
 static const ter_str_id ter_t_tree( "t_tree" );
-static const ter_str_id ter_t_trunk( "t_trunk" );
 
 static const trait_id trait_DEBUG_HS( "DEBUG_HS" );
 static const trait_id trait_SPIRITUAL( "SPIRITUAL" );
@@ -446,6 +427,7 @@ static const vproto_id vehicle_prototype_none( "none" );
 static const zone_type_id zone_type_LOOT_IGNORE( "LOOT_IGNORE" );
 static const zone_type_id zone_type_LOOT_IGNORE_FAVORITES( "LOOT_IGNORE_FAVORITES" );
 static const zone_type_id zone_type_LOOT_UNSORTED( "LOOT_UNSORTED" );
+static const zone_type_id zone_type_NO_NPC_PICKUP( "NO_NPC_PICKUP" );
 static const zone_type_id zone_type_STRIP_CORPSES( "STRIP_CORPSES" );
 static const zone_type_id zone_type_UNLOAD_ALL( "UNLOAD_ALL" );
 
@@ -963,6 +945,10 @@ void gunmod_remove_activity_actor::gunmod_remove( Character &who, item_location 
     //~ %1$s - gunmod, %2$s - gun.
     who.add_msg_if_player( _( "You remove your %1$s from your %2$s." ), modtype->nname( 1 ),
                            gun->tname() );
+
+    cata::event e = cata::event::make<event_type::character_removes_gunmod>( who.getID(),
+                    gun->typeId(), modtype->get_id() );
+    get_event_bus().send_with_talker( &who, &gun, e );
 }
 
 void gunmod_remove_activity_actor::serialize( JsonOut &jsout ) const
@@ -1026,9 +1012,14 @@ static int hack_level( const Character &who, item_location &tool )
                   ( who.get_int() ) / 2.0f - 8 );
 }
 
-static hack_result hack_attempt( Character &who, item_location &tool )
+// `difficulty`: the roll needed to succeed (a card reader's "hack_difficulty")
+static hack_result hack_attempt( Character &who, item_location &tool, int difficulty )
 {
     map &here = get_map();
+    // a hack loaded from a save that didn't keep the tool
+    if( !tool ) {
+        return hack_result::UNABLE;
+    }
 
     // TODO: Remove this once player -> Character migration is complete
     {
@@ -1047,7 +1038,7 @@ static hack_result hack_attempt( Character &who, item_location &tool )
             tool->consume_tool_uses( 2, here, tool.pos_bub( here ), &who );
         }
         return hack_result::FAIL;
-    } else if( success < 6 ) {
+    } else if( success < difficulty ) {
         return hack_result::NOTHING;
     } else {
         return hack_result::SUCCESS;
@@ -1072,11 +1063,76 @@ static hack_type get_hack_type( const tripoint_bub_ms &examp )
     return type;
 }
 
+// The card reader actor of the furniture at `p`, else of its terrain; nullptr if neither has one.
+static const cardreader_examine_actor *cardreader_at( const tripoint_bub_ms &p,
+        bool &furniture_reader )
+{
+    const map &here = get_map();
+    const furn_t &furn = here.furn( p ).obj();
+    const ter_t &ter = here.ter( p ).obj();
+    for( const map_data_common_t *data : {
+             static_cast<const map_data_common_t *>( &furn ), static_cast<const map_data_common_t *>( &ter )
+         } ) {
+        for( const cata::clone_ptr<iexamine_actor> &actor : data->get_examine_actors() ) {
+            if( const cardreader_examine_actor *reader =
+                    dynamic_cast<const cardreader_examine_actor *>( actor.get() ) ) {
+                furniture_reader = data == &furn;
+                return reader;
+            }
+        }
+    }
+    return nullptr;
+}
+
+void hacking_activity_actor::hack_success( Character &who, const tripoint_bub_ms &examp )
+{
+    map &here = get_map();
+    const hack_type type = get_hack_type( examp );
+    if( type == hack_type::GAS ) {
+        int tankUnits;
+        fuel_station_fuel_type fuelType;
+        const std::optional<tripoint_bub_ms> pTank_ = iexamine::getNearFilledGasTank( examp, tankUnits,
+                fuelType );
+        if( !pTank_ ) {
+            return;
+        }
+        const tripoint_bub_ms pTank = *pTank_;
+        const std::optional<tripoint_bub_ms> pGasPump = iexamine::getGasPumpByNumber( examp,
+                uistate.ags_pay_gas_selected_pump );
+        if( pGasPump && iexamine::toPumpFuel( pTank, *pGasPump, tankUnits ) ) {
+            who.add_msg_if_player( _( "You hack the terminal and route all available fuel to your pump!" ) );
+            sounds::sound( examp, 6, sounds::sound_t::activity,
+                           _( "Glug Glug Glug Glug Glug Glug Glug Glug Glug" ), true, "tool", "gaspump" );
+        } else {
+            who.add_msg_if_player( _( "Nothing happens." ) );
+        }
+    } else if( type == hack_type::SAFE ) {
+        who.add_msg_if_player( m_good, _( "The door on the safe swings open." ) );
+        const furn_str_id &opened = here.furn( examp )->hack_result;
+        here.furn_set( examp, opened.is_empty() ? furn_f_safe_o : opened );
+    } else if( type == hack_type::DOOR ) {
+        who.add_msg_if_player( _( "You activate the panel!" ) );
+        who.add_msg_if_player( m_good, _( "The nearby doors unlock." ) );
+        // what the reader's card would do, from its JSON
+        bool furniture_reader = false;
+        if( const cardreader_examine_actor *reader = cardreader_at( examp, furniture_reader ) ) {
+            reader->hack( examp, furniture_reader );
+            reader->run_hack_eocs( who, examp );
+        }
+    }
+}
+
 void hacking_activity_actor::finish( player_activity &act, Character &who )
 {
     tripoint_bub_ms examp = get_map().get_bub( act.placement );
-    hack_type type = get_hack_type( examp );
-    switch( hack_attempt( who, tool ) ) {
+    int difficulty = 6;
+    if( get_hack_type( examp ) == hack_type::DOOR ) {
+        bool furniture_reader = false;
+        if( const cardreader_examine_actor *reader = cardreader_at( examp, furniture_reader ) ) {
+            difficulty = reader->get_hack_difficulty();
+        }
+    }
+    switch( hack_attempt( who, tool, difficulty ) ) {
         case hack_result::UNABLE:
             who.add_msg_if_player( _( "You cannot hack this." ) );
             break;
@@ -1092,38 +1148,7 @@ void hacking_activity_actor::finish( player_activity &act, Character &who )
             who.add_msg_if_player( _( "You fail the hack, but no alarms are triggered." ) );
             break;
         case hack_result::SUCCESS:
-            map &here = get_map();
-            if( type == hack_type::GAS ) {
-                int tankUnits;
-                fuel_station_fuel_type fuelType;
-                const std::optional<tripoint_bub_ms> pTank_ = iexamine::getNearFilledGasTank( examp, tankUnits,
-                        fuelType );
-                if( !pTank_ ) {
-                    break;
-                }
-                const tripoint_bub_ms pTank = *pTank_;
-                const std::optional<tripoint_bub_ms> pGasPump = iexamine::getGasPumpByNumber( examp,
-                        uistate.ags_pay_gas_selected_pump );
-                if( pGasPump && iexamine::toPumpFuel( pTank, *pGasPump, tankUnits ) ) {
-                    who.add_msg_if_player( _( "You hack the terminal and route all available fuel to your pump!" ) );
-                    sounds::sound( examp, 6, sounds::sound_t::activity,
-                                   _( "Glug Glug Glug Glug Glug Glug Glug Glug Glug" ), true, "tool", "gaspump" );
-                } else {
-                    who.add_msg_if_player( _( "Nothing happens." ) );
-                }
-            } else if( type == hack_type::SAFE ) {
-                who.add_msg_if_player( m_good, _( "The door on the safe swings open." ) );
-                here.furn_set( examp, furn_f_safe_o );
-            } else if( type == hack_type::DOOR ) {
-                who.add_msg_if_player( _( "You activate the panel!" ) );
-                who.add_msg_if_player( m_good, _( "The nearby doors unlock." ) );
-                here.ter_set( examp, ter_t_card_reader_broken );
-                for( const tripoint_bub_ms &tmp : here.points_in_radius( examp, 3 ) ) {
-                    if( here.ter( tmp ) == ter_t_door_metal_locked ) {
-                        here.ter_set( tmp, ter_t_door_metal_c );
-                    }
-                }
-            }
+            hack_success( who, examp );
             break;
     }
     act.set_to_null();
@@ -1131,12 +1156,18 @@ void hacking_activity_actor::finish( player_activity &act, Character &who )
 
 void hacking_activity_actor::serialize( JsonOut &jsout ) const
 {
-    jsout.write_null();
+    jsout.start_object();
+    jsout.member( "tool", tool );
+    jsout.end_object();
 }
 
 std::unique_ptr<activity_actor> hacking_activity_actor::deserialize( JsonValue &jsin )
 {
     hacking_activity_actor actor( {} );
+    // Older saves wrote null: the hack then ends without a tool ("You cannot hack this.")
+    if( jsin.test_null() ) {
+        return actor.clone();
+    }
     JsonObject data = jsin.get_object();
     data.read( "tool", actor.tool );
     return actor.clone();
@@ -1371,8 +1402,7 @@ void hacksaw_activity_actor::do_turn( player_activity &act, Character &who )
 
     if( !veh_pos.has_value() ) {
         if( tool->ammo_sufficient( &who, method ) ) {
-            std::map<std::string, int>::const_iterator iter = tool->type->ammo_scale.find( method );
-            const int uses = iter == tool->type->ammo_scale.end() ? 1 : iter->second;
+            const int uses = tool->type->get_ammo_scale( method );
 
             tool->consume_tool_uses( uses, here, tool.pos_bub( here ), &who );
             sfx::play_activity_sound( "tool", "hacksaw", sfx::get_heard_volume( target ) );
@@ -2140,7 +2170,7 @@ void read_activity_actor::start( player_activity &act, Character &who )
 
     using_ereader = !!ereader;
 
-    bktype = book->type->use_methods.count( "MA_MANUAL" ) ?
+    bktype = book->type->can_use( "MA_MANUAL" ) ?
              book_type::martial_art : book_type::normal;
 
     // push copy of book for focus calculation
@@ -2166,7 +2196,7 @@ void read_activity_actor::do_turn( player_activity &act, Character &who )
     }
 
     if( !bktype.has_value() ) {
-        bktype = book->type->use_methods.count( "MA_MANUAL" ) ?
+        bktype = book->type->can_use( "MA_MANUAL" ) ?
                  book_type::martial_art : book_type::normal;
     }
 
@@ -2217,6 +2247,12 @@ void read_activity_actor::do_turn( player_activity &act, Character &who )
     }
 }
 
+// The level a book teaches its skill up to: no higher than the skill's max_level
+static int book_teaching_level( const islot_book &book )
+{
+    return book.skill ? std::min( book.level, book.skill->max_level() ) : book.level;
+}
+
 void read_activity_actor::read_book( Character &learner,
                                      const cata::value_ptr<islot_book> &islotbook,
                                      SkillLevel &skill_level, double penalty )
@@ -2245,7 +2281,8 @@ void read_activity_actor::read_book( Character &learner,
 
     add_msg_debug( debugmode::DF_ACT_READ, "%s read exp: min_ex %d; max_ex %d",
                    learner.disp_name(), min_ex, max_ex );
-    skill_level.readBook( min_ex, max_ex, islotbook->level );
+    skill_level.readBook( min_ex, max_ex, book_teaching_level( *islotbook ),
+                          islotbook->skill ? islotbook->skill->book_learning_multiplier() : 1.0f );
 }
 
 bool read_activity_actor::player_read( avatar &you )
@@ -2324,7 +2361,7 @@ bool read_activity_actor::player_read( avatar &you )
         }
 
         if( skill &&
-            learner->get_knowledge_level( skill ) < islotbook->level &&
+            learner->get_knowledge_level( skill ) < book_teaching_level( *islotbook ) &&
             learner->get_skill_level_object( skill ).can_train() ) {
 
             SkillLevel &skill_level = learner->get_skill_level_object( skill );
@@ -2337,7 +2374,7 @@ bool read_activity_actor::player_read( avatar &you )
             // levels up the skill
             if( newSkillLevel != originalSkillLevel ) {
                 get_event_bus().send<event_type::gains_skill_level>(
-                    learner->getID(), skill, skill_level.knowledgeLevel() );
+                    learner->getID(), skill, skill_level.knowledgeLevel(), "theoretical" );
 
                 if( learner->is_avatar() ) {
                     add_msg( m_good, _( "Your theoretical knowledge of %s increases to level %d." ), skill.obj().name(),
@@ -2360,7 +2397,7 @@ bool read_activity_actor::player_read( avatar &you )
                 }
             }
 
-            if( skill_level == islotbook->level || !skill_level.can_train() ||
+            if( skill_level == book_teaching_level( *islotbook ) || !skill_level.can_train() ||
                 learner->schizo_symptoms( 25 ) ) {
                 if( learner->is_avatar() ) {
                     add_msg( m_info, _( "You can no longer learn from %s." ), book->type_name() );
@@ -2406,9 +2443,8 @@ bool read_activity_actor::player_readma( avatar &you )
         return true;
     }
 
-    // std::map<std::string, use_function>::const_iterator
-    auto mart_iter = book->type->use_methods.find( "MA_MANUAL" );
-    if( mart_iter == book->type->use_methods.end() ) {
+    const use_function *martial_art_use = book->type->get_use( "MA_MANUAL" );
+    if( martial_art_use == nullptr ) {
         debugmsg( "ACT_READ MARTIAL ARTS BOOK HAS NO MARTIAL ART" );
         return true;
     }
@@ -2422,7 +2458,7 @@ bool read_activity_actor::player_readma( avatar &you )
 
     if( one_in( difficulty ) ) {
         // learn martial art
-        mart_iter->second.call( &you, book, you.pos_bub() );
+        martial_art_use->call( &you, book, you.pos_bub() );
         return true;
     } else if( continuous ) {
         switch( rng( 1, 5 ) ) {
@@ -2473,7 +2509,7 @@ bool read_activity_actor::npc_read( npc &learner )
     book->mark_chapter_as_read( learner );
 
     if( skill &&
-        learner.get_knowledge_level( skill ) < islotbook->level &&
+        learner.get_knowledge_level( skill ) < book_teaching_level( *islotbook ) &&
         learner.get_skill_level_object( skill ).can_train() ) {
 
         SkillLevel &skill_level = learner.get_skill_level_object( skill );
@@ -2485,7 +2521,7 @@ bool read_activity_actor::npc_read( npc &learner )
         const int newSkillLevel = skill_level.knowledgeLevel();
         if( newSkillLevel != originalSkillLevel ) {
             get_event_bus().send<event_type::gains_skill_level>(
-                learner.getID(), skill, skill_level.knowledgeLevel() );
+                learner.getID(), skill, skill_level.knowledgeLevel(), "theoretical" );
 
             if( display_messages ) {
                 add_msg( m_good, _( "%s increases their %s level." ), learner.disp_name(),
@@ -2502,7 +2538,8 @@ bool read_activity_actor::npc_read( npc &learner )
         }
 
         if( display_messages &&
-            ( skill_level == islotbook->level || !skill_level.can_train() || learner.schizo_symptoms( 25 ) ) ) {
+            ( skill_level == book_teaching_level( *islotbook ) || !skill_level.can_train() ||
+              learner.schizo_symptoms( 25 ) ) ) {
             add_msg( m_info, _( "%s can no longer learn from %s." ), learner.disp_name(),
                      book->type_name() );
         }
@@ -2629,7 +2666,7 @@ std::string read_activity_actor::get_progress_message( const player_activity & )
     const skill_id &skill = islotbook->skill;
 
     if( skill &&
-        you.get_knowledge_level( skill ) < islotbook->level &&
+        you.get_knowledge_level( skill ) < book_teaching_level( *islotbook ) &&
         you.get_skill_level_object( skill ).can_train() &&
         you.has_identified( book->typeId() ) ) {
         const SkillLevel &skill_level = you.get_skill_level_object( skill );
@@ -2856,6 +2893,10 @@ void spellcasting_activity_actor::finish( player_activity &act, Character &who )
                     spell_being_cast.consume_spell_cost( who, false );
                 }
                 dialogue character_talker( get_talker_for( who ), nullptr );
+                // MAGIC-J10: which spell failed, and at what level
+                character_talker.set_value( "spell_id", sp.str() );
+                character_talker.set_value( "spell_level",
+                                            static_cast<double>( spell_being_cast.get_effective_level() ) );
                 std::vector<effect_on_condition_id> failure_eocs = spell_being_cast.get_failure_eoc_ids();
                 for( effect_on_condition_id failure_eoc : failure_eocs ) {
                     failure_eoc->activate( character_talker );
@@ -2863,7 +2904,8 @@ void spellcasting_activity_actor::finish( player_activity &act, Character &who )
                 get_event_bus().send<event_type::spellcasting_finish>( who.getID(), false, sp,
                         spell_being_cast.spell_class(), spell_being_cast.get_difficulty( who ),
                         spell_being_cast.energy_cost( who ), spell_being_cast.casting_time( who ),
-                        spell_being_cast.damage( who ) );
+                        spell_being_cast.damage( who ), get_map().get_abs( *target ).raw(),
+                        spell_being_cast.get_effective_level() );
                 return;
             }
 
@@ -2893,7 +2935,10 @@ void spellcasting_activity_actor::finish( player_activity &act, Character &who )
                 }
             }
 
-            spell_being_cast.cast_all_effects( who, *target );
+            // the event's level is the one it was cast at, before the cast's experience
+            const int cast_level = spell_being_cast.get_effective_level();
+            // select_target() (or the caster) chose the target, RANDOM_TARGET ones included
+            spell_being_cast.cast_all_effects_at_selected_target( who, *target );
 
             if( !is_fake_spell ) {
                 if( !spell_being_cast.is_max_level( who ) ) {
@@ -2917,10 +2962,12 @@ void spellcasting_activity_actor::finish( player_activity &act, Character &who )
             get_event_bus().send<event_type::spellcasting_finish>( who.getID(), true, sp,
                     spell_being_cast.spell_class(), spell_being_cast.get_difficulty( who ),
                     spell_being_cast.energy_cost( who ), spell_being_cast.casting_time( who ),
-                    spell_being_cast.damage( who ) );
+                    spell_being_cast.damage( who ), get_map().get_abs( *target ).raw(), cast_level );
         }
         who.last_magic_target_pos = get_map().get_abs( *target );
         if( spell_being_cast.is_channeling_spell() ) {
+            // channeling follows this spell, whoever cast it and from wherever
+            who.magic->start_channeling( spell_being_cast );
             who.add_effect( effect_magic_channeling, calendar::INDEFINITELY_LONG_DURATION );
         }
     }
@@ -3106,8 +3153,13 @@ void pickup_activity_actor::do_turn( player_activity &, Character &who )
         return;
     }
 
-    // Pickup::do_pickup() actively assumes the player. Calling it with anyone else is a mistake.
-    cata_assert( &who == &get_player_character() );
+    // Pickup::do_pickup() actively assumes the player. Calling it with anyone else is a mistake,
+    // and would move the avatar's items: refuse it.
+    if( &who != &get_player_character() ) {
+        debugmsg( "%s can't pick up items with ACT_PICKUP, only the avatar can", who.get_name() );
+        cancel_pickup( who );
+        return;
+    }
     // False indicates that the player canceled pickup when met with some prompt
     const bool keep_going = Pickup::do_pickup( target_items, quantities, autopickup,
                             stash_successful, info );
@@ -3410,6 +3462,8 @@ void lockpick_activity_actor::finish( player_activity &act, Character &who )
     ter_id new_ter_type;
     furn_id new_furn_type;
     std::string open_message = _( "The lock opens…" );
+    // the furniture or terrain whose lock is picked, null for a vehicle's (ACT-J07)
+    const map_data_common_t *lock = nullptr;
 
     if( veh ) {
         std::vector<vehicle_part *> parts_at_target = veh->vehicle().get_parts_at(
@@ -3430,6 +3484,7 @@ void lockpick_activity_actor::finish( player_activity &act, Character &who )
         if( !furn_type->lockpick_message.empty() ) {
             open_message = furn_type->lockpick_message.translated();
         }
+        lock = &furn_type.obj();
     } else if( locked_part >= 0 ) {
         // no-op.
     } else {
@@ -3442,6 +3497,7 @@ void lockpick_activity_actor::finish( player_activity &act, Character &who )
         if( !ter_type->lockpick_message.empty() ) {
             open_message = ter_type->lockpick_message.translated();
         }
+        lock = &ter_type.obj();
     }
 
     bool perfect = it->has_flag( flag_PERFECT_LOCKPICK );
@@ -3479,9 +3535,16 @@ void lockpick_activity_actor::finish( player_activity &act, Character &who )
     // A standard deviation of 2 means that about 2/3 of rolls will come within 2 points of your mean_roll. Lockpicking
     int pick_roll = std::round( normal_roll( mean_roll, 2 ) );
 
-    // Lock_roll should be replaced with a flat value defined by the door, soon.
-    // In the meantime, let's roll 3d5-3, giving us a range of 0-12.
-    int lock_roll = rng( 0, 4 ) + rng( 0, 4 ) + rng( 0, 4 );
+    // The lock's "lockpick_difficulty" (ACT-J07); a lock without one rolls 3d5-3, 0 to 12.
+    int lock_roll = 0;
+    if( lock != nullptr && lock->lockpick_difficulty ) {
+        lock_roll = rng( lock->lockpick_difficulty->first, lock->lockpick_difficulty->second );
+    } else {
+        lock_roll = rng( 0, 4 ) + rng( 0, 4 ) + rng( 0, 4 );
+    }
+    const bool can_jam = lock != nullptr && ( here.has_furn( target ) ?
+                         !furn_type->lockpick_jam_result.is_empty() :
+                         !ter_type->lockpick_jam_result.is_empty() );
 
     add_msg_debug( debugmode::DF_ACT_LOCKPICK, "Rolled %i. Mean_roll %g. Difficulty %i.",
                    pick_roll, mean_roll, lock_roll );
@@ -3503,9 +3566,14 @@ void lockpick_activity_actor::finish( player_activity &act, Character &who )
         sounds::sound( target, 5, sounds::sound_t::combat, _( "Click!" ),
                        true, "tool", "lockpick_success" );
         who.add_msg_if_player( m_good, open_message );
-    } else if( furn_type == furn_f_gunsafe_ml && lock_roll > ( 3 * pick_roll ) ) {
+    } else if( can_jam && lock_roll > ( 3 * pick_roll ) ) {
+        // the lock's "lockpick_jam_result" (ACT-J07)
         who.add_msg_if_player( m_bad, _( "Your clumsy attempt jams the lock!" ) );
-        here.furn_set( target, furn_f_gunsafe_mj );
+        if( here.has_furn( target ) ) {
+            here.furn_set( target, furn_type->lockpick_jam_result );
+        } else {
+            here.ter_set( target, ter_type->lockpick_jam_result );
+        }
     } else if( lock_roll > ( 1.5 * pick_roll ) ) {
         if( it->inc_damage() ) {
             sounds::sound( target, 5, sounds::sound_t::combat, _( "Snap!" ),
@@ -3535,7 +3603,9 @@ void lockpick_activity_actor::finish( player_activity &act, Character &who )
         you->practice( skill_traps, xp_gain );
     }
 
-    if( !perfect && ter_type == ter_t_door_locked_alarm && ( lock_roll + dice( 1, 30 ) ) > pick_roll ) {
+    // an ALARMED lock may go off (ACT-J07)
+    if( !perfect && lock != nullptr && lock->has_flag( ter_furn_flag::TFLAG_ALARMED ) &&
+        ( lock_roll + dice( 1, 30 ) ) > pick_roll ) {
         sounds::sound( who.pos_bub(), 40, sounds::sound_t::alarm, _( "an alarm sound!" ), true,
                        "environment",
                        "alarm" );
@@ -6790,6 +6860,16 @@ void unload_activity_actor::unload( Character &who, item_location &target )
         who.add_msg_if_player( _( "You unload your %s." ), it.tname() );
     }
 
+    if( actually_unloaded ) {
+        cata::event e = cata::event::make<event_type::character_unloads_item>( who.getID(),
+                        it.typeId() );
+        get_event_bus().send_with_talker( &who, &target, e );
+        // An EOC may have used the item up
+        if( !target ) {
+            return;
+        }
+    }
+
     if( it.has_flag( flag_MAG_DESTROY ) && it.ammo_remaining( ) == 0 ) {
         target.remove_item();
     }
@@ -7088,12 +7168,33 @@ void craft_activity_actor::do_turn( player_activity &act, Character &crafter )
         }
 
         if( craft.item_counter >= craft.get_next_failure_point() ) {
+            // Copies: the failure, or a fail EOC, can end this activity and with it this actor
+            item_location failed = craft_item;
+            const size_t components_before = craft.components.size();
+            const int progress_before = craft.item_counter;
             bool destroy = craft.handle_craft_failure( crafter );
+            if( !rec.fail_eocs.empty() ) {
+                // before the craft goes, so the EOCs can see it
+                dialogue d( get_talker_for( crafter ), get_talker_for( failed ) );
+                d.set_value( "recipe_id", rec.ident().str() );
+                d.set_value( "batch_size", craft.get_making_batch_size() );
+                d.set_value( "components_lost",
+                             static_cast<int>( components_before - craft.components.size() ) );
+                // in percent of the whole craft, as the message says
+                d.set_value( "progress_lost", ( progress_before - craft.item_counter ) / 100000 );
+                d.set_value( "destroyed", destroy ? 1 : 0 );
+                for( const effect_on_condition_id &eoc : rec.fail_eocs ) {
+                    eoc->activate_activation_only( d, "a recipe", "crafting failure", "recipe" );
+                }
+            }
             // If the craft needs to be destroyed, do it and stop crafting.
             if( destroy ) {
-                crafter.add_msg_player_or_npc( _( "There is nothing left of the %s to craft from." ),
-                                               _( "There is nothing left of the %s <npcname> was crafting." ), craft.tname() );
-                craft_item.remove_item();
+                if( failed.get_item() != nullptr ) {
+                    crafter.add_msg_player_or_npc( _( "There is nothing left of the %s to craft from." ),
+                                                   _( "There is nothing left of the %s <npcname> was crafting." ),
+                                                   failed->tname() );
+                    failed.remove_item();
+                }
                 crafter.cancel_activity();
             }
         }
@@ -7673,9 +7774,25 @@ void drop_activity_actor::do_turn( player_activity &act, Character &who )
 {
     map &here = get_map();
     const tripoint_bub_ms pos = placement + who.pos_bub();
-    put_into_vehicle_or_drop( who, item_drop_reason::deliberate,
-                              obtain_activity_items( items, handler, who, current_bulk_unload ),
-                              &here, pos, force_ground );
+    const std::list<item> dropping = obtain_activity_items( items, handler, who,
+                                     current_bulk_unload );
+    std::vector<item_location> dropped = put_into_vehicle_or_drop( who,
+                                         item_drop_reason::deliberate, dropping, &here, pos, force_ground );
+    // INV-J08: one event for each item or stack, with where it landed when that is known
+    const bool landed_known = dropped.size() == dropping.size();
+    auto landed = dropped.begin();
+    for( const item &it : dropping ) {
+        const cata::event e = cata::event::make<event_type::character_drops_item>( who.getID(),
+                              it.typeId(), it.count() );
+        if( landed_known && *landed ) {
+            get_event_bus().send_with_talker( &who, &*landed, e );
+        } else {
+            get_event_bus().send_with_talker( &who, static_cast<Creature *>( nullptr ), e );
+        }
+        if( landed_known ) {
+            ++landed;
+        }
+    }
     // Cancel activity if items is empty. Otherwise, we modified in place and we will continue
     // to resolve the drop next turn. This is different from the pickup logic which creates
     // a brand new activity every turn and cancels the old activity
@@ -7856,18 +7973,8 @@ void plant_seed_activity_actor::finish( player_activity &act, Character &who )
         }
         used_seed.front().set_flag( json_flag_HIDDEN_ITEM );
         here.add_item_or_charges( examp, used_seed.front() );
-        if( here.has_flag_furn( seed_id->seed->required_terrain_flag, examp ) &&
-            here.furn( examp )->plant != nullptr ) {
-            here.furn_set( examp, here.furn( examp )->plant->transform );
-        } else if( seed_id->seed->required_terrain_flag == ter_furn_flag::TFLAG_PLANTABLE ) {
-            if( here.ter( examp ).id() == ter_t_greenhouse_tilled ) {
-                here.set( examp, ter_t_greenhouse, furn_f_plant_seed );
-            } else {
-                here.set( examp, ter_t_dirt, furn_f_plant_seed );
-            }
-        } else {
-            here.furn_set( examp, furn_f_plant_seed );
-        }
+        // shared with the vehicle planter (VINT-J05)
+        iexamine::set_seeded_terrain( here, examp, seed_id );
         who.add_msg_player_or_npc( _( "You plant some %s." ), _( "<npcname> plants some %s." ),
                                    item::nname( seed_id ) );
     }
@@ -8481,10 +8588,75 @@ static ret_val<void> try_insert( item_location &holster, drop_location &holstere
     return ret;
 }
 
+// try_insert, into the pocket of holster a drag and drop chose (pocket_index, as
+// item::get_container_pockets lists them). As Character::store: a better pocket inside that one
+// may take the item. The containers around holster are checked as the drag and drop checks
+// them, so an item can move between the pockets of the container that holds it.
+static ret_val<void> try_insert_into_pocket( item_location &holster, const int pocket_index,
+        drop_location &holstered_item, int *charges_added, Character &who )
+{
+    const std::vector<item_pocket *> pockets = holster->get_container_pockets();
+    if( pocket_index < 0 || static_cast<size_t>( pocket_index ) >= pockets.size() ) {
+        return ret_val<void>::make_failure( _( "item can't be stored there" ) );
+    }
+    item_pocket *pocket = pockets[pocket_index];
+    item &it = *holstered_item.first;
+    if( holster->has_flag( json_flag_NO_RELOAD ) ) {
+        return ret_val<void>::make_failure( _( "destination can't be reloaded" ) );
+    }
+    const ret_val<void> parents = drag_drop_parents_can_contain( holstered_item.first, holster );
+    if( !parents.success() ) {
+        return parents;
+    }
+    if( charges_added != nullptr ) {
+        *charges_added = pocket->fill_with( it, who, holstered_item.second, /*allow_unseal=*/true,
+                                            /*ignore_settings=*/true );
+        if( *charges_added <= 0 ) {
+            return ret_val<void>::make_failure( _( "item can't be stored there" ) );
+        }
+        return ret_val<void>::make_success();
+    }
+    if( it.is_bucket_nonempty() ) {
+        return ret_val<void>::make_failure( _( "item would spill" ) );
+    }
+    const ret_val<item_pocket::contain_code> contain = pocket->can_contain( it );
+    if( !contain.success() ) {
+        return ret_val<void>::make_failure( contain.str() );
+    }
+    item_pocket *best = pocket->best_pocket_in_contents( holster, it, nullptr, false, false ).second;
+    if( best != nullptr && pocket->better_pocket( *best, it, true ) ) {
+        pocket = best;
+    }
+    const ret_val<item *> result = pocket->insert_item( it );
+    if( !result.success() ) {
+        return ret_val<void>::make_failure( result.str() );
+    }
+    result.value()->on_pickup( who );
+    return ret_val<void>::make_success();
+}
+
 void insert_item_activity_actor::finish( player_activity &act, Character &who )
 {
     bool success = false;
     bool bulk_load = false;
+    // INV-J08: what went in, for character_stores_item once this step is done
+    itype_id stored_type = itype_id::NULL_ID();
+    int stored_count = 0;
+    const auto announce_stored = [&]() {
+        if( stored_type.is_null() || !holster ) {
+            return;
+        }
+        item_location container = holster;
+        const cata::event e = cata::event::make<event_type::character_stores_item>( who.getID(),
+                              stored_type, stored_count, container->typeId() );
+        get_event_bus().send_with_talker( &who, &container, e );
+    };
+    if( !holster ) {
+        // the container is gone: destroyed, or used up by an EOC of an earlier step
+        handler.handle_by( who );
+        act.set_to_null();
+        return;
+    }
     Character *carrier = holster.carrier();
     drop_location &holstered_item = items.front();
     if( holstered_item.first ) {
@@ -8498,19 +8670,25 @@ void insert_item_activity_actor::finish( player_activity &act, Character &who )
         ret_val<void> ret = ret_val<void>::make_failure( _( "item can't be stored there" ) );
 
         if( !it.count_by_charges() ) {
-            ret = try_insert( holster, holstered_item, nullptr, carrier, false );
+            ret = pocket_index >= 0 ?
+                  try_insert_into_pocket( holster, pocket_index, holstered_item, nullptr, who ) :
+                  try_insert( holster, holstered_item, nullptr, carrier, false );
 
             if( ret.success() ) {
                 //~ %1$s: item to put in the container, %2$s: container to put item in
                 who.add_msg_if_player( string_format( _( "You put your %1$s into the %2$s." ),
                                                       holstered_item.first->display_name(), holster->type->nname( 1 ) ) );
+                stored_type = it.typeId();
+                stored_count = it.count();
                 handler.add_unsealed( holster );
                 handler.unseal_pocket_containing( holstered_item.first );
                 holstered_item.first.remove_item();
             }
         } else {
             int charges_added = 0;
-            ret = try_insert( holster, holstered_item, &charges_added, carrier,
+            ret = pocket_index >= 0 ?
+                  try_insert_into_pocket( holster, pocket_index, holstered_item, &charges_added, who ) :
+                  try_insert( holster, holstered_item, &charges_added, carrier,
                               allow_fill_count_by_charge_item_nested );
 
             if( ret.success() ) {
@@ -8519,6 +8697,8 @@ void insert_item_activity_actor::finish( player_activity &act, Character &who )
                 //~ %1$s: item to put in the container, %2$s: container to put item in
                 who.add_msg_if_player( string_format( _( "You put your %1$s into the %2$s." ),
                                                       copy.display_name(), holster->type->nname( 1 ) ) );
+                stored_type = it.typeId();
+                stored_count = charges_added;
                 handler.add_unsealed( holster );
                 handler.unseal_pocket_containing( holstered_item.first );
                 it.charges -= charges_added;
@@ -8559,6 +8739,7 @@ void insert_item_activity_actor::finish( player_activity &act, Character &who )
         holster.make_active();
         handler.handle_by( who );
         act.set_to_null();
+        announce_stored();
         if( !items_remain.empty() ) {
             g->insert_item( items_remain );
         }
@@ -8569,6 +8750,7 @@ void insert_item_activity_actor::finish( player_activity &act, Character &who )
     const int total_moves = item_move_cost( who, items.front().first, bulk_load );
     act.moves_left = total_moves;
     act.moves_total = total_moves;
+    announce_stored();
 }
 
 void insert_item_activity_actor::canceled( player_activity &/*act*/, Character &who )
@@ -8586,6 +8768,7 @@ void insert_item_activity_actor::serialize( JsonOut &jsout ) const
     jsout.member( "all_pockets_rigid", all_pockets_rigid );
     jsout.member( "reopen_menu", reopen_menu );
     jsout.member( "allow_fill_charge_item_nested", allow_fill_count_by_charge_item_nested );
+    jsout.member( "pocket_index", pocket_index );
 
     jsout.end_object();
 }
@@ -8602,6 +8785,7 @@ std::unique_ptr<activity_actor> insert_item_activity_actor::deserialize( JsonVal
     data.read( "all_pockets_rigid", actor.all_pockets_rigid );
     data.read( "reopen_menu", actor.reopen_menu );
     data.read( "allow_fill_charge_item_nested", actor.allow_fill_count_by_charge_item_nested );
+    data.read( "pocket_index", actor.pocket_index );
 
     return actor.clone();
 }
@@ -8710,6 +8894,17 @@ void reload_activity_actor::reload( player_activity &act, Character &who, int lo
         add_msg( m_neutral, _( "You manage to loosen some debris and make your %s somewhat operational." ),
                  reloadable_name );
         reloadable.set_var( "dirt", ( reloadable.get_var( "dirt", 0 ) - rng( 790, 2750 ) ) );
+    }
+
+    {
+        cata::event e = cata::event::make<event_type::character_reloads_item>( who.getID(),
+                        reloadable.typeId(), reloadable.ammo_current(), reloadable.ammo_remaining() );
+        item_location reloaded = target_loc;
+        get_event_bus().send_with_talker( &who, &reloaded, e );
+        // An EOC may have used the item up
+        if( !target_loc ) {
+            return;
+        }
     }
 
     who.recoil = MAX_RECOIL;
@@ -8955,6 +9150,7 @@ void milk_activity_actor::finish( player_activity &act, Character &who )
     }
     item milk( milked_item->first, calendar::turn, milked_item->second );
     milk.set_item_temperature( units::from_celsius( 38.6 ) );
+    const int milk_before = milked_item->second;
     if( liquid_handler::handle_liquid( milk, target, nullptr, 1, nullptr, nullptr, -1,
                                        source_mon ) ) {
         milked_item->second = 0;
@@ -8962,6 +9158,13 @@ void milk_activity_actor::finish( player_activity &act, Character &who )
             milked_item->second = milk.charges;
         } else {
             who.add_msg_if_player( _( "The %s's udders run dry." ), source_mon->get_name() );
+        }
+        // MONDT-J14: the monster is beta
+        const int milk_taken = milk_before - milked_item->second;
+        if( milk_taken > 0 ) {
+            const cata::event milked = cata::event::make<event_type::monster_milked>( who.getID(),
+                                       source_mon->type->id, milked_item->first, milk_taken );
+            get_event_bus().send_with_talker( &who, source_mon, milked );
         }
     }
     // if the monster was not manually tied up, but needed to be fixed in place temporarily then
@@ -9068,7 +9271,7 @@ void shearing_activity_actor::start( player_activity &act, Character &who )
     }
 
     const int shearing_quality = who.max_quality( qual_SHEAR );
-    if( !( shearing_quality > 0 ) ) {
+    if( shearing_quality < std::max( mon->type->shearing.quality_level(), 1 ) ) {
         if( who.is_avatar() ) {
             add_msg( m_info, _( "%1$s don't have a shearing tool." ), who.disp_name( true ) );
         } else { // who.is_npc
@@ -9102,7 +9305,9 @@ void shearing_activity_actor::start( player_activity &act, Character &who )
 
 void shearing_activity_actor::do_turn( player_activity &, Character &who )
 {
-    if( !who.has_quality( qual_SHEAR ) ) {
+    const monster *mon = get_creature_tracker().creature_at<monster>( mon_coords );
+    const int quality_level = mon != nullptr ? mon->type->shearing.quality_level() : 1;
+    if( !who.has_quality( qual_SHEAR, quality_level ) ) {
         if( who.is_avatar() ) {
             add_msg(
                 m_bad,
@@ -9163,12 +9368,17 @@ void shearing_activity_actor::finish( player_activity &act, Character &who )
         }
     }
 
-    mon->add_effect( effect_sheared, calendar::season_length() );
+    mon->add_effect( effect_sheared, shear_data.regrow() );
     if( shearing_tie ) {
         mon->remove_effect( effect_tied );
     }
 
     act.set_to_null();
+
+    // MONDT-J14: the monster is beta
+    const cata::event sheared = cata::event::make<event_type::monster_sheared>( who.getID(),
+                                mon->type->id );
+    get_event_bus().send_with_talker( &who, mon, sheared );
 }
 
 void shearing_activity_actor::canceled( player_activity &, Character & )
@@ -10091,8 +10301,7 @@ void prying_activity_actor::do_turn( player_activity &/*act*/, Character &who )
     std::string method = "CROWBAR";
 
     if( tool->ammo_sufficient( &who, method ) ) {
-        std::map<std::string, int>::const_iterator iter = tool->type->ammo_scale.find( method );
-        const int uses = iter == tool->type->ammo_scale.end() ? 1 : iter->second;
+        const int uses = tool->type->get_ammo_scale( method );
         tool->consume_tool_uses( uses, here, tool.pos_bub( here ), &who );
         if( prying_nails ) {
             sfx::play_activity_sound( "tool", "hammer", sfx::get_heard_volume( target ) );
@@ -10611,53 +10820,29 @@ void chop_logs_activity_actor::finish( player_activity &act, Character &who )
 {
     map &here = get_map();
     const tripoint_bub_ms &pos = here.get_bub( act.placement );
-    int log_quan;
-    int stick_quan;
-    int splint_quan;
-    const ter_id &t = here.ter( pos );
-    if( t == ter_t_trunk ) {
-        log_quan = rng( 2, 3 );
-        stick_quan = rng( 0, 3 );
-        splint_quan = 0;
-    } else if( t == ter_t_stump ) {
-        log_quan = rng( 0, 2 );
-        stick_quan = 0;
-        splint_quan = rng( 5, 15 );
-    } else {
-        log_quan = 0;
-        stick_quan = 0;
-        splint_quan = 0;
+    // ACT-J10: the terrain's "chop" object says what it becomes and what it leaves
+    const ter_t &ter = here.ter( pos ).obj();
+    if( !ter.can_chop() ) {
+        who.add_msg_if_player( m_info, _( "There is nothing left to chop here." ) );
+        act.set_to_null();
+        return;
     }
-    for( int i = 0; i != log_quan; ++i ) {
-        item obj( itype_log, calendar::turn );
-        obj.set_var( "activity_var", who.name );
-        //The item may exceed the capacity of the pos and move to another coordinate.So get loc.
-        item_location loc = here.add_item_or_charges_ret_loc( pos, obj );
-        if( loc ) {
-            who.may_activity_occupancy_after_end_items_loc.push_back( loc );
-        }
-
-    }
-    for( int i = 0; i != stick_quan; ++i ) {
-        item obj( itype_stick_long, calendar::turn );
-        obj.set_var( "activity_var", who.name );
-        //The item may exceed the capacity of the pos and move to another coordinate.So get loc.
-        item_location loc = here.add_item_or_charges_ret_loc( pos, obj );
-        if( loc ) {
-            who.may_activity_occupancy_after_end_items_loc.push_back( loc );
+    const activity_data_ter &chop = *ter.chop;
+    for( const activity_byproduct &byproduct : chop.byproducts() ) {
+        const int amount = byproduct.roll();
+        for( int i = 0; i < amount; ++i ) {
+            item obj( byproduct.item, calendar::turn );
+            obj.set_var( "activity_var", who.name );
+            //The item may exceed the capacity of the pos and move to another coordinate.So get loc.
+            item_location loc = here.add_item_or_charges_ret_loc( pos, obj );
+            if( loc ) {
+                who.may_activity_occupancy_after_end_items_loc.push_back( loc );
+            }
         }
     }
-    for( int i = 0; i != splint_quan; ++i ) {
-        item obj( itype_splinter, calendar::turn );
-        obj.set_var( "activity_var", who.name );
-        //The item may exceed the capacity of the pos and move to another coordinate.So get loc.
-        item_location loc = here.add_item_or_charges_ret_loc( pos, obj );
-        if( loc ) {
-            who.may_activity_occupancy_after_end_items_loc.push_back( loc );
-        }
-    }
-    here.ter_set( pos, ter_t_dirt );
-    who.add_msg_if_player( m_good, _( "You finish chopping wood." ) );
+    here.ter_set( pos, chop.result() );
+    who.add_msg_if_player( m_good, chop.message().empty() ? _( "You finish chopping wood." ) :
+                           chop.message().translated() );
 
     act.set_to_null();
 }
@@ -10706,11 +10891,16 @@ void chop_planks_activity_actor::finish( player_activity &act, Character &who )
         target_log.remove_item();
     }
     const int max_planks = 10;
-    /** @EFFECT_FABRICATION increases number of planks cut from a log */
-    int planks = normal_roll( 2 + who.get_skill_level( skill_fabrication ), 1 );
-    int wasted_planks = max_planks - planks;
-    int scraps = rng( wasted_planks, wasted_planks * 3 );
-    planks = std::min( planks, max_planks );
+    int planks = 0;
+    int scraps = 0;
+    // each log is cut on its own (TERR-B07)
+    for( int i = 0; i < logs; ++i ) {
+        /** @EFFECT_FABRICATION increases number of planks cut from a log */
+        const int log_planks = normal_roll( 2 + who.get_skill_level( skill_fabrication ), 1 );
+        const int wasted_planks = max_planks - log_planks;
+        scraps += std::max( 0, rng( wasted_planks, wasted_planks * 3 ) );
+        planks += std::clamp( log_planks, 0, max_planks );
+    }
 
     map &here = get_map();
     if( planks > 0 ) {
@@ -10723,7 +10913,7 @@ void chop_planks_activity_actor::finish( player_activity &act, Character &who )
         who.add_msg_if_player( m_good, n_gettext( "You produce %d splinter.", "You produce %d splinters.",
                                scraps ), scraps );
     }
-    if( planks < max_planks / 2 ) {
+    if( planks < max_planks * logs / 2 ) {
         who.add_msg_if_player( m_bad, _( "You waste a lot of the wood." ) );
     }
     act.set_to_null();
@@ -10736,6 +10926,7 @@ void chop_planks_activity_actor::serialize( JsonOut &jsout ) const
     jsout.member( "moves", moves );
     jsout.member( "log", target_log );
     jsout.member( "uses_log", uses_log );
+    jsout.member( "logs", logs );
 
     jsout.end_object();
 }
@@ -10749,6 +10940,8 @@ std::unique_ptr<activity_actor> chop_planks_activity_actor::deserialize( JsonVal
     data.read( "moves", actor.moves );
     data.read( "log", actor.target_log );
     data.read( "uses_log", actor.uses_log );
+    // older saves cut one log
+    data.read( "logs", actor.logs );
 
     return actor.clone();
 }
@@ -10776,7 +10969,7 @@ void chop_tree_activity_actor::finish( player_activity &act, Character &who )
     const tripoint_bub_ms &pos = here.get_bub( act.placement );
 
     tripoint_rel_ms direction;
-    if( !who.is_npc() &&
+    if( !who.is_npc() && !auto_fall &&
         ( who.backlog.empty() || who.backlog.front().id() != ACT_MULTIPLE_CHOP_TREES ) ) {
         while( true ) {
             if( const std::optional<tripoint_rel_ms> dir = choose_direction(
@@ -10834,7 +11027,7 @@ void chop_tree_activity_actor::finish( player_activity &act, Character &who )
     here.collapse_at( pos, false, true, false );
     sfx::play_variant_sound( "misc", "timber",
                              sfx::get_heard_volume( here.get_bub( act.placement ) ) );
-    get_event_bus().send<event_type::cuts_tree>( who.getID() );
+    get_event_bus().send<event_type::cuts_tree>( who.getID(), act.placement.raw() );
     act.set_to_null();
 }
 
@@ -10844,6 +11037,7 @@ void chop_tree_activity_actor::serialize( JsonOut &jsout ) const
 
     jsout.member( "moves", moves );
     jsout.member( "tool", tool );
+    jsout.member( "auto_fall", auto_fall );
 
     jsout.end_object();
 }
@@ -10856,6 +11050,7 @@ std::unique_ptr<activity_actor> chop_tree_activity_actor::deserialize( JsonValue
 
     data.read( "moves", actor.moves );
     data.read( "tool", actor.tool );
+    data.read( "auto_fall", actor.auto_fall );
 
     return actor.clone();
 }
@@ -10883,13 +11078,12 @@ void churn_activity_actor::finish( player_activity &act, Character &who )
     map &here = get_map();
     tripoint_bub_ms examp = here.get_bub( act.placement );
 
-    if( here.ter( examp ).id() == ter_t_greenhouse ) {
-        here.ter_set( examp, ter_t_greenhouse_tilled );
-        who.add_msg_if_player( _( "You finish preparing the greenhouse here." ) );
-    } else {
-        here.ter_set( examp, ter_t_dirtmound );
-        who.add_msg_if_player( _( "You finish churning up the earth here." ) );
-    }
+    // ACT-J10: the terrain's "till" object, by default a mound of dirt
+    const ter_t &ter = here.ter( examp ).obj();
+    const translation message = ter.till ? ter.till->message : translation();
+    here.ter_set( examp, ter.till_result() );
+    who.add_msg_if_player( message.empty() ? _( "You finish churning up the earth here." ) :
+                           message.translated() );
     // Go back to what we were doing before
     // could be player zone activity, or could be NPC multi-farming
     act.set_to_null();
@@ -11140,7 +11334,7 @@ void firstaid_activity_actor::finish( player_activity &act, Character &who )
 {
     map &here = get_map();
 
-    static const std::string iuse_name_string( "heal" );
+    const std::string &iuse_name_string = method;
 
     item_location it = act.targets.front();
     if( !it ) {
@@ -11192,7 +11386,7 @@ void firstaid_activity_actor::finish( player_activity &act, Character &who )
     act.set_to_null();
     act.values.clear();
 
-    if( who.is_avatar() ) {
+    if( who.is_avatar() && reopen_menu ) {
         uistate.open_menu = []() {
             avatar_action::eat_or_use( get_avatar(),
                                        game_menus::inv::consume( uistate.consume_uistate.consume_menu_comestype ) );
@@ -11214,6 +11408,8 @@ void firstaid_activity_actor::serialize( JsonOut &jsout ) const
     jsout.member( "moves", moves );
     jsout.member( "name", name );
     jsout.member( "patientID", patientID );
+    jsout.member( "reopen_menu", reopen_menu );
+    jsout.member( "method", method );
 
     jsout.end_object();
 }
@@ -11227,6 +11423,9 @@ std::unique_ptr<activity_actor> firstaid_activity_actor::deserialize( JsonValue 
     data.read( "moves", actor.moves );
     data.read( "name", actor.name );
     data.read( "patientID", actor.patientID );
+    data.read( "reopen_menu", actor.reopen_menu );
+    // Old saves have no method: the item's heal action
+    data.read( "method", actor.method );
 
     return actor.clone();
 }
@@ -11436,6 +11635,13 @@ void mend_item_activity_actor::finish( player_activity &act, Character &who )
 
     add_msg( m_good, fix.success_msg.translated(), target.tname( 1, false ),
              start_durability, target.durability_indicator( true ) );
+
+    if( !fix.effect_on_conditions.empty() ) {
+        dialogue d( get_talker_for( who ), get_talker_for( mended_item ) );
+        for( const effect_on_condition_id &eoc : fix.effect_on_conditions ) {
+            eoc->activate( d );
+        }
+    }
 }
 
 void mend_item_activity_actor::serialize( JsonOut &jsout ) const
@@ -11566,16 +11772,29 @@ void fix_wound_activity_actor::finish( player_activity &act, Character &who )
 
     // Each fix replaces the next wound it mends, and the wound it adds holds back that
     // wound's HP, not the first one's. Wounds that healed or changed meanwhile aren't treated.
+    // HLTH-J04: the wound events, sent once the treatment is done
+    std::vector<wound_change> changes;
     int treated = 0;
     for( ; treated < amount && bp->has_wound( mended_wound ); treated++ ) {
         const int hp_damage = bp->get_wound( mended_wound )->get_hp_damage();
         for( const wound_type_id &id : fix.wounds_removed ) {
-            bp->remove_wound( id );
+            if( bp->remove_wound( id ) ) {
+                wound_change removed;
+                removed.what = wound_change::kind::lost;
+                removed.bp = healed_bp.id();
+                removed.wound = id;
+                changes.push_back( removed );
+            }
         }
         bool first_added = true;
         for( const wound_type_id &id : fix.wounds_added ) {
             bp->add_wound( id, who, first_added ? hp_damage : 0 );
             first_added = false;
+            wound_change added;
+            added.what = wound_change::kind::gained;
+            added.bp = healed_bp.id();
+            added.wound = id;
+            changes.push_back( added );
         }
     }
 
@@ -11592,6 +11811,7 @@ void fix_wound_activity_actor::finish( player_activity &act, Character &who )
     }
 
     add_msg( m_good, fix.success_msg.translated() );
+    who.send_wound_events( changes );
 
     // only the player gets the menu again; an NPC's treatment just ends
     if( who.is_avatar() && who.has_wounds( healed_bp.id() ) ) {
@@ -11643,6 +11863,11 @@ void gunmod_add_activity_actor::finish( player_activity &act, Character &who )
 
     item &gun = *act.targets.at( 0 );
     item &mod = *act.targets.at( 1 );
+    // For the event, sent once it's over: the gun may be gone by then
+    item_location gun_loc = act.targets.at( 0 );
+    const itype_id gun_type = gun.typeId();
+    const itype_id mod_type = mod.typeId();
+    bool success = false;
 
     // chance of success (%)
     const int roll = act.values[1];
@@ -11667,6 +11892,7 @@ void gunmod_add_activity_actor::finish( player_activity &act, Character &who )
                  gun.tname() );
         gun.put_in( who.i_rem( &mod ), pocket_type::MOD );
         gun.on_contents_changed();
+        success = true;
 
     } else if( rng( 0, 100 ) <= risk ) {
         if( gun.inc_damage() ) {
@@ -11687,6 +11913,10 @@ void gunmod_add_activity_actor::finish( player_activity &act, Character &who )
     } else {
         add_msg( m_info, _( "You failed at installing the %s." ), mod.tname() );
     }
+
+    cata::event e = cata::event::make<event_type::character_installs_gunmod>( who.getID(), gun_type,
+                    mod_type, success );
+    get_event_bus().send_with_talker( &who, &gun_loc, e );
 }
 
 void gunmod_add_activity_actor::serialize( JsonOut &jsout ) const
@@ -12304,9 +12534,14 @@ void vehicle_activity_actor::complete_vehicle( player_activity &act, Character &
             you.add_msg_if_player( m_good, _( "You install a %1$s into the %2$s." ), vp_new.name(), veh.name );
 
             for( const auto &sk : vpinfo.install_skills ) {
-                you.practice( sk.first, veh_utils::calc_xp_gain( vpinfo, sk.first, you ) );
+                you.practice( sk.first, veh_utils::calc_xp_gain( vpinfo.install_skills,
+                              vpinfo.install_moves, sk.first, you ) );
             }
             here.add_vehicle_to_cache( &veh );
+            // VINT-J06
+            veh_utils::send_vehicle_event( veh,
+                                           cata::event::make<event_type::vehicle_part_installed>( you.getID(), part_id.str(),
+                                                   veh.name ) );
             break;
         }
 
@@ -12470,9 +12705,11 @@ void vehicle_activity_actor::complete_vehicle( player_activity &act, Character &
                         }
                     }
                 }
-                for( const std::pair<const skill_id, int> &sk : vpi.install_skills ) {
-                    // removal is half as educational as installation
-                    you.practice( sk.first, veh_utils::calc_xp_gain( vpi, sk.first, you ) / 2 );
+                // removal is half as educational as installation; the removal skills and time
+                // count, not the install ones (VINT-B06)
+                for( const std::pair<const skill_id, int> &sk : vpi.removal_skills ) {
+                    you.practice( sk.first, veh_utils::calc_xp_gain( vpi.removal_skills,
+                                  vpi.removal_moves, sk.first, you ) / 2 );
                 }
             }
 
@@ -12503,13 +12740,16 @@ void vehicle_activity_actor::complete_vehicle( player_activity &act, Character &
             // Save these values now so they aren't lost when parts or vehicles are destroyed.
             const point_rel_ms part_mount = vp->mount;
             const tripoint_bub_ms part_pos = veh.bub_part_pos( here, *vp );
+            const std::string removed_part_id = vpi.id.str();
+            const std::string removed_from = veh.name;
+            const bool dismantled = veh.part_count_real() <= 1;
 
             veh.unlink_cables( here, part_mount, you,
                                false, /* unneeded as items will be unlinked if the connected part is removed */
                                appliance_removal || vpi.location == vpart_location_structure,
                                appliance_removal || vpi.has_flag( VPFLAG_CABLE_PORTS ) || vpi.has_flag( VPFLAG_BATTERY ) );
 
-            if( veh.part_count_real() <= 1 ) {
+            if( dismantled ) {
                 you.add_msg_if_player( _( "You completely dismantle the %s." ), veh.name );
                 act.set_to_null();
                 // destroy vehicle clears the cache
@@ -12539,6 +12779,14 @@ void vehicle_activity_actor::complete_vehicle( player_activity &act, Character &
                 for( const item_location &itl : locs ) {
                     you.may_activity_occupancy_after_end_items_loc.push_back( itl );
                 }
+            }
+            // VINT-J06: with the vehicle as beta talker, unless this took its last part
+            const cata::event removed = cata::event::make<event_type::vehicle_part_removed>(
+                                            you.getID(), removed_part_id, removed_from );
+            if( dismantled ) {
+                get_event_bus().send( removed );
+            } else {
+                veh_utils::send_vehicle_event( veh, removed );
             }
             break;
         }
@@ -12939,6 +13187,11 @@ void start_engines_activity_actor::finish( player_activity &act, Character &who 
         who.controlling_vehicle = false;
         who.add_msg_if_player( _( "You let go of the controls." ) );
     }
+    // VINT-J06
+    if( veh->engine_on ) {
+        veh_utils::send_vehicle_event( *veh,
+                                       cata::event::make<event_type::vehicle_engine_started>( who.getID(), veh_name ) );
+    }
 }
 
 void start_engines_activity_actor::serialize( JsonOut &jsout ) const
@@ -13167,7 +13420,7 @@ void fire_start_activity_actor::do_turn( player_activity &act, Character &who )
         }
     }
 
-    const use_function *usef = firestarter.type->get_use( "firestarter" );
+    const use_function *usef = firestarter.type->get_use( method );
     if( usef == nullptr || usef->get_actor_ptr() == nullptr ) {
         add_msg( m_bad, _( "You have lost the item you were using to start the fire." ) );
         who.cancel_activity();
@@ -13188,7 +13441,7 @@ void fire_start_activity_actor::finish( player_activity &act, Character &who )
 {
     map &here = get_map();
 
-    static const std::string iuse_name_string( "firestarter" );
+    const std::string &iuse_name_string = method;
 
     item &it = *fire_starter;
     item *used_tool = it.get_usable_item( iuse_name_string );
@@ -13218,19 +13471,8 @@ void fire_start_activity_actor::finish( player_activity &act, Character &who )
 
     who.practice( skill_survival, potential_skill_gain, 5 );
 
-    const furn_id &f_id = here.furn( here.get_bub( fire_placement ) );
-    const bool is_smoking_rack = f_id == furn_f_metal_smoking_rack ||
-                                 f_id == furn_f_smoking_rack;
-    const bool is_kiln = f_id == furn_f_kiln_empty ||
-                         f_id == furn_f_kiln_metal_empty || f_id == furn_f_kiln_portable_empty;
-
-    firestarter_actor::start_type st = firestarter_actor::start_type::FIRE;
-
-    if( is_smoking_rack ) {
-        st = firestarter_actor::start_type::SMOKER;
-    } else if( is_kiln ) {
-        st = firestarter_actor::start_type::KILN;
-    }
+    const firestarter_actor::start_type st = firestarter_actor::furniture_start_type(
+                here.furn( here.get_bub( fire_placement ) ) );
 
     it.activation_consume( 1, who.pos_bub(), &who );
 
@@ -13247,6 +13489,7 @@ void fire_start_activity_actor::serialize( JsonOut &jsout ) const
     jsout.member( "fire_starter", fire_starter );
     jsout.member( "potential_skill_gain", potential_skill_gain );
     jsout.member( "used_tinder", used_tinder );
+    jsout.member( "method", method );
     jsout.end_object();
 }
 
@@ -13258,6 +13501,8 @@ std::unique_ptr<activity_actor> fire_start_activity_actor::deserialize( JsonValu
     data.read( "fire_starter", actor.fire_starter );
     data.read( "potential_skill_gain", actor.potential_skill_gain );
     data.read( "used_tinder", actor.used_tinder );
+    // Old saves have no method: the item's firestarter action
+    data.read( "method", actor.method );
     return actor.clone();
 }
 
@@ -13340,12 +13585,12 @@ void training_activity_actor::train_skill( Character &who, skill_id trained_skil
     int old_skill_level = who.get_knowledge_level( trained_skill );
     who.practice( trained_skill, 100, old_skill_level + 2 );
     int new_skill_level = who.get_knowledge_level( trained_skill );
+    // Character::practice sends gains_skill_level for the levels gained (PROG-J06)
     if( old_skill_level != new_skill_level ) {
         if( who.is_avatar() ) {
             add_msg( m_good, _( "You finish training %s to level %d." ),
                      skill_name, new_skill_level );
         }
-        get_event_bus().send<event_type::gains_skill_level>( who.getID(), trained_skill, new_skill_level );
     } else if( who.is_avatar() ) {
         add_msg( m_good, _( "You get some training in %s." ), skill_name );
     }
@@ -13661,22 +13906,7 @@ void wash_activity_actor::start( player_activity &act, Character & )
 
 void wash_activity_actor::finish( player_activity &act, Character &p )
 {
-    const auto is_liquid_crafting_component = []( const item & it ) {
-        return is_crafting_component( it ) && ( !it.count_by_charges() || it.made_of( phase_id::LIQUID ) );
-    };
-    const temp_crafting_inventory &crafting_inv = p.crafting_inventory();
-    if( !crafting_inv.has_charges( itype_water, requirements.water, is_liquid_crafting_component ) &&
-        !crafting_inv.has_charges( itype_water_clean, requirements.water, is_liquid_crafting_component ) ) {
-        p.add_msg_if_player( _( "You need %1$i charges of water or clean water to wash these items." ),
-                             requirements.water );
-        act.set_to_null();
-        return;
-    } else if( !crafting_inv.has_charges( itype_soap, requirements.cleanser ) &&
-               !crafting_inv.has_amount( itype_detergent, requirements.cleanser ) &&
-               !crafting_inv.has_charges( itype_liquid_soap, requirements.cleanser,
-                                          is_liquid_crafting_component ) ) {
-        p.add_msg_if_player( _( "You need %1$i charges of cleansing agent to wash these items." ),
-                             requirements.cleanser );
+    if( !has_washing_supplies( p, requirements ) ) {
         act.set_to_null();
         return;
     }
@@ -13704,18 +13934,7 @@ void wash_activity_actor::finish( player_activity &act, Character &p )
         }
     }
 
-    std::vector<item_comp> comps;
-    comps.reserve( 2 );
-    comps.emplace_back( itype_water, requirements.water );
-    comps.emplace_back( itype_water_clean, requirements.water );
-    p.consume_items( comps, 1, is_liquid_crafting_component );
-
-    std::vector<item_comp> comps1;
-    comps1.reserve( 3 );
-    comps1.emplace_back( itype_soap, requirements.cleanser );
-    comps1.emplace_back( itype_detergent, requirements.cleanser );
-    comps1.emplace_back( itype_liquid_soap, requirements.cleanser );
-    p.consume_items( comps1 );
+    consume_washing_supplies( p, requirements );
 
     p.add_msg_if_player( m_good, _( "You washed your items." ) );
 
@@ -13732,6 +13951,8 @@ void wash_activity_actor::serialize( JsonOut &jsout ) const
     jsout.member( "time", requirements.time );
     jsout.member( "water", requirements.water );
     jsout.member( "cleanser", requirements.cleanser );
+    jsout.member( "water_requirement", requirements.water_requirement );
+    jsout.member( "cleanser_requirement", requirements.cleanser_requirement );
     jsout.end_object();
 }
 
@@ -13743,6 +13964,12 @@ std::unique_ptr<activity_actor> wash_activity_actor::deserialize( JsonValue &jsi
     data.read( "time", actor.requirements.time );
     data.read( "water", actor.requirements.water );
     data.read( "cleanser", actor.requirements.cleanser );
+    // Saves from before USE-J06 washed with the WASH_* use actions' water and cleanser
+    const washing_rules wash_defaults;
+    actor.requirements.water_requirement = wash_defaults.water;
+    actor.requirements.cleanser_requirement = wash_defaults.cleanser;
+    data.read( "water_requirement", actor.requirements.water_requirement );
+    data.read( "cleanser_requirement", actor.requirements.cleanser_requirement );
     return actor.clone();
 }
 
@@ -14627,6 +14854,10 @@ void zone_sort_activity_actor::stage_init( player_activity &, Character &you )
     for( const tripoint_abs_ms &p :
          mgr.get_near( zone_type_LOOT_UNSORTED, you.pos_abs(), MAX_VIEW_DISTANCE, nullptr, fac ) ) {
         if( skip_personal && !mgr.has_nonpersonal( zone_type_LOOT_UNSORTED, p, fac ) ) {
+            continue;
+        }
+        // an NPC sorting for the faction leaves its NO_NPC_PICKUP tiles alone (ACT-B04)
+        if( !you.is_avatar() && mgr.has( zone_type_NO_NPC_PICKUP, p, fac ) ) {
             continue;
         }
         coord_set.insert( p );
@@ -15925,6 +16156,8 @@ deserialize_functions = {
     { ACT_DROP, &drop_activity_actor::deserialize },
     { ACT_E_FILE, &efile_activity_actor::deserialize },
     { ACT_EBOOKSAVE, &ebooksave_activity_actor::deserialize },
+    { ACT_EXECUTION, &execution_activity_actor::deserialize },
+    { ACT_ABILITY, &ability_activity_actor::deserialize },
     { ACT_FERTILIZE_PLANT, &fertilize_plant_activity_actor::deserialize },
     { ACT_FETCH_REQUIRED, &fetch_required_activity_actor::deserialize },
     { ACT_FIELD_DRESS, &butchery_activity_actor::deserialize },
@@ -16034,7 +16267,7 @@ namespace
 {
 struct eoc_start_args {
     const Character &who;
-    const std::string &other_name;
+    std::string_view other_name;
     const std::optional<time_duration> &duration;
 };
 
@@ -16064,7 +16297,7 @@ std::unique_ptr<activity_actor> build_wait_npc( const eoc_start_args &args )
         return build_wait( args );
     }
     return std::make_unique<wait_npc_activity_actor>( args.duration.value_or(
-                time_duration::from_turns( calendar::INDEFINITELY_LONG ) ), args.other_name );
+                time_duration::from_turns( calendar::INDEFINITELY_LONG ) ), std::string( args.other_name ) );
 }
 
 template<typename Game>
@@ -16132,7 +16365,7 @@ bool eoc_start_needs_avatar( const activity_id &type )
 }
 
 std::unique_ptr<activity_actor> make_for_eoc( const activity_id &type, const Character &who,
-        const std::string &other_name, const std::optional<time_duration> &duration )
+        const std::string_view other_name, const std::optional<time_duration> &duration )
 {
     const auto it = eoc_starters.find( type );
     if( it == eoc_starters.end() || ( eoc_start_needs_avatar( type ) && !who.is_avatar() ) ) {

@@ -37,6 +37,12 @@ class oracle_t
         virtual const Creature *creature() const {
             return nullptr;
         }
+        // MONAI-J09: the creature the subject is after, npc in its dialogue conditions and math
+        // scores: a monster's attack target. nullptr when there is none (and for NPCs): npc is
+        // then an empty talker, as before.
+        virtual const Creature *target() const {
+            return nullptr;
+        }
         // Tells subjects apart from one turn to the next, so that "evaluate_every" keeps its
         // results per subject. Without a key, every node is evaluated every time.
         virtual std::optional<int> cache_key() const {
@@ -59,8 +65,8 @@ extern std::unordered_set<std::string> scores_with_argument;
 
 // The oracle a built-in predicate or score reads; `any` for a name that isn't built in. Given
 // another kind of oracle, a built-in fails (predicates) or gives 0 (scores) with a debugmsg.
-oracle_kind predicate_kind( const std::string &name );
-oracle_kind score_kind( const std::string &name );
+oracle_kind predicate_kind( std::string_view name );
+oracle_kind score_kind( std::string_view name );
 
 } // namespace behavior
 #endif // CATA_SRC_BEHAVIOR_ORACLE_H

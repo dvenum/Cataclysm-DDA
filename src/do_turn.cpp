@@ -22,6 +22,9 @@
 #include "bionics.h"
 #include "cached_options.h"
 #include "calendar.h"
+#include "execution_runtime.h"
+#include "ability_runtime.h"
+#include "execution_fatal.h"
 #ifdef TILES
 #include "cata_imgui.h"
 #endif
@@ -40,6 +43,7 @@
 #include "game_constants.h"
 #include "gamemode.h"
 #include "help.h"
+#include "incapacitation.h"
 #include "input.h"
 #include "input_context.h"
 #include "item_wakeup.h"
@@ -49,6 +53,7 @@
 #include "map_scale_constants.h"
 #include "mapbuffer.h"
 #include "mapdata.h"
+#include "mapgen_functions.h"
 #include "memorial_logger.h"
 #include "messages.h"
 #include "mission.h"
@@ -114,6 +119,8 @@ bool cleanup_at_end()
 {
     avatar &u = get_avatar();
     if( g->uquit == QUIT_DIED || g->uquit == QUIT_SUICIDE ) {
+        g->abilities().cancel_for_world_transition( "game_over" );
+        g->cleanup_dead();
         // Put (non-hallucinations) into the overmap so they are not lost.
         for( monster &critter : g->all_monsters() ) {
             g->despawn_monster( critter );
@@ -289,12 +296,15 @@ npc_turn_result process_npc_turn( map &m, npc &guy )
     if( !guy.has_effect( effect_npc_suspend ) ) {
         guy.process_turn();
     }
-    while( !guy.is_dead() && ( !guy.in_sleep_state() ||
-                               guy.activity.id() == ACT_OPERATION || guy.activity.id() == ACT_MIGRATION_CANCEL ) &&
+    while( !guy.is_dead() && !incapacitation::unconscious( guy ) &&
+           ( !guy.in_sleep_state() ||
+             guy.activity.id() == ACT_OPERATION || guy.activity.id() == ACT_MIGRATION_CANCEL ) &&
            guy.get_moves() > 0 && turns < 10 ) {
         const int moves = guy.get_moves();
         const bool has_destination = guy.has_destination_activity();
         guy.move();
+        g->executions().drain_starts();
+        g->abilities().drain_starts();
         if( moves == guy.get_moves() ) {
             // Count every time we exit npc::move() without spending any moves.
             real_count++;
@@ -380,6 +390,11 @@ void monmove()
         }
 
         m.creature_in_field( critter );
+        if( incapacitation::unconscious( critter ) ) {
+            critter.gravity_check();
+            critter.die_if_drowning( critter.pos_bub(), 10 );
+            incapacitation::suppress_moves( critter );
+        }
         if( calendar::once_every( 1_days ) ) {
             if( critter.has_flag( mon_flag_MILKABLE ) ) {
                 critter.refill_udders();
@@ -389,6 +404,10 @@ void monmove()
         }
         while( critter.get_moves() > 0 && !critter.is_dead() && !critter.has_effect( effect_ridden ) ) {
             critter.made_footstep = false;
+            if( g->executions().controls( critter ) || g->abilities().controls( critter ) ) {
+                critter.set_moves( 0 );
+                break;
+            }
             // Controlled critters don't make their own plans
             if( !critter.has_effect( effect_controlled ) ) {
                 // Formulate a path to follow
@@ -398,6 +417,8 @@ void monmove()
                 break;
             }
             critter.move(); // Move one square, possibly hit u
+            g->executions().drain_starts();
+            g->abilities().drain_starts();
             critter.process_triggers();
             m.creature_in_field( critter );
         }
@@ -503,14 +524,55 @@ void overmap_npc_move()
 
 void game::handle_progress_ui()
 {
+    if( test_mode ) {
+        return;
+    }
     avatar &u = get_avatar();
+
+    // Keep saves and information screens accessible without granting physical actions.
+    if( ( incapacitation::unconscious( u ) || execution_fatal::pending( u ) ) && !test_mode ) {
+        input_context ctxt = get_default_mode_input_context();
+        const std::string action = ctxt.handle_input( 0 );
+        if( action == "save" ) {
+            if( query_yn( _( "Save and quit?" ) ) && save() ) {
+                uquit = QUIT_SAVED;
+            }
+        } else if( action == "quicksave" ) {
+            quicksave();
+        } else if( action == "pause" && execution_fatal::pending( u ) ) {
+            executions().settle_fatal( u, "player_cancelled" );
+        } else if( action == "player_data" ) {
+            u.disp_info( true );
+        } else if( action == "messages" ) {
+            Messages::display_messages();
+        } else if( action == "DISPLAY_HELP" ) {
+            help_window hw;
+            hw.show();
+        } else if( action == "zoom_in" || action == "zoom_out" ) {
+            if( action == "zoom_in" ) {
+                zoom_in();
+            } else {
+                zoom_out();
+            }
+            mark_main_ui_adaptor_resize();
+        }
+    }
 
     // handle activity/progress/waiting UI
     const bool player_is_sleeping = u.has_effect( effect_sleep );
     bool wait_redraw = false;
     std::string wait_message;
     time_duration wait_refresh_rate;
-    if( player_is_sleeping ) {
+    if( execution_fatal::pending( u ) ) {
+        wait_redraw = true;
+        wait_message = _( "You are mortally wounded…" );
+        wait_message += string_format( _( "\n%s to skip" ), press_x( ACTION_PAUSE ) );
+        wait_refresh_rate = 1_turns;
+    } else if( incapacitation::unconscious( u ) ) {
+        wait_redraw = true;
+        wait_message = _( "You are unconscious…" );
+        wait_refresh_rate = 1_turns;
+    } else if( player_is_sleeping ) {
         wait_redraw = true;
         wait_message = _( "Wait till you wake up…" );
         wait_refresh_rate = 30_minutes;
@@ -592,7 +654,14 @@ bool game::do_turn()
     }
 
     timed_event_manager &timed_events = get_timed_events();
+    executions().process();
+    abilities().process();
+    if( get_avatar().death_finalized() && is_game_over() ) {
+        return turn_handler::cleanup_at_end();
+    }
     timed_events.process();
+    // What map generation sent since last turn (MGEN-J01)
+    send_queued_mapgen_events();
     get_item_wakeups().process( calendar::turn );
     if( calendar::once_every( 1_hours ) ) {
         get_craft_reservations().sweep_expired_records();
@@ -679,7 +748,9 @@ bool game::do_turn()
     }
 
     // avatar processes human input through handle_action()
-    if( !u.has_effect( effect_sleep ) || uquit == QUIT_WATCH ) {
+    if( ( !u.has_effect( effect_sleep ) && !incapacitation::unconscious( u ) &&
+          !execution_fatal::pending( u ) ) ||
+        uquit == QUIT_WATCH ) {
         if( u.get_moves() > 0 || uquit == QUIT_WATCH ) {
             cata_timer player_turn_timer( "player_turn" );
             while( u.get_moves() > 0 || uquit == QUIT_WATCH ) {
@@ -714,6 +785,8 @@ bool game::do_turn()
                     u.action_taken();
                 }
 
+                executions().drain_starts();
+                abilities().drain_starts();
                 if( is_game_over() ) {
                     return turn_handler::cleanup_at_end();
                 }
@@ -801,6 +874,16 @@ bool game::do_turn()
         cata_timer process_explosions_timer( "process_explosions" );
         explosion_handler::process_explosions();
     }
+    {
+        cata_timer spawn_queued_monsters_timer( "spawn_queued_monsters" );
+        // what fields, rotting items and births queued this turn appears now, not at the next shift
+        m.spawn_queued_monsters();
+    }
+    if( calendar::once_every( 1_days ) ) {
+        cata_timer refresh_phase_changes_timer( "refresh_phase_changes" );
+        // a new day's temperature average freezes or thaws water near the player too
+        m.refresh_phase_changes();
+    }
     m.creature_in_field( u );
 
     {
@@ -850,6 +933,11 @@ bool game::do_turn()
     }
 
     handle_progress_ui();
+
+    if( uquit == QUIT_SAVED ) {
+        return turn_handler::cleanup_at_end();
+    }
+
     {
         cata_timer update_body_timer( "update_bodytemp" );
         u.update_bodytemp();

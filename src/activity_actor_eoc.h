@@ -5,14 +5,16 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
-#include "calendar.h"
 #include "coordinates.h"
 #include "item_location.h"
 #include "type_id.h"
 
 class Character;
 class activity_actor;
+class monster;
+class time_duration;
 
 // Starting activities that have an activity actor from EOCs (u_assign_activity).
 namespace activity_actors
@@ -42,7 +44,7 @@ bool eoc_start_needs_avatar( const activity_id &type );
  * @param duration the effect's "duration", if it has one
  */
 std::unique_ptr<activity_actor> make_for_eoc( const activity_id &type, const Character &who,
-        const std::string &other_name, const std::optional<time_duration> &duration );
+        std::string_view other_name, const std::optional<time_duration> &duration );
 
 /** The targets u_assign_activity gives an activity (see doc/JSON/EFFECT_ON_CONDITION.md). */
 struct eoc_activity_target {
@@ -54,6 +56,8 @@ struct eoc_activity_target {
     std::optional<recipe_id> recipe;
     /** "butcher_type" */
     std::optional<std::string> butcher_type;
+    /** "target_monster": the monster that is the other talker */
+    monster *creature = nullptr;
 };
 
 /** Which target fields a u_assign_activity effect has. */
@@ -62,9 +66,11 @@ struct eoc_target_fields {
     bool loc = false;
     bool recipe = false;
     bool butcher_type = false;
+    /** "target_monster" */
+    bool creature = false;
 
     bool any() const {
-        return item || loc || recipe || butcher_type;
+        return item || loc || recipe || butcher_type || creature;
     }
 };
 

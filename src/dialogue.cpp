@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <initializer_list>
 #include <iterator>
 #include <list>
 #include <map>
@@ -55,6 +56,7 @@
 #include "mission.h"
 #include "npc.h"
 #include "npc_attitude_cause.h"
+#include "npc_class.h"
 #include "npc_opinion.h"
 #include "npctalk.h"
 #include "npctrade.h"
@@ -254,6 +256,13 @@ void avatar::talk_to( std::unique_ptr<talker> talk_with, bool radio_contact,
         }
     } else {
         d.add_topic( debug_topic );
+    }
+    if( d.topic_stack.empty() ) {
+        // A monster, item, vehicle or furniture without chat topics (open_dialogue with no
+        // "topic"): the conversation would start from a topic that isn't there
+        debugmsg( "%s has nothing to talk about: it has no chat topics.",
+                  d.actor( true )->disp_name() );
+        return;
     }
     dialogue_imgui d_img( &d );
     d_img.draw_dialogue_imgui( is_computer, is_not_conversation, remote_name );
@@ -802,7 +811,15 @@ bool talk_trial::roll( dialogue &d ) const
                               type == TALK_TRIAL_LIE;
     if( speech_trial && d.actor( false )->get_character() ) {
         Character &u = *d.actor( false )->get_character();
-        if( success ) {
+        if( speech_practice ) {
+            dialogue how_it_went( d );
+            how_it_went.set_value( "chance", chance );
+            how_it_went.set_value( "success", success ? 1 : 0 );
+            const int amount = static_cast<int>( std::round( speech_practice->evaluate( how_it_went ) ) );
+            if( amount > 0 ) {
+                u.practice( skill_speech, amount );
+            }
+        } else if( success ) {
             u.practice( skill_speech, ( 100 - chance ) / 10 );
         } else {
             u.practice( skill_speech, ( 100 - chance ) / 7 );
@@ -951,9 +968,6 @@ const_dialogue::const_dialogue( const const_dialogue &d )
     if( has_beta ) {
         beta = d.const_actor( true )->const_clone();
     }
-    if( !has_alpha && !has_beta ) {
-        debugmsg( "Constructed a dialogue with no actors!  %s", get_callstack() );
-    }
     if( d.context.has_value() ) {
         context = *d.context;
     }
@@ -1003,11 +1017,12 @@ talk_data talk_response::create_option_line( dialogue &d, const input_event &hot
         ftext = text;
     } else if( trial.type == TALK_TRIAL_SKILL_CHECK ) {
         const Skill &req_skill = skill_id( trial.skill_required ).obj();
+        const int difficulty = trial.get_difficulty( d );
         ftext = string_format( pgettext( "talk option", "[%1$s %2$d/%3$d] %4$s" ),
                                req_skill.name(),
                                std::min( d.actor( false )->get_skill_level( req_skill.ident() ),
-                                         trial.difficulty ),
-                               trial.difficulty,
+                                         difficulty ),
+                               difficulty,
                                text );
     } else {
         // dialogue w/ a % chance to work
@@ -1452,7 +1467,10 @@ talk_trial::talk_trial( const JsonObject &jo )
     }
     type = iter->second;
     if( type != TALK_TRIAL_NONE && type != TALK_TRIAL_CONDITION ) {
-        difficulty = jo.get_int( "difficulty" );
+        difficulty = get_dbl_or_var( jo, "difficulty", true );
+    }
+    if( type == TALK_TRIAL_LIE || type == TALK_TRIAL_PERSUADE || type == TALK_TRIAL_INTIMIDATE ) {
+        optional( jo, false, "speech_practice", speech_practice );
     }
     if( type == TALK_TRIAL_SKILL_CHECK ) {
         skill_required = jo.get_string( "skill_required" );
@@ -1462,10 +1480,18 @@ talk_trial::talk_trial( const JsonObject &jo )
         read_condition( jo, "condition", condition, false );
     }
     if( jo.has_member( "mod" ) ) {
-        for( JsonArray jmod : jo.get_array( "mod" ) ) {
+        for( const JsonValue jmod : jo.get_array( "mod" ) ) {
+            if( jmod.test_object() ) {
+                // MATH-J03: { "math": [ "..." ] } adds what it gives, with any alpha talker
+                dbl_or_var math_mod;
+                jmod.read( math_mod, true );
+                math_modifiers.push_back( math_mod );
+                continue;
+            }
+            JsonArray pair = jmod.get_array();
             trial_mod this_modifier;
-            this_modifier.first = jmod.next_string();
-            this_modifier.second = jmod.next_int();
+            this_modifier.first = pair.next_string();
+            this_modifier.second = pair.next_int();
             modifiers.push_back( this_modifier );
         }
     }
@@ -2021,11 +2047,20 @@ void json_talk_topic::load( const JsonObject &jo, std::string_view src )
             }
         }
     }
+    // A later definition of the topic keeps the portrait an earlier one gave unless it names one.
     if( jo.has_member( "portrait_override" ) ) {
         portrait_override = character_portrait_id( jo.get_member( "portrait_override" ) );
-    } else {
-        // FIXME: Use real null IDs not std::optional juggling :(
-        portrait_override = std::nullopt;
+    }
+    // Earlier definitions' responses: "replace_responses" drops them all, "delete" the ones
+    // matched by text and/or topic (DATA-J02).
+    if( jo.get_bool( "replace_responses", false ) ) {
+        responses.clear();
+    }
+    if( jo.has_object( "delete" ) ) {
+        JsonObject del = jo.get_object( "delete" );
+        for( const JsonObject match : del.get_array( "responses" ) ) {
+            delete_responses( match );
+        }
     }
     bool insert_above_bottom = false;
     if( jo.has_bool( "insert_before_standard_exits" ) ) {
@@ -2061,6 +2096,30 @@ void json_talk_topic::load( const JsonObject &jo, std::string_view src )
     }
     replace_built_in_responses = jo.get_bool( "replace_built_in_responses",
                                  replace_built_in_responses );
+}
+
+void json_talk_topic::delete_responses( const JsonObject &match )
+{
+    const bool by_text = match.has_member( "text" );
+    const bool by_topic = match.has_string( "topic" );
+    if( !by_text && !by_topic ) {
+        match.throw_error( R"(a response to delete needs a "text", a "topic" or both)" );
+    }
+    translation text;
+    if( by_text ) {
+        match.read( "text", text, true );
+    }
+    const std::string topic = by_topic ? match.get_string( "topic" ) : std::string();
+    const auto doomed = [&]( const json_talk_response & r ) {
+        const talk_response &resp = r.get_actual_response();
+        return ( !by_text || resp.truetext == text ) &&
+               ( !by_topic || resp.success.next_topic.id == topic );
+    };
+    const auto removed = std::remove_if( responses.begin(), responses.end(), doomed );
+    if( removed == responses.end() ) {
+        match.throw_error( "the talk topic has no such response to delete" );
+    }
+    responses.erase( removed, responses.end() );
 }
 
 bool json_talk_topic::gen_responses( dialogue &d )
@@ -2120,7 +2179,7 @@ cata::flat_set<std::string> json_talk_topic::get_directly_reachable_topics(
     return cata::flat_set<std::string>( result.begin(), result.end() );
 }
 
-std::vector<json_talk_response> json_talk_topic::get_responses()
+std::vector<json_talk_response> json_talk_topic::get_responses() const
 {
     return responses;
 }
@@ -2140,10 +2199,39 @@ std::optional<character_portrait_id> json_talk_topic::get_portrait_override() co
     return portrait_override;
 }
 
-void json_talk_topic::check_consistency() const
+void json_talk_topic::check_consistency( const std::string &id ) const
 {
-    // TODO: check that all referenced topic actually exist. This is currently not possible
-    // as they only exist as built in strings, not in the json_talk_topics map.
+    // EOC-J03: every topic a response leads to exists, and a skill check's skill
+    const auto check_response = [&id]( const json_talk_response & r ) {
+        const talk_response &resp = r.get_actual_response();
+        const std::string text = resp.truetext.translated();
+        for( const std::string *topic : {
+                 &resp.success.next_topic.id, &resp.failure.next_topic.id, &r.get_failure_topic()
+             } ) {
+            if( !topic->empty() && !talk_topic_all::talk_topic_exists( *topic ) ) {
+                debugmsg( R"(Talk topic "%s": the response "%s" leads to talk topic "%s", which )"
+                          "does not exist", id, text, *topic );
+            }
+        }
+        if( resp.trial.type == TALK_TRIAL_SKILL_CHECK &&
+            !skill_id( resp.trial.skill_required ).is_valid() ) {
+            debugmsg( R"(Talk topic "%s": the response "%s" checks the skill "%s", which does not )"
+                      "exist", id, text, resp.trial.skill_required );
+        }
+    };
+    for( const json_talk_response &r : responses ) {
+        check_response( r );
+    }
+    for( const json_talk_repeat_response &r : repeat_responses ) {
+        check_response( r.response );
+    }
+}
+
+void check_talk_topic_consistency()
+{
+    for( const std::pair<const std::string, json_talk_topic> &topic : json_talk_topics ) {
+        topic.second.check_consistency( topic.first );
+    }
 }
 
 void unload_talk_topics()
@@ -2163,9 +2251,53 @@ void load_talk_topic( const JsonObject &jo, std::string_view src )
     }
 }
 
-std::string npc::pick_talk_topic( const Character &/*u*/ )
+std::string *chatbin_topic( dialogue_chatbin &chatbin, std::string_view name )
+{
+    static const std::array<std::pair<std::string_view, std::string dialogue_chatbin::*>, 15> topics
+    = { {
+            { "first_topic", &dialogue_chatbin::first_topic },
+            { "talk_radio", &dialogue_chatbin::talk_radio },
+            { "talk_leader", &dialogue_chatbin::talk_leader },
+            { "talk_friend", &dialogue_chatbin::talk_friend },
+            { "talk_stole_item", &dialogue_chatbin::talk_stole_item },
+            { "talk_wake_up", &dialogue_chatbin::talk_wake_up },
+            { "talk_mug", &dialogue_chatbin::talk_mug },
+            { "talk_stranger_aggressive", &dialogue_chatbin::talk_stranger_aggressive },
+            { "talk_stranger_scared", &dialogue_chatbin::talk_stranger_scared },
+            { "talk_stranger_wary", &dialogue_chatbin::talk_stranger_wary },
+            { "talk_stranger_friendly", &dialogue_chatbin::talk_stranger_friendly },
+            { "talk_stranger_neutral", &dialogue_chatbin::talk_stranger_neutral },
+            { "talk_friend_guard", &dialogue_chatbin::talk_friend_guard },
+            { "talk_mission_inquire", &dialogue_chatbin::talk_mission_inquire },
+            { "talk_mission_describe_urgent", &dialogue_chatbin::talk_mission_describe_urgent }
+        }
+    };
+    for( const std::pair<std::string_view, std::string dialogue_chatbin::*> &topic : topics ) {
+        if( topic.first == name ) {
+            return &( chatbin.*topic.second );
+        }
+    }
+    return nullptr;
+}
+
+std::string npc::pick_talk_topic( const Character &u )
 {
     const npc_attitude_cause cause( npc_attitude_cause::opinion );
+    // the class's own stranger_topics first, the first that holds
+    if( myclass.is_valid() && !myclass->get_stranger_topics().empty() ) {
+        const const_dialogue d( get_const_talker_for( u ), get_const_talker_for( *this ) );
+        for( const npc_stranger_topic &rule : myclass->get_stranger_topics() ) {
+            if( rule.condition && !rule.condition( d ) ) {
+                continue;
+            }
+            if( rule.attitude ) {
+                set_attitude( *rule.attitude );
+            }
+            if( const std::string *topic = chatbin_topic( chatbin, rule.topic ) ) {
+                return *topic;
+            }
+        }
+    }
     if( personality.aggression > 0 ) {
         if( op_of_u.fear * 2 < personality.bravery && personality.altruism < 0 ) {
             set_attitude( NPCATT_MUG );

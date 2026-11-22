@@ -9,7 +9,6 @@
 #include <list>
 #include <memory>
 #include <optional>
-#include <set>
 #include <string>
 #include <utility>
 
@@ -226,7 +225,7 @@ class item_location : public visitable
         static item_location form_loc_recursive( T &loc, item &it );
 
         VisitResponse visit_contents( const std::function<VisitResponse( const item_location & )> &func,
-                                      const std::set<pocket_type> &allowed_pockets = {pocket_type::CONTAINER} ) const;
+                                      pocket_type_set allowed_pockets = { pocket_type::CONTAINER } ) const;
         VisitResponse visit_items( const std::function<VisitResponse( const item_location & )> &func ) const
         override;
         std::list<item> remove_items_with( const std::function<bool( const item &e )> &filter,

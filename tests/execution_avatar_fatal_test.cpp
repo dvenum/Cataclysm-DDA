@@ -152,9 +152,13 @@ int64_t contact( Creature &source, bool accepted = true )
         const bodypart_id bp = body_part_torso.id();
         {
             const execution_combat::primary_hit_scope primary( root );
+            // No defense was rolled against this hit: it lands where it is aimed, with no block
+            // and no limb shielding the torso (Creature::deflect_hit_part)
+            target.clear_melee_defense();
             target.deal_melee_hit( &source, 1000, true,
                                    damage_instance( damage_pure, 1000 ), dealt, {}, &bp );
         }
+        REQUIRE( dealt.bp_hit == bp );
         root.resolve( true, source.as_monster() ? std::nullopt : std::optional<bool>( true ), dealt );
         target.check_dead_state( &get_map() );
         if( source.as_character() && execution_fatal::pending( target ) ) {

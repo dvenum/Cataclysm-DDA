@@ -365,7 +365,7 @@ enum consumption_result {
 static consumption_result try_consume( npc &p, item_location &it, std::string &reason )
 {
     // TODO: Unify this with 'player::consume_item()'
-    item to_eat = *it;
+    item &to_eat = *it;
     if( to_eat.is_null() ) {
         debugmsg( "Null item to try_consume." );
         return REFUSED;
@@ -450,6 +450,12 @@ std::string talker_npc::give_item_to( const bool to_use )
     if( !loc ) {
         return me_npc->chat_snippets().snip_give_cancel.translated();
     }
+    return give_item_to( loc, to_use );
+}
+
+std::string talker_npc::give_item_to( item_location &loc, const bool to_use )
+{
+    avatar &player_character = get_avatar();
     item &given = *loc;
 
     if( ( loc == player_character.get_wielded_item() &&

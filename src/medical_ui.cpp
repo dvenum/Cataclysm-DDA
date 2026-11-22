@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <imgui/imgui.h>
-#include <algorithm>
 #include <cstdlib>
 #include <functional>
 #include <memory>

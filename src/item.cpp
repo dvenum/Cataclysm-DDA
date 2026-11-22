@@ -126,7 +126,6 @@ static const item_category_id item_category_software( "software" );
 
 static const itype_id itype_barrel_small( "barrel_small" );
 static const itype_id itype_blood( "blood" );
-static const itype_id itype_cash_card( "cash_card" );
 static const itype_id itype_corpse( "corpse" );
 static const itype_id itype_corpse_generic_human( "corpse_generic_human" );
 static const itype_id itype_craft( "craft" );
@@ -2767,7 +2766,7 @@ bool item::is_money( const std::set<ammotype> &ammo ) const
 
 bool item::is_cash_card() const
 {
-    return typeId() == itype_cash_card;
+    return is_money();
 }
 
 bool item::is_estorage() const

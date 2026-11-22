@@ -4841,6 +4841,11 @@ bool Character::invoke_item( item_location &used, const std::string &method,
 
     actually_used->activation_consume( charges_used.value(), pt, this );
 
+    // A stand-in for a tool a vehicle, furniture or a bionic provides is not there to be used up
+    if( actually_used->has_flag( flag_PSEUDO ) ) {
+        return activated( false );
+    }
+
     if( actually_used->has_flag( flag_SINGLE_USE ) || actually_used->is_bionic() ) {
         actually_used.remove_item();
         return activated( true );

@@ -25,6 +25,7 @@
 #include "game.h"
 #include "game_inventory.h"
 #include "handle_liquid.h"
+#include "iexamine.h"
 #include "input_popup.h"
 #include "item.h"
 #include "item_location.h"
@@ -70,8 +71,6 @@ static const efftype_id effect_tied( "tied" );
 static const flag_id json_flag_MECH_BAT( "MECH_BAT" );
 static const flag_id json_flag_TACK( "TACK" );
 static const flag_id json_flag_TIE_UP( "TIE_UP" );
-
-static const itype_id itype_cash_card( "cash_card" );
 
 static const quality_id qual_CUT( "CUT" );
 static const quality_id qual_SHEAR( "SHEAR" );
@@ -1030,7 +1029,7 @@ bool monexamine::pay_bot( monster &z )
 {
     Character &player_character = get_player_character();
     time_duration friend_time = z.get_effect_dur( effect_pet );
-    const int charge_count = player_character.charges_of( itype_cash_card );
+    const int charge_count = iexamine::cash_card_money( player_character );
 
     int amount = 0;
     uilist bot_menu;
@@ -1051,7 +1050,7 @@ bool monexamine::pay_bot( monster &z )
                                     "How much friendship do you get?  Max: %d minutes.", charge_count / 10 ), charge_count / 10 );
             if( amount > 0 ) {
                 time_duration time_bought = time_duration::from_minutes( amount );
-                player_character.use_charges( itype_cash_card, amount * 10 );
+                iexamine::spend_cash_card_money( player_character, amount * 10 );
                 z.add_effect( effect_pet, time_bought );
                 z.add_effect( effect_paid, time_bought, true );
                 z.friendly = -1;

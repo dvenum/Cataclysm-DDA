@@ -98,6 +98,8 @@ class talker_npc : virtual public talker_npc_const,
                                     const spell_id &c_spell, const proficiency_id &c_proficiency ) override;
         void add_debt( int cost ) override;
         std::string give_item_to( bool to_use ) override;
+        /** What the NPC does with loc, an item the avatar offers it (after the "Offer what?" menu). */
+        std::string give_item_to( item_location &loc, bool to_use );
         bool buy_from( int amount ) override;
         void select_mission( mission *selected ) override;
         void check_missions() override;

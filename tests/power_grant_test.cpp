@@ -47,6 +47,7 @@
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "map_selector.h"
 #include "math_parser_diag_value.h"
 #include "monster.h"
 #include "npc.h"
@@ -875,10 +876,12 @@ TEST_CASE( "armored_form_demo_item_uses_the_paid_ability_and_returns_original_ge
     const int64_t original = shirt( who );
     const auto use = [&]() {
         item focus( itype_power_demo_form_grant_focus, calendar::turn );
+        // a loose item, where its user is
+        item_location focus_loc( map_cursor( &get_map(), who.pos_bub() ), &focus );
         const auto found = focus.type->use_methods.find( "effect_on_conditions" );
         REQUIRE( found != focus.type->use_methods.end() );
         REQUIRE( found->second.get_actor_ptr() );
-        found->second.get_actor_ptr()->use( &who, focus, &get_map(), who.pos_bub() );
+        found->second.get_actor_ptr()->use( &who, focus_loc, &get_map(), who.pos_bub() );
         g->abilities().drain_starts();
     };
     use();

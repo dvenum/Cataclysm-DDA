@@ -44,7 +44,7 @@ static const furn_str_id furn_f_bathtub( "f_bathtub" );
 
 static const itype_id itype_2x4( "2x4" );
 static const itype_id itype_canteen( "canteen" );
-static const itype_id itype_cash_card( "cash_card" );
+static const itype_id itype_cash_card_test( "cash_card_test" );
 static const itype_id itype_hammer( "hammer" );
 static const itype_id itype_nail( "nail" );
 static const itype_id itype_rock( "rock" );
@@ -124,13 +124,14 @@ void load_construction_json( construction &con, const std::string &json )
     con.load( jo, "dda" );
 }
 
+// Vanilla has no cash cards since #89166: the test data's stores money as Aftershock's does
 void give_cash_card( avatar &u, const int cents )
 {
     u.remove_weapon();
-    item card( itype_cash_card );
+    item card( itype_cash_card_test );
     card.ammo_set( card.ammo_default(), cents );
     u.set_wielded_item( card );
-    REQUIRE( u.charges_of( itype_cash_card ) == cents );
+    REQUIRE( u.charges_of( itype_cash_card_test ) == cents );
 }
 
 } // namespace
@@ -375,20 +376,20 @@ TEST_CASE( "terr-b11_vending_machine_bills_the_cards_then_the_bank", "[audit][ex
     SECTION( "a price equal to the card's balance empties the card" ) {
         give_cash_card( u, 900 );
         CHECK( iexamine::vending_pay( u, 900, false ) );
-        CHECK( u.charges_of( itype_cash_card ) == 0 );
+        CHECK( u.charges_of( itype_cash_card_test ) == 0 );
     }
     SECTION( "the bank pays only what the card can't" ) {
         give_cash_card( u, 900 );
         u.cash = 200;
         CHECK( iexamine::vending_pay( u, 1000, true ) );
-        CHECK( u.charges_of( itype_cash_card ) == 0 );
+        CHECK( u.charges_of( itype_cash_card_test ) == 0 );
         CHECK( u.cash == 100 );
     }
     SECTION( "the card pays all it can cover, the bank nothing" ) {
         give_cash_card( u, 900 );
         u.cash = 200;
         CHECK( iexamine::vending_pay( u, 500, true ) );
-        CHECK( u.charges_of( itype_cash_card ) == 400 );
+        CHECK( u.charges_of( itype_cash_card_test ) == 400 );
         CHECK( u.cash == 200 );
     }
     SECTION( "what neither can cover is refused and nothing is taken" ) {
@@ -397,7 +398,7 @@ TEST_CASE( "terr-b11_vending_machine_bills_the_cards_then_the_bank", "[audit][ex
         CHECK_FALSE( iexamine::vending_pay( u, 1000, false ) );
         u.cash = 50;
         CHECK_FALSE( iexamine::vending_pay( u, 1000, true ) );
-        CHECK( u.charges_of( itype_cash_card ) == 900 );
+        CHECK( u.charges_of( itype_cash_card_test ) == 900 );
         CHECK( u.cash == 50 );
     }
 }

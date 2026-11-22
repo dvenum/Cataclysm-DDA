@@ -94,7 +94,7 @@ const dream *find_dream( const std::string &id )
 std::vector<std::string> response_texts( const std::string &topic_id )
 {
     std::vector<std::string> texts;
-    const json_talk_topic *topic = get_talk_topic( topic_id );
+    const json_talk_topic *topic = talk_topic_all::get_talk_topic( topic_id );
     if( topic != nullptr ) {
         for( const json_talk_response &r : topic->get_responses() ) {
             texts.push_back( r.get_actual_response().truetext.translated() );
@@ -375,7 +375,7 @@ TEST_CASE( "data-j02_talk_topics_delete_and_replace_responses", "[audit][npc]" )
         CHECK( response_texts( "TALK_AUDIT_HF_REPLACE" ) == std::vector<std::string> { "Only me." } );
     }
     SECTION( "a definition without portrait_override keeps the earlier portrait" ) {
-        const json_talk_topic *topic = get_talk_topic( "TALK_AUDIT_HF_DELETE" );
+        const json_talk_topic *topic = talk_topic_all::get_talk_topic( "TALK_AUDIT_HF_DELETE" );
         REQUIRE( topic != nullptr );
         REQUIRE( topic->get_portrait_override().has_value() );
         CHECK( topic->get_portrait_override()->str() == "audit_hf_portrait" );

@@ -17,7 +17,6 @@
 #include "memory_fast.h"
 #include "npc.h"
 #include "options_helpers.h"
-#include "overmapbuffer.h"
 #include "player_helpers.h"
 #include "point.h"
 #include "type_id.h"
@@ -126,10 +125,12 @@ TEST_CASE( "npc_light_and_fine_detail_vision_mod", "[character][npc][sight][ligh
 {
     g->place_player( { 66, 66, 0 } );
     Character &u = get_player_character();
+    // Only the NPC object is needed, so it stays out of the overmap: loaded from there, its
+    // placeholder z of -500 failed to place whenever an earlier test had left the map over its x
+    // and y. Fake, its moves don't look for it on an overmap either.
     shared_ptr_fast<npc> guy = make_shared_fast<npc>();
-    overmap_buffer.insert_npc( guy );
-    g->load_npcs();
     npc &n = *guy;
+    n.set_fake( true );
     n.set_body();
 
     clear_avatar();

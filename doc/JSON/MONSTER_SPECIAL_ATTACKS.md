@@ -196,7 +196,7 @@ These special attacks are defined in [JSON](/data/json/monster_special_attacks),
 | `hitsize_min`               | Integer, lower bound of limb size this attack can target (if no bodypart targets are explicitly defined)
 | `hitsize_max`               | Integer, upper bound of limb size this attack can target.
 | `no_adjacent`			      | Boolean, default false. The attack can't target adjacent creatures.
-| `dodgeable`                 | Boolean, default true. The attack can be dodged normally.
+| `dodgeable`                 | Boolean, default true. The attack can be dodged normally. An undodgeable attack never counts as dodged, so it sets off no dodge counters or `ondodge` reactions. A dodgeable `grab` misses at any negative hit spread, and that counts as a dodge.
 | `uncanny_dodgeable`         | Boolean, defaults to the value of `dodgeable`. The attack can be dodged by the Uncanny Dodge bionic or by characters having the `UNCANNY_DODGE` character flag.  Uncanny dodging takes precedence over normal dodging.
 | `blockable`                 | Boolean, default true.  The attack can be blocked (after the dodge checks).
 | `attack_amount`             | Pair of integers, default 1.  Specifies if this attack will hit you once, or multiple times, in multiple limbs (or multiple times in the same limb, if you are unlucky). The total damage of attack will be split evenly across all hits.

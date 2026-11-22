@@ -82,9 +82,6 @@ struct mut_attack {
     damage_instance base_damage;
     /** Multiplied by strength and added to the above */
     damage_instance strength_damage;
-
-    /** Should be true when and only when this attack needs hardcoded handling */
-    bool hardcoded_effect = false;
 };
 
 struct mut_transform {

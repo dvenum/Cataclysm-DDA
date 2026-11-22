@@ -79,7 +79,7 @@ For example, `{ "npc_has_effect": "Shadow_Reveal" }`, used by shadow lieutenant,
 | mapgen computer: "eocs", option and failure "eocs" | user (avatar)             | the computer                | `pos`, the computer's location (options, failures and `"eocs_mode": "on_login"`). See [MAPGEN.md](MAPGEN.md)
 | terrain/furniture/field "bash": "eoc_on_hit", "eoc_on_destroy" | basher (Creature), or an empty talker with no creature if the basher is not known | NONE | `loc`, location variable, the bashed tile; `old_ter`, `old_furn`, `new_ter`, `new_furn`, strings, ids before and after the bash (fields: `field`, string, the field type id); `cause`, string: `smash` (a creature did it), `explosion`, `fire`, `vehicle`, `collapse`, `projectile`, or `other`. Check `u_is_character` or `u_is_monster` before manipulating the alpha talker
 | monster_attack: "eoc"                            | attacker ( Monster)         | victim (Creature)           | `damage`, int, damage dealt by attack
-| martial_art: "onattack_eocs", "onhit_eocs", "oncrit_eocs", "onkill_eocs", "onmiss_eocs" | attacker (Character) | target (Creature) | `weapon`, `technique`, `bp`, strings; `damage`, number, damage dealt; `hit`, `crit`, `killed`, 1 or 0. See [Martial art event EOCs](MARTIALART_JSON.md#martial-art-event-eocs) for which hook gets which
+| martial_art: "onattack_eocs", "onhit_eocs", "oncrit_eocs", "onkill_eocs", "onmiss_eocs" | attacker (Character) | target (Creature) | `weapon`, `technique`, `bp`, strings; `damage`, number, damage dealt; `hit`, `crit`, `killed`, 1 or 0 (a glancing hit counts as a hit). See [Martial art event EOCs](MARTIALART_JSON.md#martial-art-event-eocs) for which hook gets which
 | martial_art: "ongethit_eocs", "onblock_eocs", "ondodge_eocs" | defender (Character) | attacker (Creature, if exists, otherwise NONE) | `bp`, string, body part hit (none for an explosion); `damage`, number, incoming damage (not for `ondodge_eocs`; for an explosion, the blast's force); `hit_by`, string, for `ongethit_eocs`: `melee`, `projectile`, `shrapnel` or `explosion`
 | martial_art: "ongrab_eocs", "ongrabbed_eocs" | the one holding (`ongrab_eocs`) or held (`ongrabbed_eocs`) (Character) | the other one (Creature) | `grab_strength`, number, strength of the hold; `grab_part`, string, body part held (not set when a monster is held)
 | martial_art: "static_eocs", "onmove_eocs", "onpause_eocs" | character (Character) | NONE                        |
@@ -1175,6 +1175,79 @@ checks are you hot or cold
 
 ```jsonc
 { "u_has_any_wound": [ "bruise_bad", "bone_broken" ], "bodypart": "torso" }
+```
+
+### `u_is_bleeding`, `npc_is_bleeding`
+- type: string or object
+- return true if alpha or beta talker's has any bleeding wound
+- `severity` can be used to specify the severity of such bleeding
+
+#### Valid talkers:
+
+| Avatar | NPC | Monster | Furniture | Item | Vehicle |
+| ------ | --------- | ---- | ------- | --- | ---- |
+| ✔️ | ✔️ | ❌ | ❌ | ❌ | ❌ |
+
+#### Examples
+
+```jsonc
+"u_is_bleeding"
+```
+
+```jsonc
+{ "u_is_bleeding": "MAJOR" }
+```
+
+### `u_bodypart_is_bleeding`, `npc_bodypart_is_bleeding`
+- type: string or [variable object](#variable-object)
+- return true if alpha or beta talker's specific bodypart has any bleeding wound
+- `severity` can be used to specify the severity of such bleeding
+- `check_sublimbs` optional: checks all other limbs that have this limb as the `main_limb`. False by default
+
+#### Valid talkers:
+
+| Avatar | NPC | Monster | Furniture | Item | Vehicle |
+| ------ | --------- | ---- | ------- | --- | ---- |
+| ✔️ | ✔️ | ❌ | ❌ | ❌ | ❌ |
+
+#### Examples
+
+```jsonc
+{ "u_bodypart_is_bleeding": "torso", "severity": "MAJOR" }
+```
+
+### `u_bodypart_is_wounded`, `npc_bodypart_is_wounded`
+- type: string or [variable object](#variable-object)
+- return true if alpha or beta talker's specific bodypart has any wound at all
+- `check_sublimbs` optional: checks all other limbs that have this limb as the `main_limb`. False by default
+
+#### Valid talkers:
+
+| Avatar | NPC | Monster | Furniture | Item | Vehicle |
+| ------ | --------- | ---- | ------- | --- | ---- |
+| ✔️ | ✔️ | ❌ | ❌ | ❌ | ❌ |
+
+#### Examples
+Returns true if the the `arm_r` or `hand_r` is wounded, since `hand_r` is a sub limb of `arm_r`
+```jsonc
+{ "u_bodypart_is_wounded": "arm_r", "check_sublimbs": true }
+```
+
+### `u_bodypart_is_wounded_and_fixable`, `npc_bodypart_is_wounded_and_fixable`
+- type: string or [variable object](#variable-object)
+- return true if alpha or beta talker's specific bodypart has any wound that has possible wound fixes. It does not check if any of the fixes are actually performable. Designed for the sidebar to use to display that there are wounds that can be treated
+- `check_sublimbs` optional: checks all other limbs that have this limb as the `main_limb`. False by default
+
+#### Valid talkers:
+
+| Avatar | NPC | Monster | Furniture | Item | Vehicle |
+| ------ | --------- | ---- | ------- | --- | ---- |
+| ✔️ | ✔️ | ❌ | ❌ | ❌ | ❌ |
+
+#### Examples
+
+```jsonc
+{ "u_bodypart_is_wounded_and_fixable": { "context_val": "widget" } }
 ```
 
 ### `u_has_proficiency`, `npc_has_proficiency`
@@ -2573,7 +2646,7 @@ Watch only what a statistic or an EOC needs: a statistic on `var_changed` keeps 
 | character_fires_gun | Triggers when a character (the avatar or an NPC) has fired a gun: once for a whole burst, after the shots.  `shots` is how many it fired, `hits` how many of them hit a creature, `ammo` the ammunition of the first shot (`null` for none).  Not for turrets firing on their own | { "character", `character_id` },<br/> { "gun", `itype_id` },<br/> { "ammo", `itype_id` },<br/> { "shots", `int` },<br/> { "hits", `int` } | character / NONE |
 | character_forgets_spell |  | { "character", `character_id` },<br/> { "spell", `spell_id` } | character / NONE |
 | character_gains_effect |  | { "character", `character_id` },<br/> { "bodypart", `body_part` },<br/> { "effect", `efftype_id` },<br/> { "intensity", `int` } | character / NONE |
-| character_gains_wound | Triggers when a character (the avatar or an NPC) gets a new wound on a body part: from a hit, `u_add_wound`, or a treatment (`wound_fix`) that adds one.  A hit that makes a wound the part already has worse sends `character_wound_progresses` instead.  Statistics don't keep it | { "character", `character_id` },<br/> { "bodypart", `body_part` },<br/> { "wound", `string` } (the wound type id) | character / NONE |
+| character_gains_wound | Triggers when a character (the avatar or an NPC) gets a new wound on a body part: from a hit, `u_add_wound`, or a treatment (`wound_fix`) that adds one.  A hit (or `u_add_wound` with `may_worsen`) that makes a wound the part already has worse sends `character_wound_progresses` instead.  Statistics don't keep it | { "character", `character_id` },<br/> { "bodypart", `body_part` },<br/> { "wound", `string` } (the wound type id) | character / NONE |
 | character_gets_headshot |  | { "character", `character_id` } | character / NONE |
 | character_grabs_creature | Triggers when a character takes hold of a creature: the grab action, `u_grab`, or anything that sets up a hold (grappling) | { "character", `character_id` },<br/> { "victim", `character_id` } (invalid for a monster),<br/> { "victim_type", `mtype_id` } (`mon_null` for a character),<br/> { "victim_name", `string` },<br/> { "bodypart", `body_part` } (the part held; `bp_null` for a monster, which is held as a whole),<br/> { "strength", `int` } (of the hold, 1 to 100) | character (grabber) / creature (held: character or monster) |
 | character_hears_sound | Triggers when a character (the avatar or an NPC) hears a sound: once per sound it hears, asleep or awake, after its hearing, the weather, the distance and what lies between have lowered it, if anything is left (`heard_volume` above 0). `volume` is the sound's own volume, `category` its kind (`background`, `weather`, `sensory`, `music`, `movement`, `speech`, `electronic_speech`, `activity`, `destructive_activity`, `alarm`, `combat`, `alert` or `order`) and `location` where it was made. A sound made while the character's sounds are being heard (by an EOC of this event, say) doesn't send it again to that character before the next turn, so an EOC that answers every sound can't loop. Statistics don't keep it | { "character", `character_id` },<br/> { "volume", `int` },<br/> { "heard_volume", `int` },<br/> { "category", `string` },<br/> { "location", `tripoint` }, | character / NONE |
@@ -2630,7 +2703,7 @@ Watch only what a statistic or an EOC needs: a statistic on `var_changed` keeps 
 | character_falls | Triggers when a character (the avatar or an NPC) falls down one or more Z-levels, after the landing. `height` is the number of Z-levels fallen, before anything (a small size, `ONE_STORY_FALL`, wings, a jetpack) softened it | { "character", `character_id` },<br/> { "height", `int` } | character / NONE |
 | character_climbs | Triggers when the avatar has climbed up or down with a [climbing aid](CLIMBING.md) without slipping: climbing up a wall or furniture, climbing down a ledge (the examine menu), or descending with `WALL_CLING`. `direction` is `up` or `down`, `climbing_aid` the aid's id | { "character", `character_id` },<br/> { "climbing_aid", `string` },<br/> { "direction", `string` },<br/> { "height", `int` } | character / NONE |
 | character_moves | Triggers when a character, the avatar or an NPC, steps onto another tile, after the step (as `avatar_moves` does for the avatar). Statistics don't keep it | { "character", `character_id` },<br/> { "mount", `mtype_id` },<br/> { "terrain", `ter_id` },<br/> { "movement_mode", `move_mode_id` },<br/> { "underwater", `bool` },<br/> { "z", `int` } | character / NONE |
-| character_wound_progresses | Triggers when a character's wound becomes another: a hit made it worse (`wound_progression`), or its `progress_timer` ran out.  `wound` is the wound it was, `new_wound` the one it is now.  Statistics don't keep it | { "character", `character_id` },<br/> { "bodypart", `body_part` },<br/> { "wound", `string` },<br/> { "new_wound", `string` } | character / NONE |
+| character_wound_progresses | Triggers when a character's wound becomes another: a hit or `u_add_wound` with `may_worsen` made it worse (`wound_progression`), or its `progress_timer` ran out.  `wound` is the wound it was, `new_wound` the one it is now.  Statistics don't keep it | { "character", `character_id` },<br/> { "bodypart", `body_part` },<br/> { "wound", `string` },<br/> { "new_wound", `string` } | character / NONE |
 | companion_mission_finished | Triggers when a companion is back from a mission (camp missions and NPC jobs alike), is called back, or dies on it. A companion that dies on a mission also runs its `death_eocs` and sends `character_dies` first | { "npc", `character_id` },<br/> { "mission", `string` } (mission kind, as for `companion_mission_started`),<br/> { "pos", `tripoint` } (location of the overmap tile the mission was given from, the camp for camp missions, its north-west corner),<br/> { "outcome", `string` } (`returned`, `canceled` or `died`),<br/> { "camp_mission", `string` } (the [faction_mission](FACTION_MISSIONS.md) id of a camp mission from JSON, e.g. `camp_foraging`; empty for upgrades, crafting, fortifications and NPC jobs) | companion / NONE |
 | companion_mission_started | Triggers when a companion sets off on a mission | { "npc", `character_id` },<br/> { "mission", `string` } (mission kind, e.g. `Camp_Scouting` or `Scavenging_Patrol_Job`; for a camp mission from JSON its behavior, `Camp_Generic` for a generic one such as foraging),<br/> { "pos", `tripoint` } (location of the overmap tile the mission was given from, its north-west corner),<br/> { "camp_mission", `string` } (the [faction_mission](FACTION_MISSIONS.md) id of a camp mission from JSON, empty for the others) | companion / NONE |
 | consumes_marloss_item | | { "character", `character_id` },<br/> { "itype", `itype_id` }, | character / NONE |
@@ -4766,7 +4839,10 @@ Adds a specific wound on specific bodypart
 | Syntax | Optionality | Value  | Info |
 | --- | --- | --- | --- |
 | "u_add_wound", "npc_add_wound" | **mandatory** | string or [variable object](#variable-object) | id of a bodypart where the wound should be added |
-| "wound_id" | optional | string or [variable object](#variable-object) | id of a wound that will be applied |
+| "wound_id" | **mandatory** | string or [variable object](#variable-object) | id of a wound that will be applied |
+| "damage_amount" | optional | int or [variable object](#variable-object) | how much max HP this wound should reserve from bodypart; default 0 |
+| "damage_type" | optional | string or [variable object](#variable-object) | id of a damage type: the wound is treated as if it was applied by this damage type; used only if may_worsen is true, and then mandatory |
+| "may_worsen" | optional | bool | If true, appied wound may try to worsen the existing wound character has, if conditions for worsening will be met. This requires damage_type. If false, applies new wound no matter what. Default false |
 
 ##### Valid talkers:
 
@@ -6696,7 +6772,7 @@ but a duration can be started too:
 | `ACT_WAIT_NPC` | as `ACT_WAIT`; the finish message names the other talker (the beta talker for `u_assign_activity`, the alpha talker for `npc_assign_activity`). Without another talker this is a plain `ACT_WAIT` |
 | `ACT_GAME`, `ACT_GENERIC_GAME` | how long to play, 15 minutes by default; no game item is used |
 | `ACT_MEDITATE`, `ACT_TARGET_PRACTICE`, `ACT_WAIT_FOLLOWERS`, `ACT_WAIT_STAMINA`, `ACT_WAIT_WEATHER` | not allowed: they end on their own |
-| Zone jobs: `ACT_MOVE_LOOT`, `ACT_UNLOAD_LOOT`, `ACT_MULTIPLE_BUTCHER`, `ACT_MULTIPLE_CHOP_PLANKS`, `ACT_MULTIPLE_CHOP_TREES`, `ACT_MULTIPLE_CONSTRUCTION`, `ACT_MULTIPLE_CRAFT`, `ACT_MULTIPLE_DIS`, `ACT_MULTIPLE_FARM`, `ACT_MULTIPLE_FISH`, `ACT_MULTIPLE_MINE`, `ACT_MULTIPLE_MOP`, `ACT_MULTIPLE_READ`, `ACT_MULTIPLE_STUDY`, `ACT_VEHICLE_DECONSTRUCTION`, `ACT_VEHICLE_REPAIR` | not allowed: the job runs until its zones have no more work |
+| Zone jobs: `ACT_MOVE_LOOT`, `ACT_UNLOAD_LOOT`, `ACT_MULTIPLE_BUTCHER`, `ACT_MULTIPLE_CHOP_PLANKS`, `ACT_MULTIPLE_CHOP_TREES`, `ACT_MULTIPLE_CONSTRUCTION`, `ACT_MULTIPLE_CRAFT`, `ACT_MULTIPLE_DIS`, `ACT_MULTIPLE_DISSECT`, `ACT_MULTIPLE_FARM`, `ACT_MULTIPLE_FISH`, `ACT_MULTIPLE_MINE`, `ACT_MULTIPLE_MOP`, `ACT_MULTIPLE_READ`, `ACT_MULTIPLE_STUDY`, `ACT_VEHICLE_DECONSTRUCTION`, `ACT_VEHICLE_REPAIR` | not allowed: the job runs until its zones have no more work |
 
 Some activities need a target; see below. Any other activity with an actor can't be started
 from an EOC. Naming one, giving `duration` to an activity that takes none, or giving a target

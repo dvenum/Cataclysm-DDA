@@ -83,6 +83,9 @@ class monfaction
         // Not inherited by factions based on this one. Empty for none.
         std::string ignores_npcs_if_option;
 
+        // What NPC faction (if any) are we associated with?
+        faction_id associated_faction = faction_id::NULL_ID();
+
     private:
         // used by generic_factory
         bool was_loaded = false;

@@ -1,0 +1,127 @@
+[
+  {
+    "id": "test_mmerge_worn_pick",
+    "type": "ITEM",
+    "copy-from": "bandana",
+    "name": { "str": "test lockpick bandana" },
+    "description": "sync-89473 fixture: a worn item that can pick locks.",
+    "qualities": [ [ "LOCKPICK", 1 ] ]
+  },
+  {
+    "id": "test_mmerge_spool",
+    "type": "ITEM",
+    "subtypes": [ "MAGAZINE" ],
+    "name": { "str": "test thread spool" },
+    "description": "sync-89451 fixture: a spool of thread that drops out of its tool once it is used up.",
+    "weight": "5 g",
+    "volume": "5 ml",
+    "material": [ "plastic" ],
+    "symbol": "#",
+    "color": "white",
+    "ammo_type": [ "thread" ],
+    "flags": [ "MAG_EJECT" ],
+    "pocket_data": [ { "pocket_type": "MAGAZINE", "rigid": true, "ammo_restriction": { "thread": 1 } } ]
+  },
+  {
+    "id": "test_mmerge_spool_kit",
+    "type": "ITEM",
+    "subtypes": [ "TOOL" ],
+    "name": { "str": "test spool sewing kit" },
+    "description": "sync-89451 fixture: a hand repair tool that uses a thread spool.",
+    "weight": "100 g",
+    "volume": "250 ml",
+    "material": [ "plastic" ],
+    "symbol": ";",
+    "color": "white",
+    "charges_per_use": 1,
+    "pocket_data": [
+      {
+        "pocket_type": "MAGAZINE_WELL",
+        "holster": true,
+        "rigid": true,
+        "max_contains_volume": "20 ml",
+        "max_contains_weight": "50 g",
+        "item_restriction": [ "test_mmerge_spool" ]
+      }
+    ],
+    "tool_ammo": [ "thread" ],
+    "use_action": [
+      {
+        "type": "repair_item",
+        "item_action_type": "repair_fabric",
+        "materials": [ "leather" ],
+        "skill": "tailor",
+        "tool_quality": 2,
+        "cost_scaling": 0.1,
+        "move_cost": 100
+      }
+    ]
+  },
+  {
+    "id": "test_mmerge_vehicle_welder",
+    "type": "ITEM",
+    "subtypes": [ "TOOL" ],
+    "name": { "str": "test vehicle welder" },
+    "description": "VINT-J09 fixture: a battery-powered repair tool a vehicle part provides.",
+    "weight": "1 kg",
+    "volume": "1 L",
+    "material": [ "steel" ],
+    "symbol": ";",
+    "color": "red",
+    "charges_per_use": 5,
+    "use_action": [
+      {
+        "type": "repair_item",
+        "item_action_type": "repair_metal",
+        "materials": [ "steel" ],
+        "skill": "fabrication",
+        "tool_quality": 10,
+        "cost_scaling": 0.1,
+        "move_cost": 100
+      }
+    ],
+    "tool_ammo": [ "battery" ]
+  },
+  {
+    "id": "test_mmerge_steel_plate",
+    "type": "ITEM",
+    "name": { "str": "test steel plate" },
+    "description": "VINT-J09 fixture: something a welder mends.",
+    "weight": "1 kg",
+    "volume": "250 ml",
+    "material": [ "steel" ],
+    "symbol": "]",
+    "color": "light_gray"
+  },
+  {
+    "type": "vehicle_part",
+    "id": "test_mmerge_welding_bench",
+    "copy-from": "seat",
+    "name": { "str": "test welding bench" },
+    "description": "VINT-J09 fixture: a seat that provides a battery-powered repair tool.",
+    "pseudo_tools": [ { "id": "test_mmerge_vehicle_welder" } ]
+  },
+  {
+    "id": "test_mmerge_dead_game",
+    "type": "ITEM",
+    "subtypes": [ "TOOL" ],
+    "name": { "str": "test dead game board" },
+    "description": "sync-89473 fixture: an arcade machine's board with no power.",
+    "weight": "1 kg",
+    "volume": "1 L",
+    "material": [ "plastic" ],
+    "symbol": ";",
+    "color": "red",
+    "charges_per_use": 1,
+    "pocket_data": [ { "pocket_type": "MAGAZINE", "rigid": true, "ammo_restriction": { "battery": 10 } } ]
+  },
+  {
+    "type": "vehicle_part",
+    "id": "test_mmerge_arcade",
+    "copy-from": "seat",
+    "name": { "str": "test arcade seat" },
+    "description": "sync-89473 fixture: a seat with an arcade machine whose board has no power.",
+    "item": "test_mmerge_dead_game",
+    "extend": { "flags": [ "ARCADE" ] }
+  }
+]

@@ -1,5 +1,6 @@
 #include "sleep.h"
 
+#include <algorithm>
 #include <list>
 #include <memory>
 #include <optional>
@@ -73,16 +74,24 @@ int comfort_data::human_comfort_at( const tripoint_bub_ms &p )
     const furn_id &furn = here.furn( p );
     const trap &trap = here.tr_at( p );
 
+    // The vehicle or the ground, then the best of that, the furniture and the trap (a rollmat
+    // on furniture).  Bare floor, rough ground and vehicle parts without a seat or bed are
+    // below neutral.
+    int ret = 0;
     if( vp ) {
         const std::optional<vpart_reference> board = vp.part_with_feature( "BOARDABLE", true );
-        return board ? board->info().comfort : -here.move_cost( p );
-    } else if( furn != furn_str_id::NULL_ID() ) {
-        return furn->comfort;
-    } else if( !trap.is_null() ) {
-        return trap.comfort;
+        ret = board ? board->info().comfort : -here.move_cost( p );
     } else {
-        return here.ter( p )->comfort - here.move_cost( p );
+        ret = here.ter( p )->comfort - here.move_cost( p );
     }
+    if( furn != furn_str_id::NULL_ID() ) {
+        ret = std::max( ret, furn->comfort );
+    }
+    if( !trap.is_null() ) {
+        ret = std::max( ret, trap.comfort );
+    }
+
+    return ret;
 }
 
 bool comfort_data::try_get_sleep_aid_at( const tripoint_bub_ms &p, item &result )

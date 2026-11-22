@@ -18,6 +18,7 @@
             "air_sprite",
             "SYLPH_CHARGE_DASH",
             "SYLPH_SPEED_ALLY_BUFF",
+            "SYLPH_HINDERING_WINDS",
             "SYLPH_REVEAL_OVERMAP",
             "SYLPH_BONUS_MELEE_RANGE",
             "CLOUD_OF_STEAM_SYLPH",
@@ -57,65 +58,237 @@
       ]
     },
     "deactivate_condition": { "not": { "u_has_trait": "SYLPH" } },
-    "effect": [ { "run_eocs": "EOC_SYLPH_SPELL_EXPERIENCE_INCREASER_SELECTOR" } ]
+    "effect": [
+      { "math": [ "_xp_multiplier = 50" ] },
+      {
+        "if": { "math": [ "u_val('pos_z') >= 1" ] },
+        "then": { "math": [ "_xp_multiplier += (u_val('pos_z') * 3)" ] }
+      },
+      {
+        "run_eocs": "EOC_SYLPH_SPELL_EXPERIENCE_INCREASER_SELECTOR",
+        "variables": { "xp_multiplier": { "context_val": "xp_multiplier" } }
+      }
+    ]
   },
   {
     "type": "effect_on_condition",
     "id": "EOC_SYLPH_SPELL_EXPERIENCE_INCREASER_SELECTOR",
     "//": "Picks a spell to improve, weighted by [11-Difficulty].  A spell the character doesn't know, or that is at its cap, weighs 0, so only a spell that can improve is picked, and nothing happens when none can.",
     "condition": {
-      "or": [
-        { "math": [ "u_spell_level('clap_of_thunder') < dex_to_level(1)" ] },
-        { "math": [ "u_spell_level('ominous_wind') < 20" ] },
-        { "math": [ "u_spell_level('pushing_wind') < int_to_level(1)" ] },
-        { "math": [ "u_spell_level('sylph_clear_the_air') < per_to_level(1)" ] },
-        { "math": [ "u_spell_level('zap_electrical_emission') < dex_to_level(1)" ] },
-        { "math": [ "u_spell_level('summon_air_sprite') < 35" ] },
-        { "math": [ "u_spell_level('sylph_charge_dash_spell') < dex_to_level(1)" ] },
-        { "math": [ "u_spell_level('sylph_increase_ally_speed_spell') < int_to_level(1)" ] },
-        { "math": [ "u_spell_level('sylph_bonus_melee_range_spell') < dex_to_level(1)" ] },
-        { "math": [ "u_spell_level('sylph_reveal_overmap_spell') < per_to_level(1)" ] },
-        { "math": [ "u_spell_level('cloud_of_steam_sylph') < 35" ] },
-        { "math": [ "u_spell_level('create_light_sylph') < 20" ] },
-        { "math": [ "u_spell_level('sylph_call_lightning') < dex_to_level(1)" ] },
-        { "math": [ "u_spell_level('sylph_crash_of_lightning') < dex_to_level(1)" ] },
-        { "math": [ "u_spell_level('sylph_massive_lightning_bolt_spell') < int_to_level(1)" ] },
-        { "math": [ "u_spell_level('sylph_wind_translocation_spell') < dex_to_level(1)" ] },
-        { "math": [ "u_spell_level('paraclesian_spell_dodge_bonus_sylph') < 25" ] },
-        { "math": [ "u_spell_level('sylph_cultivate_goblin_fruit') < dex_to_level(1)" ] },
-        { "math": [ "u_spell_level('paraclesian_spell_make_gossamer') < 8" ] }
+      "and": [
+        { "expects_vars": [ "xp_multiplier" ] },
+        {
+          "or": [
+            {
+              "and": [
+                { "math": [ "u_spell_level('create_light_sylph') >= 0 " ] },
+                { "math": [ "u_spell_level('create_light_sylph') < 15" ] }
+              ]
+            },
+            {
+              "and": [ { "math": [ "u_spell_level('clap_of_thunder') >= 0 " ] }, { "math": [ "u_spell_level('clap_of_thunder') < 15" ] } ]
+            },
+            {
+              "and": [ { "math": [ "u_spell_level('electrical_field') >= 0 " ] }, { "math": [ "u_spell_level('electrical_field') < 15" ] } ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_inner_storm') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_inner_storm') < 15" ] }
+              ]
+            },
+            {
+              "and": [ { "math": [ "u_spell_level('ominous_wind') >= 0 " ] }, { "math": [ "u_spell_level('ominous_wind') < 15" ] } ]
+            },
+            {
+              "and": [ { "math": [ "u_spell_level('pushing_wind') >= 0 " ] }, { "math": [ "u_spell_level('pushing_wind') < 15" ] } ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_clear_the_air') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_clear_the_air') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('zap_electrical_emission') >= 0 " ] },
+                { "math": [ "u_spell_level('zap_electrical_emission') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('summon_air_sprite') >= 0 " ] },
+                { "math": [ "u_spell_level('summon_air_sprite') < 35" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_charge_dash_spell') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_charge_dash_spell') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_increase_ally_speed_spell') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_increase_ally_speed_spell') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_let_allies_fly') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_let_allies_fly') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_hindering_wind_spell') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_hindering_wind_spell') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_dodge_ranged_attacks_spell') >= 0" ] },
+                { "math": [ "u_spell_level('sylph_dodge_ranged_attacks_spell') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_bonus_melee_range_spell') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_bonus_melee_range_spell') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_reduce_encumbrance_spell') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_reduce_encumbrance_spell') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_reveal_overmap_spell') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_reveal_overmap_spell') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('cloud_of_steam_sylph') >= 0 " ] },
+                { "math": [ "u_spell_level('cloud_of_steam_sylph') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_call_lightning') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_call_lightning') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_crash_of_lightning') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_crash_of_lightning') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_massive_lightning_bolt_spell') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_massive_lightning_bolt_spell') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_wind_translocation_spell') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_wind_translocation_spell') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('paraclesian_spell_dodge_bonus_sylph') >= 0 " ] },
+                { "math": [ "u_spell_level('paraclesian_spell_dodge_bonus_sylph') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_cultivate_goblin_fruit') >= 0 " ] },
+                { "math": [ "u_spell_level('sylph_cultivate_goblin_fruit') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('paraclesian_spell_make_gossamer') >= 0 " ] },
+                { "math": [ "u_spell_level('paraclesian_spell_make_gossamer') < 8" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_pick_up_ranged_objects_spell') >= 0" ] },
+                { "math": [ "u_spell_level('sylph_pick_up_ranged_objects_spell') < 15" ] }
+              ]
+            },
+            {
+              "and": [
+                { "math": [ "u_spell_level('sylph_hammer_of_winds_spell') >= 0" ] },
+                { "math": [ "u_spell_level('sylph_hammer_of_winds_spell') < 15" ] }
+              ]
+            }
+          ]
+        }
       ]
     },
     "effect": {
       "weighted_list_eocs": [
         [
-          "EOC_LEVELER_SYLPH_CLAP_OF_THUNDER",
+          "EOC_LEVELER_SYLPH_CREATE_LIGHT",
           {
-            "math": [ "( u_spell_level('clap_of_thunder') >= 0 ) * ( u_spell_level('clap_of_thunder') < dex_to_level(1) ) * 8" ]
+            "math": [ "( u_spell_level('create_light_sylph') >= 0 ) * ( u_spell_level('create_light_sylph') < 15 ) * 9" ]
+          }
+        ],
+        [
+          "EOC_LEVELER_SYLPH_CLAP_OF_THUNDER",
+          { "math": [ "( u_spell_level('clap_of_thunder') >= 0 ) * ( u_spell_level('clap_of_thunder') < 15 ) * 8" ] }
+        ],
+        [
+          "EOC_LEVELER_SYLPH_ELECTRICAL_FIELD",
+          {
+            "math": [ "( u_spell_level('electrical_field') >= 0 ) * ( u_spell_level('electrical_field') < 15 ) * 9" ]
+          }
+        ],
+        [
+          "EOC_LEVELER_SYLPH_INNER_STORM",
+          {
+            "math": [ "( u_spell_level('sylph_inner_storm') >= 0 ) * ( u_spell_level('sylph_inner_storm') < 15 ) * 7" ]
           }
         ],
         [
           "EOC_LEVELER_SYLPH_OMINOUS_WIND",
-          { "math": [ "( u_spell_level('ominous_wind') >= 0 ) * ( u_spell_level('ominous_wind') < 20 ) * 11" ] }
+          { "math": [ "( u_spell_level('ominous_wind') >= 0 ) * ( u_spell_level('ominous_wind') < 15 ) * 11" ] }
         ],
         [
           "EOC_LEVELER_SYLPH_PUSHING_WIND",
+          { "math": [ "( u_spell_level('pushing_wind') >= 0 ) * ( u_spell_level('pushing_wind') < 15 ) * 9" ] }
+        ],
+        [
+          "EOC_LEVELER_SYLPH_EPHEMERAL_GRASP",
           {
-            "math": [ "( u_spell_level('pushing_wind') >= 0 ) * ( u_spell_level('pushing_wind') < int_to_level(1) ) * 9" ]
+            "math": [
+              "( u_spell_level('sylph_pick_up_ranged_objects_spell') >= 0 ) * ( u_spell_level('sylph_pick_up_ranged_objects_spell') < 15 ) * 8"
+            ]
+          }
+        ],
+        [
+          "EOC_LEVELER_SYLPH_HAMMER_OF_THE_WINDS",
+          {
+            "math": [ "( u_spell_level('sylph_hammer_of_winds_spell') >= 0 ) * ( u_spell_level('sylph_hammer_of_winds_spell') < 15 ) * 5" ]
           }
         ],
         [
           "EOC_LEVELER_SYLPH_CLEAR_THE_AIR",
           {
-            "math": [ "( u_spell_level('sylph_clear_the_air') >= 0 ) * ( u_spell_level('sylph_clear_the_air') < per_to_level(1) ) * 6" ]
+            "math": [ "( u_spell_level('sylph_clear_the_air') >= 0 ) * ( u_spell_level('sylph_clear_the_air') < 15 ) * 6" ]
           }
         ],
         [
           "EOC_LEVELER_SYLPH_ELECTRICAL_EMISSIONS",
           {
-            "math": [
-              "( u_spell_level('zap_electrical_emission') >= 0 ) * ( u_spell_level('zap_electrical_emission') < dex_to_level(1) ) * 10"
-            ]
+            "math": [ "( u_spell_level('zap_electrical_emission') >= 0 ) * ( u_spell_level('zap_electrical_emission') < 15 ) * 10" ]
           }
         ],
         [
@@ -127,16 +300,34 @@
         [
           "EOC_LEVELER_SYLPH_CHARGE_DASH",
           {
-            "math": [
-              "( u_spell_level('sylph_charge_dash_spell') >= 0 ) * ( u_spell_level('sylph_charge_dash_spell') < dex_to_level(1) ) * 9"
-            ]
+            "math": [ "( u_spell_level('sylph_charge_dash_spell') >= 0 ) * ( u_spell_level('sylph_charge_dash_spell') < 15 ) * 9" ]
           }
         ],
         [
           "EOC_LEVELER_SYLPH_INCREASE_ALLY_SPEED",
           {
             "math": [
-              "( u_spell_level('sylph_increase_ally_speed_spell') >= 0 ) * ( u_spell_level('sylph_increase_ally_speed_spell') < int_to_level(1) ) * 6"
+              "( u_spell_level('sylph_increase_ally_speed_spell') >= 0 ) * ( u_spell_level('sylph_increase_ally_speed_spell') < 15 ) * 6"
+            ]
+          }
+        ],
+        [
+          "EOC_LEVELER_SYLPH_LET_ALLIES_FLY",
+          {
+            "math": [ "( u_spell_level('sylph_let_allies_fly') >= 0 ) * ( u_spell_level('sylph_let_allies_fly') < 15 ) * 4" ]
+          }
+        ],
+        [
+          "EOC_LEVELER_SYLPH_HINDERING_WINDS",
+          {
+            "math": [ "( u_spell_level('sylph_hindering_wind_spell') >= 0 ) * ( u_spell_level('sylph_hindering_wind_spell') < 15 ) * 7" ]
+          }
+        ],
+        [
+          "EOC_LEVELER_SYLPH_DODGE_RANGED_ATTACKS",
+          {
+            "math": [
+              "( u_spell_level('sylph_dodge_ranged_attacks_spell') >= 0 ) * ( u_spell_level('sylph_dodge_ranged_attacks_spell') < 15 ) * 3"
             ]
           }
         ],
@@ -144,49 +335,47 @@
           "EOC_LEVELER_SYLPH_BONUS_MELEE_RANGE",
           {
             "math": [
-              "( u_spell_level('sylph_bonus_melee_range_spell') >= 0 ) * ( u_spell_level('sylph_bonus_melee_range_spell') < dex_to_level(1) ) * 4"
+              "( u_spell_level('sylph_bonus_melee_range_spell') >= 0 ) * ( u_spell_level('sylph_bonus_melee_range_spell') < 15 ) * 4"
             ]
           }
         ],
         [
           "EOC_LEVELER_SYLPH_REVEAL_OVERMAP",
           {
+            "math": [ "( u_spell_level('sylph_reveal_overmap_spell') >= 0 ) * ( u_spell_level('sylph_reveal_overmap_spell') < 15 ) * 4" ]
+          }
+        ],
+        [
+          "EOC_LEVELER_SYLPH_REDUCE_ENCUMBRANCE",
+          {
             "math": [
-              "( u_spell_level('sylph_reveal_overmap_spell') >= 0 ) * ( u_spell_level('sylph_reveal_overmap_spell') < per_to_level(1) ) * 4"
+              "( u_spell_level('sylph_reduce_encumbrance_spell') >= 0 ) * ( u_spell_level('sylph_reduce_encumbrance_spell') < 15 ) * 5"
             ]
           }
         ],
         [
           "EOC_LEVELER_SYLPH_CLOUD_OF_STEAM",
           {
-            "math": [ "( u_spell_level('cloud_of_steam_sylph') >= 0 ) * ( u_spell_level('cloud_of_steam_sylph') < 35 ) * 7" ]
-          }
-        ],
-        [
-          "EOC_LEVELER_SYLPH_CREATE_LIGHT",
-          {
-            "math": [ "( u_spell_level('create_light_sylph') >= 0 ) * ( u_spell_level('create_light_sylph') < 20 ) * 9" ]
+            "math": [ "( u_spell_level('cloud_of_steam_sylph') >= 0 ) * ( u_spell_level('cloud_of_steam_sylph') < 15 ) * 7" ]
           }
         ],
         [
           "EOC_LEVELER_SYLPH_CALL_LIGHTNING",
           {
-            "math": [ "( u_spell_level('sylph_call_lightning') >= 0 ) * ( u_spell_level('sylph_call_lightning') < dex_to_level(1) ) * 5" ]
+            "math": [ "( u_spell_level('sylph_call_lightning') >= 0 ) * ( u_spell_level('sylph_call_lightning') < 15 ) * 5" ]
           }
         ],
         [
           "EOC_LEVELER_SYLPH_CRASH_OF_LIGHTNING",
           {
-            "math": [
-              "( u_spell_level('sylph_crash_of_lightning') >= 0 ) * ( u_spell_level('sylph_crash_of_lightning') < dex_to_level(1) ) * 5"
-            ]
+            "math": [ "( u_spell_level('sylph_crash_of_lightning') >= 0 ) * ( u_spell_level('sylph_crash_of_lightning') < 15 ) * 5" ]
           }
         ],
         [
           "EOC_LEVELER_SYLPH_MASSIVE_LIGHTNING_BLAST",
           {
             "math": [
-              "( u_spell_level('sylph_massive_lightning_bolt_spell') >= 0 ) * ( u_spell_level('sylph_massive_lightning_bolt_spell') < int_to_level(1) ) * 2"
+              "( u_spell_level('sylph_massive_lightning_bolt_spell') >= 0 ) * ( u_spell_level('sylph_massive_lightning_bolt_spell') < 15 ) * 2"
             ]
           }
         ],
@@ -194,7 +383,7 @@
           "EOC_LEVELER_SYLPH_WIND_TRANSLOCATE",
           {
             "math": [
-              "( u_spell_level('sylph_wind_translocation_spell') >= 0 ) * ( u_spell_level('sylph_wind_translocation_spell') < dex_to_level(1) ) * 2"
+              "( u_spell_level('sylph_wind_translocation_spell') >= 0 ) * ( u_spell_level('sylph_wind_translocation_spell') < 15 ) * 2"
             ]
           }
         ],
@@ -202,7 +391,7 @@
           "EOC_LEVELER_SLYPH_WIND_BLOWS_WILLOW_BENDS",
           {
             "math": [
-              "( u_spell_level('paraclesian_spell_dodge_bonus_sylph') >= 0 ) * ( u_spell_level('paraclesian_spell_dodge_bonus_sylph') < 25 ) * 6"
+              "( u_spell_level('paraclesian_spell_dodge_bonus_sylph') >= 0 ) * ( u_spell_level('paraclesian_spell_dodge_bonus_sylph') < 15 ) * 6"
             ]
           }
         ],
@@ -210,7 +399,7 @@
           "EOC_LEVELER_SYLPH_CULTIVATE_GOBLIN_FRUIT",
           {
             "math": [
-              "( u_spell_level('sylph_cultivate_goblin_fruit') >= 0 ) * ( u_spell_level('sylph_cultivate_goblin_fruit') < dex_to_level(1) ) * 3"
+              "( u_spell_level('sylph_cultivate_goblin_fruit') >= 0 ) * ( u_spell_level('sylph_cultivate_goblin_fruit') < 15 ) * 3"
             ]
           }
         ],
@@ -227,11 +416,11 @@
   },
   {
     "type": "effect_on_condition",
-    "id": "EOC_LEVELER_SYLPH_CLAP_OF_THUNDER",
+    "id": "EOC_LEVELER_SYLPH_CREATE_LIGHT",
     "condition": {
       "and": [
-        { "math": [ "u_spell_level('clap_of_thunder') >= 0" ] },
-        { "math": [ "u_spell_level('clap_of_thunder') < dex_to_level(1)" ] }
+        { "math": [ "u_spell_level('create_light_sylph') >= 0" ] },
+        { "math": [ "u_spell_level('create_light_sylph') < 15" ] }
       ]
     },
     "effect": [
@@ -239,30 +428,86 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('clap_of_thunder') += paraclesian_passive_spell_exp(1)" ] }
+      { "math": [ "u_spell_exp('create_light_sylph') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
+    ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_LEVELER_SYLPH_CLAP_OF_THUNDER",
+    "condition": {
+      "and": [ { "math": [ "u_spell_level('clap_of_thunder') >= 0" ] }, { "math": [ "u_spell_level('clap_of_thunder') < 15" ] } ]
+    },
+    "effect": [
+      {
+        "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
+        "type": "good"
+      },
+      { "math": [ "u_spell_exp('clap_of_thunder') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
+    ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_LEVELER_SYLPH_ELECTRICAL_FIELD",
+    "condition": {
+      "and": [ { "math": [ "u_spell_level('electrical_field') >= 0" ] }, { "math": [ "u_spell_level('electrical_field') < 15" ] } ]
+    },
+    "effect": [
+      {
+        "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
+        "type": "good"
+      },
+      { "math": [ "u_spell_exp('electrical_field') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
+    ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_LEVELER_SYLPH_INNER_STORM",
+    "condition": {
+      "and": [ { "math": [ "u_spell_level('sylph_inner_storm') >= 0" ] }, { "math": [ "u_spell_level('sylph_inner_storm') < 15" ] } ]
+    },
+    "effect": [
+      {
+        "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
+        "type": "good"
+      },
+      { "math": [ "u_spell_exp('sylph_inner_storm') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
     ]
   },
   {
     "type": "effect_on_condition",
     "id": "EOC_LEVELER_SYLPH_OMINOUS_WIND",
     "condition": {
-      "and": [ { "math": [ "u_spell_level('ominous_wind') >= 0" ] }, { "math": [ "u_spell_level('ominous_wind') < 20" ] } ]
+      "and": [ { "math": [ "u_spell_level('ominous_wind') >= 0" ] }, { "math": [ "u_spell_level('ominous_wind') < 15" ] } ]
     },
     "effect": [
       {
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('ominous_wind') += paraclesian_passive_spell_exp(1)" ] }
+      { "math": [ "u_spell_exp('ominous_wind') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
     ]
   },
   {
     "type": "effect_on_condition",
     "id": "EOC_LEVELER_SYLPH_PUSHING_WIND",
     "condition": {
+      "and": [ { "math": [ "u_spell_level('pushing_wind') >= 0" ] }, { "math": [ "u_spell_level('pushing_wind') < 15" ] } ]
+    },
+    "effect": [
+      {
+        "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
+        "type": "good"
+      },
+      { "math": [ "u_spell_exp('pushing_wind') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
+    ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_LEVELER_SYLPH_EPHEMERAL_GRASP",
+    "condition": {
       "and": [
-        { "math": [ "u_spell_level('pushing_wind') >= 0" ] },
-        { "math": [ "u_spell_level('pushing_wind') < int_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_pick_up_ranged_objects_spell') >= 0" ] },
+        { "math": [ "u_spell_level('sylph_pick_up_ranged_objects_spell') < 15" ] }
       ]
     },
     "effect": [
@@ -270,7 +515,28 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('pushing_wind') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('sylph_pick_up_ranged_objects_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
+    ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_LEVELER_SYLPH_HAMMER_OF_THE_WINDS",
+    "condition": {
+      "and": [
+        { "math": [ "u_spell_level('sylph_hammer_of_winds_spell') >= 0" ] },
+        { "math": [ "u_spell_level('sylph_hammer_of_winds_spell') < 15" ] }
+      ]
+    },
+    "effect": [
+      {
+        "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
+        "type": "good"
+      },
+      {
+        "math": [ "u_spell_exp('sylph_hammer_of_winds_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -279,7 +545,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('sylph_clear_the_air') >= 0" ] },
-        { "math": [ "u_spell_level('sylph_clear_the_air') < per_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_clear_the_air') < 15" ] }
       ]
     },
     "effect": [
@@ -287,7 +553,7 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('sylph_clear_the_air') += paraclesian_passive_spell_exp(1)" ] }
+      { "math": [ "u_spell_exp('sylph_clear_the_air') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
     ]
   },
   {
@@ -296,7 +562,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('zap_electrical_emission') >= 0" ] },
-        { "math": [ "u_spell_level('zap_electrical_emission') < dex_to_level(1)" ] }
+        { "math": [ "u_spell_level('zap_electrical_emission') < 15" ] }
       ]
     },
     "effect": [
@@ -304,7 +570,9 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('zap_electrical_emission') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('zap_electrical_emission') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -313,7 +581,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('sylph_charge_dash_spell') >= 0" ] },
-        { "math": [ "u_spell_level('sylph_charge_dash_spell') < dex_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_charge_dash_spell') < 15" ] }
       ]
     },
     "effect": [
@@ -321,7 +589,9 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('sylph_charge_dash_spell') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('sylph_charge_dash_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -330,7 +600,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('sylph_increase_ally_speed_spell') >= 0" ] },
-        { "math": [ "u_spell_level('sylph_increase_ally_speed_spell') < int_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_increase_ally_speed_spell') < 15" ] }
       ]
     },
     "effect": [
@@ -338,7 +608,64 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('sylph_increase_ally_speed_spell') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('sylph_increase_ally_speed_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
+    ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_LEVELER_SYLPH_LET_ALLIES_FLY",
+    "condition": {
+      "and": [
+        { "math": [ "u_spell_level('sylph_let_allies_fly') >= 0" ] },
+        { "math": [ "u_spell_level('sylph_let_allies_fly') < 15" ] }
+      ]
+    },
+    "effect": [
+      {
+        "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
+        "type": "good"
+      },
+      { "math": [ "u_spell_exp('sylph_let_allies_fly') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
+    ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_LEVELER_SYLPH_HINDERING_WINDS",
+    "condition": {
+      "and": [
+        { "math": [ "u_spell_level('sylph_hindering_wind_spell') >= 0" ] },
+        { "math": [ "u_spell_level('sylph_hindering_wind_spell') < 15" ] }
+      ]
+    },
+    "effect": [
+      {
+        "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
+        "type": "good"
+      },
+      {
+        "math": [ "u_spell_exp('sylph_hindering_wind_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
+    ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_LEVELER_SYLPH_DODGE_RANGED_ATTACKS",
+    "condition": {
+      "and": [
+        { "math": [ "u_spell_level('sylph_dodge_ranged_attacks_spell') >= 0" ] },
+        { "math": [ "u_spell_level('sylph_dodge_ranged_attacks_spell') < 15" ] }
+      ]
+    },
+    "effect": [
+      {
+        "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
+        "type": "good"
+      },
+      {
+        "math": [ "u_spell_exp('sylph_dodge_ranged_attacks_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -347,7 +674,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('sylph_bonus_melee_range_spell') >= 0" ] },
-        { "math": [ "u_spell_level('sylph_bonus_melee_range_spell') < dex_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_bonus_melee_range_spell') < 15" ] }
       ]
     },
     "effect": [
@@ -355,7 +682,28 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('sylph_bonus_melee_range_spell') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('sylph_bonus_melee_range_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
+    ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_LEVELER_SYLPH_REDUCE_ENCUMBRANCE",
+    "condition": {
+      "and": [
+        { "math": [ "u_spell_level('sylph_reduce_encumbrance_spell') >= 0" ] },
+        { "math": [ "u_spell_level('sylph_reduce_encumbrance_spell') < 15" ] }
+      ]
+    },
+    "effect": [
+      {
+        "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
+        "type": "good"
+      },
+      {
+        "math": [ "u_spell_exp('sylph_reduce_encumbrance_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -364,7 +712,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('sylph_reveal_overmap_spell') >= 0" ] },
-        { "math": [ "u_spell_level('sylph_reveal_overmap_spell') < per_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_reveal_overmap_spell') < 15" ] }
       ]
     },
     "effect": [
@@ -372,7 +720,9 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('sylph_reveal_overmap_spell') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('sylph_reveal_overmap_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -386,7 +736,7 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('summon_air_sprite') += paraclesian_passive_spell_exp(1)" ] }
+      { "math": [ "u_spell_exp('summon_air_sprite') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
     ]
   },
   {
@@ -395,7 +745,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('cloud_of_steam_sylph') >= 0" ] },
-        { "math": [ "u_spell_level('cloud_of_steam_sylph') < 35" ] }
+        { "math": [ "u_spell_level('cloud_of_steam_sylph') < 15" ] }
       ]
     },
     "effect": [
@@ -403,24 +753,7 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('cloud_of_steam_sylph') += paraclesian_passive_spell_exp(1)" ] }
-    ]
-  },
-  {
-    "type": "effect_on_condition",
-    "id": "EOC_LEVELER_SYLPH_CREATE_LIGHT",
-    "condition": {
-      "and": [
-        { "math": [ "u_spell_level('create_light_sylph') >= 0" ] },
-        { "math": [ "u_spell_level('create_light_sylph') < 20" ] }
-      ]
-    },
-    "effect": [
-      {
-        "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
-        "type": "good"
-      },
-      { "math": [ "u_spell_exp('create_light_sylph') += paraclesian_passive_spell_exp(1)" ] }
+      { "math": [ "u_spell_exp('cloud_of_steam_sylph') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
     ]
   },
   {
@@ -429,7 +762,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('sylph_call_lightning') >= 0" ] },
-        { "math": [ "u_spell_level('sylph_call_lightning') < dex_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_call_lightning') < 15" ] }
       ]
     },
     "effect": [
@@ -437,7 +770,7 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('sylph_call_lightning') += paraclesian_passive_spell_exp(1)" ] }
+      { "math": [ "u_spell_exp('sylph_call_lightning') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ] }
     ]
   },
   {
@@ -446,7 +779,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('sylph_crash_of_lightning') >= 0" ] },
-        { "math": [ "u_spell_level('sylph_crash_of_lightning') < dex_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_crash_of_lightning') < 15" ] }
       ]
     },
     "effect": [
@@ -454,7 +787,9 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('sylph_crash_of_lightning') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('sylph_crash_of_lightning') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -463,7 +798,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('sylph_massive_lightning_bolt_spell') >= 0" ] },
-        { "math": [ "u_spell_level('sylph_massive_lightning_bolt_spell') < int_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_massive_lightning_bolt_spell') < 15" ] }
       ]
     },
     "effect": [
@@ -471,7 +806,9 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('sylph_massive_lightning_bolt_spell') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('sylph_massive_lightning_bolt_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -480,7 +817,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('sylph_wind_translocation_spell') >= 0" ] },
-        { "math": [ "u_spell_level('sylph_wind_translocation_spell') < dex_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_wind_translocation_spell') < 15" ] }
       ]
     },
     "effect": [
@@ -488,7 +825,9 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('sylph_wind_translocation_spell') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('sylph_wind_translocation_spell') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -497,7 +836,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('paraclesian_spell_dodge_bonus_sylph') >= 0" ] },
-        { "math": [ "u_spell_level('paraclesian_spell_dodge_bonus_sylph') < 25" ] }
+        { "math": [ "u_spell_level('paraclesian_spell_dodge_bonus_sylph') < 15" ] }
       ]
     },
     "effect": [
@@ -505,7 +844,9 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('paraclesian_spell_dodge_bonus_sylph') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('paraclesian_spell_dodge_bonus_sylph') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -514,7 +855,7 @@
     "condition": {
       "and": [
         { "math": [ "u_spell_level('sylph_cultivate_goblin_fruit') >= 0" ] },
-        { "math": [ "u_spell_level('sylph_cultivate_goblin_fruit') < dex_to_level(1)" ] }
+        { "math": [ "u_spell_level('sylph_cultivate_goblin_fruit') < 15" ] }
       ]
     },
     "effect": [
@@ -522,7 +863,9 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('sylph_cultivate_goblin_fruit') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('sylph_cultivate_goblin_fruit') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   },
   {
@@ -539,7 +882,9 @@
         "u_message": "Your time spent among the blowing winds has increased your facility with your fae magicks.",
         "type": "good"
       },
-      { "math": [ "u_spell_exp('paraclesian_spell_make_gossamer') += paraclesian_passive_spell_exp(1)" ] }
+      {
+        "math": [ "u_spell_exp('paraclesian_spell_make_gossamer') += paraclesian_gramarye_passive_spell_exp(_xp_multiplier)" ]
+      }
     ]
   }
 ]

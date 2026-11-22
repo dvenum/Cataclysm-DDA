@@ -1,0 +1,88 @@
+[
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_audit_sync_items_count",
+    "effect": [ { "math": [ "audit_sync_items_runs++" ] } ]
+  },
+  {
+    "id": "audit_sync_items_timer",
+    "type": "ITEM",
+    "name": { "str": "TEST countdown pebble" },
+    "description": "Counts its countdowns in the global audit_sync_items_runs.",
+    "weight": "10 g",
+    "volume": "10 ml",
+    "material": [ "stone" ],
+    "symbol": "*",
+    "color": "light_gray",
+    "countdown_action": { "type": "effect_on_conditions", "effect_on_conditions": [ "EOC_audit_sync_items_count" ] }
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_audit_sync_items_record_use",
+    "effect": [
+      { "math": [ "audit_sync_items_runs++" ] },
+      { "copy_var": { "context_val": "id" }, "target_var": { "global_val": "audit_sync_items_used_id" } }
+    ]
+  },
+  {
+    "id": "audit_sync_items_rune",
+    "type": "ITEM",
+    "name": { "str": "TEST single-use rune" },
+    "description": "Records which item its use action got, then is used up.",
+    "weight": "10 g",
+    "volume": "10 ml",
+    "material": [ "stone" ],
+    "symbol": "*",
+    "color": "light_gray",
+    "flags": [ "SINGLE_USE" ],
+    "use_action": { "type": "effect_on_conditions", "consume": true, "effect_on_conditions": [ "EOC_audit_sync_items_record_use" ] }
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_audit_sync_items_activate_npc",
+    "effect": [ { "u_activate": "effect_on_conditions" } ]
+  },
+  {
+    "id": "audit_sync_items_tin",
+    "type": "ITEM",
+    "name": { "str": "TEST small tin" },
+    "description": "Holds 100 ml.",
+    "weight": "50 g",
+    "volume": "150 ml",
+    "material": [ "steel" ],
+    "symbol": ")",
+    "color": "light_gray",
+    "pocket_data": [
+      {
+        "pocket_type": "CONTAINER",
+        "rigid": true,
+        "max_contains_volume": "100 ml",
+        "max_contains_weight": "1 kg",
+        "max_item_length": "10 cm"
+      }
+    ]
+  },
+  {
+    "id": "audit_sync_items_bud",
+    "type": "ITEM",
+    "name": { "str": "TEST bud" },
+    "description": "Opens into a much bigger bloom.",
+    "weight": "10 g",
+    "volume": "50 ml",
+    "material": [ "veggy" ],
+    "symbol": "*",
+    "color": "green",
+    "use_action": { "type": "transform", "msg": "The %s opens.", "target": "audit_sync_items_bloom" }
+  },
+  {
+    "id": "audit_sync_items_bloom",
+    "type": "ITEM",
+    "name": { "str": "TEST bloom" },
+    "description": "Too big for the small tin.",
+    "weight": "10 g",
+    "volume": "500 ml",
+    "material": [ "veggy" ],
+    "symbol": "*",
+    "color": "green"
+  }
+]

@@ -75,6 +75,7 @@ static const efftype_id effect_bite( "bite" );
 static const efftype_id effect_downed( "downed" );
 static const efftype_id effect_grabbed( "grabbed" );
 static const efftype_id effect_grabbing( "grabbing" );
+static const efftype_id effect_incorporeal( "incorporeal" );
 static const efftype_id effect_infected( "infected" );
 static const efftype_id effect_laserlocked( "laserlocked" );
 static const efftype_id effect_null( "null" );
@@ -91,6 +92,7 @@ static const efftype_id effect_zombie_virus( "zombie_virus" );
 static const flag_id json_flag_CANNOT_MOVE( "CANNOT_MOVE" );
 static const flag_id json_flag_GRAB( "GRAB" );
 static const flag_id json_flag_GRAB_FILTER( "GRAB_FILTER" );
+static const flag_id json_flag_NO_GRAB( "NO_GRAB" );
 
 static const itype_id fuel_type_muscle( "muscle" );
 static const itype_id itype_backpack( "backpack" );
@@ -970,6 +972,14 @@ bool melee_actor::call( monster &z ) const
         }
     }
 
+    // A NO_GRAB monster doesn't grab, and nothing takes hold of an incorporeal target.  Checked
+    // here, not only in the grab attacks' conditions: a monster's own copy of an attack replaces
+    // the condition.
+    if( is_grab && ( z.has_flag( json_flag_NO_GRAB ) || target->has_effect( effect_incorporeal ) ) ) {
+        add_msg_debug( debugmode::DF_MATTACK, "Grab refused: NO_GRAB grabber or incorporeal target" );
+        return false;
+    }
+
     z.mod_moves( -move_cost );
 
     const std::string mon_name = get_player_character().sees( here, z.pos_bub( here ) ) ?
@@ -987,9 +997,13 @@ bool melee_actor::call( monster &z ) const
 
     // Dodge check
     const int acc = accuracy >= 0 ? accuracy : z.type->melee_skill;
+    // A grab can only be dodged, as a character's grab can: a block doesn't stop it.  It takes
+    // hold or it doesn't, so any negative hit spread dodges it.
+    const melee_dodge_rule dodge_rule = !dodgeable ? melee_dodge_rule::undodgeable :
+                                        is_grab ? melee_dodge_rule::all_or_nothing : melee_dodge_rule::partial;
     int hitspread = target->deal_melee_attack( &z, melee::hit_roll_against( *target, [acc] {
         return melee::melee_hit_range( acc );
-    } ) );
+    } ), blockable && !is_grab, dodge_rule );
     std::vector<bodypart_id> bodyparts_hit = pick_bodyparts_hit( target, hitspread );
 
     if( bodyparts_hit.empty() ) {
@@ -1027,7 +1041,8 @@ bool melee_actor::call( monster &z ) const
     }
 
     if( dodgeable ) {
-        if( hitspread < 0 ) {
+        // A grab takes hold or it doesn't: a partly dodged one misses
+        if( !Creature::melee_attack_hit( hitspread ) || ( is_grab && hitspread < 0 ) ) {
             sfx::play_variant_sound( "mon_bite", "bite_miss", sfx::get_heard_volume( z.pos_bub() ),
                                      sfx::get_heard_angle( z.pos_bub() ) );
             target->add_msg_player_or_npc( msg_type, miss_msg_u,
@@ -1153,12 +1168,23 @@ bool melee_actor::call( monster &z ) const
     add_msg_debug( debugmode::DF_MATTACK, "Damage multiplier %.1f (range %.1f - %.1f)", multiplier,
                    min_mul, max_mul );
     damage.mult_damage( multiplier );
+    // The blow the block works against: partly dodged, not yet blocked
+    damage_instance blow = damage;
+
+    // check if it can be dodged, and by extension, partially dodged
+    if( dodgeable ) {
+        blow.mult_damage( Creature::melee_damage_mult( static_cast<int>( hitspread +
+                          target->last_block ) ), true );
+        damage.mult_damage( Creature::melee_damage_mult( hitspread ), true );
+    }
 
     // split the damage between all the bodyparts we gonna hit
     damage.mult_damage( 1.0 / bodyparts_hit.size() );
+    blow.mult_damage( 1.0 / bodyparts_hit.size() );
 
     // Block our hit
     if( blockable ) {
+        target->last_blow = blow;
         for( bodypart_id &bp_id : bodyparts_hit ) {
             target->block_hit( &z, bp_id, damage );
         }
@@ -1517,7 +1543,7 @@ bool gun_actor::call( monster &z ) const
     } else {
         target = z.attack_target();
         aim_at = target ? target->pos_bub( here ) : tripoint_bub_ms::zero;
-        if( !target || !z.sees( here, *target ) || ( !target->is_monster() && !z.aggro_character ) ) {
+        if( !target || !z.sees( here, *target ) ) {
             if( !target_moving_vehicles ) {
                 return false;
             }

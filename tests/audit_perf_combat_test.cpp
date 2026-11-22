@@ -790,6 +790,27 @@ chosen_attack choose_attack( npc &guy, const Creature *target, unsigned int seed
     return chosen;
 }
 
+// The spells of these that, cast by guy at its chosen target, catch one of the tiles in hit and
+// none of those in spare
+std::vector<spell_id> spells_aimed_well( npc &guy, const std::vector<spell_id> &spells,
+        const chosen_attack &got, const std::vector<tripoint_rel_ms> &hit,
+        const std::vector<tripoint_rel_ms> &spare )
+{
+    std::vector<spell_id> ret;
+    for( const spell_id &sp : spells ) {
+        const std::set<tripoint_bub_ms> area = calculate_spell_effect_area(
+                guy.magic->get_spell( sp ), guy.pos_bub() + got.target, guy );
+        const auto in_area = [&]( const tripoint_rel_ms & off ) {
+            return area.count( guy.pos_bub() + off ) > 0;
+        };
+        if( std::any_of( hit.begin(), hit.end(), in_area ) &&
+            std::none_of( spare.begin(), spare.end(), in_area ) ) {
+            ret.push_back( sp );
+        }
+    }
+    return ret;
+}
+
 void check_choice( const chosen_attack &got, const std::string &kind,
                    const tripoint_rel_ms &target, int value )
 {
@@ -804,6 +825,8 @@ void check_choice( const chosen_attack &got, const std::string &kind,
 } // namespace
 
 // NPC-P01, NPC-P02: the attack and target an NPC chooses in a few typical fights.
+// The test spells roll random damage, so a spell's choice also depends on how many random
+// numbers the ratings before it draw (item::effective_dps draws some for every hit quality).
 TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
 {
     scoped_weather_override weather( WEATHER_CLEAR );
@@ -865,36 +888,37 @@ TEST_CASE( "npc-p02_npc_attack_choices", "[audit][npc_attack]" )
         zombie_at( { -7, 4, 0 } );
         here.build_map_cache( 0 );
         // The fireball's damage is random, and how a seed becomes random numbers differs between
-        // standard libraries, so the exact tile and rating are platform-specific. What holds
-        // everywhere: a fireball, aimed so its blast misses the player and catches the far zombies.
+        // standard libraries, and so does how many numbers the ratings before it draw, so the
+        // exact tile and rating vary. What holds everywhere: a fireball whose blast misses the
+        // player and catches zombies.
         const chosen_attack got = choose_attack( guy, near_ally, 4 );
         CAPTURE( got.target, got.value );
         CHECK( got.kind == "spell" );
-        const int blast_radius = guy.magic->get_spell( spell_test_npc_fireball ).aoe( guy );
-        CHECK( rl_dist( got.target, tripoint_rel_ms( 9, 0, 0 ) ) > blast_radius );
-        CHECK( rl_dist( got.target, tripoint_rel_ms( -7, 3, 0 ) ) <= blast_radius );
         CHECK( got.value > 0 );
+        CHECK( spells_aimed_well( guy, { spell_test_npc_fireball }, got, {
+            { 8, 0, 0 }, { 8, 1, 0 }, { -7, 3, 0 }, { -7, 4, 0 }
+        }, { { 9, 0, 0 } } ).size() == 1 );
     }
     SECTION( "spells or a gun, with zombies near and far" ) {
         guy.set_attitude( NPCATT_KILL );
         arm_fighter();
         learn_attack_spells( guy, 10 );
-        monster *near = zombie_at( { 2, 1, 0 } );
+        monster *near_mon = zombie_at( { 2, 1, 0 } );
         zombie_at( { 7, -3, 0 } );
         zombie_at( { 8, -3, 0 } );
         zombie_at( { -12, 6, 0 } );
         here.build_map_cache( 0 );
-        // As above, the exact tile and rating depend on the standard library (Linux aims at
-        // (8,-2) for 372, Windows at (5,-1) for 361). What holds everywhere: a fireball whose
-        // blast spares the caster and catches the far pair.
-        const chosen_attack got = choose_attack( guy, near, 5 );
+        // As above, the exact tile, spell and rating vary. What holds everywhere: a spell aimed so
+        // it catches zombies and spares the caster.
+        const chosen_attack got = choose_attack( guy, near_mon, 5 );
         CAPTURE( got.target, got.value );
         CHECK( got.kind == "spell" );
-        const int blast_radius = guy.magic->get_spell( spell_test_npc_fireball ).aoe( guy );
-        CHECK( rl_dist( got.target, tripoint_rel_ms::zero ) > blast_radius );
-        CHECK( rl_dist( got.target, tripoint_rel_ms( 7, -3, 0 ) ) <= blast_radius );
-        CHECK( rl_dist( got.target, tripoint_rel_ms( 8, -3, 0 ) ) <= blast_radius );
         CHECK( got.value > 0 );
+        CHECK_FALSE( spells_aimed_well( guy, {
+            spell_test_npc_fireball, spell_test_npc_cone_cold, spell_test_npc_lightning_bolt,
+            spell_test_npc_magic_missile, spell_test_spell_pew
+        }, got, { { 2, 1, 0 }, { 7, -3, 0 }, { 8, -3, 0 }, { -12, 6, 0 } },
+        { tripoint_rel_ms::zero } ).empty() );
     }
     SECTION( "spells only, in a room with a doorway" ) {
         guy.set_attitude( NPCATT_KILL );

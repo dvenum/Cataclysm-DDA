@@ -335,9 +335,9 @@ TEST_CASE( "grapple_eoc_u_grab_sets_up_a_hold", "[grapple][eoc]" )
             CHECK( grapple::holds( you, zed ) );
         }
         SECTION( "out of reach" ) {
-            monster &far = spawn_test_monster( "mon_zombie", you.pos_bub() + tripoint( 3, 0, 0 ) );
-            apply( R"({ "u_grab": { })" + say, you, far );
-            CHECK_FALSE( far.has_effect_with_flag( json_flag_GRAB ) );
+            monster &far_mon = spawn_test_monster( "mon_zombie", you.pos_bub() + tripoint( 3, 0, 0 ) );
+            apply( R"({ "u_grab": { })" + say, you, far_mon );
+            CHECK_FALSE( far_mon.has_effect_with_flag( json_flag_GRAB ) );
         }
         SECTION( "the part named is held already" ) {
             guy.add_effect( effect_grabbed, 1_days, body_part_arm_l, true, 10 );

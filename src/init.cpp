@@ -1354,8 +1354,9 @@ void DynamicDataLoader::finalize_loaded_data()
                 }
             },
             { _( "Monster groups" ), &MonsterGroupManager::FinalizeMonsterGroups },
-            { _( "Monster factions" ), &monfactions::finalize },
+            // monfactions rely on npc_factions being finalized, so monfactions should always finalize afterwards.
             { _( "Factions" ), &npc_factions::finalize },
+            { _( "Monster factions" ), &monfactions::finalize },
             { _( "Move modes" ), &move_mode::finalize_all },
             { _( "Activities" ), &activity_type::finalize_all },
             { _( "Constructions" ), &finalize_constructions },

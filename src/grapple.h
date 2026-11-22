@@ -180,8 +180,8 @@ bool within_min_hold( const Character &grabber, const Creature &target, const ef
 
 /**
  * The activity level of all grappling work by @p who: grabbing, holding on against a struggle,
- * throwing. The same as melee: EXTRA_EXERCISE, or EXPLOSIVE_EXERCISE with the
- * EXPLOSIVE_COMBAT_EXERTION world option on (Character::melee_exertion_level).
+ * throwing. The same as melee, set by the COMBAT_EXERTION world option
+ * (Character::melee_exertion_level).
  */
 float exertion_level( const Character &who );
 

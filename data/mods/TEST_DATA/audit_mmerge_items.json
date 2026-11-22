@@ -1,0 +1,59 @@
+[
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_test_mmerge_items_count_rune_use",
+    "effect": [ { "math": [ "test_mmerge_items_rune_uses++" ] } ]
+  },
+  {
+    "type": "ITEM",
+    "subtypes": [ "TOOL" ],
+    "id": "test_mmerge_items_vehicle_rune",
+    "name": { "str": "test vehicle rune" },
+    "description": "A tool a vehicle part provides, whose use would use up a carried one.",
+    "weight": "10 g",
+    "volume": "10 ml",
+    "material": [ "stone" ],
+    "symbol": "*",
+    "color": "light_gray",
+    "use_action": { "type": "effect_on_conditions", "consume": true, "effect_on_conditions": [ "EOC_test_mmerge_items_count_rune_use" ] }
+  },
+  {
+    "type": "vehicle_part",
+    "id": "test_mmerge_items_rune_bench",
+    "copy-from": "seat",
+    "name": { "str": "test rune bench" },
+    "description": "A seat that provides the test vehicle rune.",
+    "pseudo_tools": [ { "id": "test_mmerge_items_vehicle_rune" } ]
+  },
+  {
+    "type": "ITEM",
+    "subtypes": [ "COMESTIBLE" ],
+    "id": "test_mmerge_items_pill",
+    "comestible_type": "MED",
+    "name": { "str": "test plain pill" },
+    "description": "A medicine with no use action, in stacks.",
+    "weight": "1 g",
+    "volume": "1 ml",
+    "material": [ "drug_filler" ],
+    "symbol": "!",
+    "color": "white",
+    "stackable": true,
+    "flags": [ "NO_TEMP" ]
+  },
+  {
+    "type": "ITEM",
+    "subtypes": [ "COMESTIBLE" ],
+    "id": "test_mmerge_items_cracker",
+    "comestible_type": "FOOD",
+    "name": { "str": "test cracker" },
+    "description": "A plain food, in stacks.",
+    "weight": "10 g",
+    "volume": "10 ml",
+    "material": [ "wheat" ],
+    "symbol": "%",
+    "color": "brown",
+    "calories": 50,
+    "stackable": true,
+    "flags": [ "NO_TEMP" ]
+  }
+]

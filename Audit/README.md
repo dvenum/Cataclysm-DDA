@@ -427,7 +427,7 @@ What players get:
 - **Manual combat mode.** Shift+Tab toggles it (saved; the sidebar shows "(manual)"). Each melee attack then opens a menu of Basic attack, Automatic and every technique, with unusable ones greyed out and the reason given. It opens before the hit roll, so cancelling costs nothing and reveals nothing. A technique with `controlled_knockback` is aimed with the throw screen.
 - **Grapple martial arts.** Judo's three throws, Pankration's grab knee and arm lock, Zui Quan's drunken fall and Brawling's strangle need a grapple with the target (Judo, Pankration and Zui Quan whichever side holds the other). Judo, Aikido and Krav Maga each get a grab counter that fires when something grabs you. Ferals can't swing long weapons while grappling.
 - **Monster grabs.** A grab attack with `pull_from_vehicle` can yank a rider without a seatbelt out of a vehicle (the vanilla grab attacks have it). Crowd crush follows TLG's rules, as `CROWD_CRUSH_*` external options, with a `CROWD_CRUSH` world option (on by default) and a `CROWD_CRUSH_RESIST` enchantment value.
-- **Explosive exertion.** A new EXPLOSIVE activity level and calorie-diary column. The `EXPLOSIVE_COMBAT_EXERTION` world option (off by default) makes melee, dodging, grappling and throwing use it as TLG does.
+- **Explosive exertion.** A new EXPLOSIVE activity level and calorie-diary column. The `EXPLOSIVE_COMBAT_EXERTION` world option (off by default) makes melee, dodging, grappling and throwing use it as TLG does. Since the 2026-11-21 upstream sync it is the `COMBAT_EXERTION` choice (normal, explosive or combat), and the old name still loads.
 
 For modders, documented in `doc/JSON/` (`MARTIALART_JSON.md`, `EFFECT_ON_CONDITION.md`, `MONSTER_SPECIAL_ATTACKS.md`, `MAGIC.md`, `JSON_FLAGS.md`):
 
@@ -701,6 +701,158 @@ Merging the five branches surfaced two interactions, fixed in `65e62c13` and `b7
 Two older tests were updated to the new behavior: the plank log stays until the cut is done, and a test weight was given a realistic volume.
 
 With this batch the full suite passes, 2923 of 2923 test cases with seed 4242 and no errors logged, and every mod set still loads with no errors. The 89 new test cases are mainly in `tests/mod_settings_test.cpp`, `tests/audit_containers_inventory_test.cpp`, `tests/audit_item_use_actions_test.cpp`, `tests/audit_char_sweep_test.cpp`, `tests/audit_progression_sweep_test.cpp`, `tests/audit_mutations_bionics_sweep_test.cpp` and `tests/audit_combat_test.cpp`.
+
+**Upstream sync, 2026-11-21.** Upstream CDDA master `46391a6`, the 184 PRs merged since the fork point `a1a646d6` (2026-10-31), is merged in as a real merge, so upstream history is kept and the next sync covers only newer PRs.
+- **The sort.** [upstream/sync-2026-11-21.md](upstream/sync-2026-11-21.md) has:
+  - the verdict on each PR
+  - the owner's decisions
+  - every upstream bug found, with the per-PR analysis in [upstream/sync-2026-11-21/](upstream/sync-2026-11-21/)
+- **The work.** Five agents resolved the 27 conflicting files, each on its own files. Five more branches then fixed upstream bugs, applied the owner's decisions and added tests. Three separate reviews followed: nothing lost from either side, the C++, and the data.
+
+**Conflict resolution.** A separate review checked, line by line and function by function, that nothing from either side was lost. In outline:
+- **Map split.** The fork's 40 `map.cpp` hunks went to the six files upstream split it into (`map_vehicle`, `map_cache`, `map_damage`, `map_visibility`, `map_architectural`, `map_creature`). MAP-P02's lazy caches moved as one unit, since half of them crash the first submap load.
+- **Dialogue split.** The fork's EOC-B09, EOC-B10, MGEN-B03 and NPC-J04 hunks moved to the new `dialogue.cpp`; the other 85 npctalk.cpp hunks stayed.
+- **Use actions taking `item_location` (#89473).** USE-B01, B06, B08, J01 and MUT-B08 were re-done on the new signatures, and the fork's tests now pass real locations.
+- **Wounds and combat.** The fork's EOC-B13, CHAR-B01 and HLTH-B09 guards were kept in the wound rework, and CMBT-B10, B12 and J01 in the partial dodge and sliding-scale block code.
+- **Xedra Evolved spell learning.** Upstream's rework was taken, with the fork's EOC-B14 weights re-applied by script, each spell capped at its own `max_level`.
+
+**Owner's decisions.**
+- **Combat exertion (#89469)** is a world option. `COMBAT_EXERTION` is a choice of normal (the default, unchanged), TLG's explosive level, or upstream's combat level. Worlds saved with the old `EXPLOSIVE_COMBAT_EXERTION` bool, and mods' `WORLD_OPTION`s that name it, are migrated.
+- **Partial dodge and sliding-scale blocks (#89470, #89640)** are taken, with these adjustments:
+  - head, eyes and mouth HP aren't halved
+  - grabs and disarms stay all-or-nothing and can't be blocked
+  - a held monster can't block
+  - `on_dodge` runs only for a real miss, by each attack's own rule, and never for an undodgeable attack
+  - the six hardcoded monster attacks roll a fresh block
+  - worn shields wear by the blow again
+  - HARDTOHIT and the get-hit hooks keep working
+- **Wounds hold back HP (#89557)** is taken, with its bugs fixed:
+  - healing that could drain HP
+  - a possible null dereference
+  - a wound holding back more than its part lost
+  - treatment copying the wrong held-back HP, or adding a wound from nothing
+- **Wound penalties to limb scores (#89651)** apply on healthy limbs too: the HP factor stops at 1.
+
+**Upstream bugs fixed on the way in.** Each has a regression test where one can be written; 61 new test cases in `tests/audit_sync_*_test.cpp`.
+- **Wounds and bleeding:**
+  - every wound had 0 pain
+  - `u_is_bleeding` with a severity was always false, so the sidebar's major and critical bleeding never showed
+- **Crashes:**
+  - the dissect-corpses job crashed the game when a follower had to fetch a tool
+  - a use action on an item with no carrier dereferenced null
+  - an active item on a map other than the main one couldn't find its own location when it ticked, for example a bomb in terrain being generated
+- **Broken menus and actions:**
+  - the `%` item action menu listed nothing
+  - a use action on an item inside a container got the container's location, so `u_activate` on a backpack deleted the backpack
+  - "deconstruct" was offered on every bare tile
+  - ATMs sold a removed item
+- **Traits:** Opiate Intolerance did nothing.
+- **Dialogue and factions:**
+  - the dialogue cursor could stick
+  - NPCs of most factions lost their monster faction
+- **Content:**
+  - the haywire fixbot printer never stopped
+  - a lakeside cabin migration put a second cabin on the roof level
+  - medium-carbon steel couldn't be made from low-carbon steel
+  - a set of airgun, HESCO, Labyrinth Warlord and Marloss evangelist data bugs
+- **Mods:**
+  - Xedra's Arvore and Salamander got no passive spell XP (`_xp_multipler`)
+  - a Xedra EOC id clashed with Dark Days of the Dead
+  - Ominous Wind healed its targets
+  - the Aftershock OmniWare screen couldn't be switched off
+  - DinoMod's crazed ceratosaurus was a dilophosaurus
+
+**Older fork issues found along the way and fixed.**
+- **Windows test builds.** Seven of the fork's test files named variables `near`/`far`, which `<windows.h>` turns into macros under MSVC.
+- **Grab guards.** Monster grab attacks with their own `condition` skipped the grappling port's NO_GRAB and incorporeal guards, which now live in `melee_actor::call`.
+- **The comment-commands workflow** let the upstream users it lists label, close or reopen the fork's issues. It now runs only in CleverRaven's repository.
+- **Undine.** The water sprite leveler got no XP and re-ran its selector (EOC-B14).
+- **Bleeding lacerations.** The core stop-bleeding EOC never stopped a bleeding medium laceration, because it read a variable that was never set.
+- **Stale test builds.** `temp_crafting_inv_test.cpp` included its header by relative path, so GCC's dependency file missed headers it reaches two ways, and an incremental build could leave it stale. It now includes the header by name.
+- **Open findings closed:** TERR-B13, HLTH-B19, MUT-J16, half of MONDT-B19 and half of MAGIC-B09.
+
+**Gameplay changes players will notice.** Most come from upstream:
+- graded melee hits and blocks
+- the wound rework: stabs, severity, healing stages, and wounds that hold back HP until treated
+- the Labyrinth expansion, fixbots, the Marloss evangelists' camp and the Experienced scenario
+- harsher crafting faults
+- cash cards replaced
+
+Beyond upstream:
+- **Wounds hurt again,** and Pain Resistant lowers wound pain instead of making it negative.
+- **Combat:**
+  - head HP stays at 60
+  - grabs can't be blocked
+  - worn shields wear out from blocking
+  - acid barf, lunges and the other hardcoded attacks can be blocked
+- **Traits and comfort:**
+  - Opiate Intolerance works
+  - sleeping on bare floor is slightly uncomfortable again
+- **Content:**
+  - medium-carbon steel can be made by carburizing again
+  - HESCO barriers return the soil they took to build
+
+**For modders:**
+- `COMBAT_EXERTION` replaces `EXPLOSIVE_COMBAT_EXERTION`; the old name still works.
+- `u_add_wound` needs `wound_id`, and `damage_type` with `may_worsen`. Both are load errors now.
+- Wound fix `"skills"` is a list (#89573), so third-party mods in the old object form must update.
+- A mutation attack's `hardcoded_effect` is a load error (MUT-J16).
+- `vitamins_absorb_multi` keys are checked at load.
+- The EOC and martial-art `hit` context counts glancing hits.
+- `"dodgeable": false` monster attacks never trigger dodge counters.
+- `ACT_MULTIPLE_DISSECT` can be started from EOCs.
+- ACT_BUILD's completion hooks fire.
+- `u_attack` special attacks can target creatures the monster is only neutral to.
+
+**Left open:**
+- **NPC weapon rating is slower.** The `npc_weapon_eval` benchmark takes about 29 ms against 20 ms before: upstream's `effective_dps` resolves 11 hit-quality buckets, and draws random numbers while doing it. A side-effect-free estimate is the fix; it would change the NPC attack snapshot test.
+- **Dodge attempts.** Undodgeable monster attacks still roll and spend a dodge attempt.
+- **Bleeding in mod powers.** Several mod powers still remove only the `bleed` effect, not bleeding wounds (MoM vitakinesis, XedraWood's chirurgeon, Magiclysm's `blocks_effects`).
+- **Wound design calls:**
+  - the stop-bleeding EOCs drop the HP a wound holds back
+  - wounds on minor parts hold back HP that never counts
+- **Hidden upstream melee test.** `Character_attacking_a_zombie` (tag `[.melee]`) crashes, as it did before the merge.
+- **Other inherited workflows.** `stale.yml`, the PR labelers and the PR comment bots still run without a repository check.
+- **Worth reporting upstream:** the cabin migration, the annealing recipe ids, the haywire count, wound pain, `u_is_bleeding`, the dissect crash and the `%` menu.
+
+With the sync the full suite passes, 2983 of 2983 test cases with seed 4242 and no errors logged, and every mod set loads with no errors. 61 test cases are new, in `tests/audit_sync_combat_test.cpp`, `audit_sync_wounds_test.cpp`, `audit_sync_items_test.cpp`, `audit_sync_content_test.cpp` and `audit_sync_xedra_test.cpp`.
+
+**Master merge, 2026-11-22.**
+- **What happened.** While the sync was under way, master gained PRs #7–#26 from other work:
+  - saved executions, knockouts, and fatal-hit and projectile executions
+  - the powers and abilities system
+  - the 2.0 round, covered under "The 2.0 round: medium findings" below
+- **The merge.** Before PR #27 could merge, master was merged into the sync branch (`799a1017`). It conflicted in 46 files, which six agents resolved.
+- **Carried into upstream's new code:**
+  - master's 59 `map.cpp` changes, 29 of them re-applied in the files upstream split it into
+  - master's 142 `npctalk.cpp` changes, 11 of them in the new `dialogue.cpp`
+  - master's use actions and their tests, moved to `item_location`
+  - master's blocking options, events and execution hooks, on upstream's partial dodge and sliding-scale blocks
+  - master's wound events, on upstream's wound rework
+  - master's VINT-J09 tool lending, in upstream's repair activity
+- **Checked by a separate review,** by script and by hand: nothing from either side was lost or doubled. JSON ids, registries, tests and hunks all add up.
+
+**Fixed in the same work:**
+- **Upstream's `item_location` change (#89473) broke more than the sync found:**
+  - the mining zone job crashed
+  - smokers, kilns and fireplaces couldn't be lit from carried firestarters
+  - held lockpicks were ignored
+  - the fireplace looked for firestarters only on its own tile
+  - the repair activity used the wrong tool position and could crash
+  - using a vehicle tool from the vehicle menu did nothing, because upstream had disabled the call
+  - an NPC given food or medicine used up a copy, so the stack never shrank
+- **Upstream content failed master's new load checks:**
+  - a tentacle crush technique scaled with a stat named "strength"
+  - six left tentacle parts had no valid opposites
+  - new speech lines had no ids
+- **Cash cards** are items that store money, not the id `cash_card`, which upstream removed. Vanilla has none, and Aftershock's and the test data's work through the same code.
+- **Two behaviours from before upstream's faction rework (#88359) are back:**
+  - NPCs of factions without a monster faction count as human
+  - civilians tell nearby NPCs about a theft
+- **Limb shielding (#89470)** needs a defense roll and a conscious defender, so an unseen or unrolled hit lands where it was aimed.
+- **Two tests that depended on test order** were fixed.
+
+With the merge the full suite passes, 4092 of 4092 test cases with seed 4242 and no errors logged, and every mod set loads with no errors. 18 test cases are new, in `tests/audit_mmerge_*_test.cpp`.
 
 **Verification.** Each fix was compile-checked with the project's `-Werror` flags and reviewed by a separate agent. The game and test suite were then built (`make TILES=0 RELEASE=1 PCH=0`) and run. All 35 `[audit]` test cases pass. The 31 from the first round all fail or crash on a build with their fix reverted, so they really catch the bugs; the 4 for ITEM-B02 and EVT-B02 were checked by review. The full suite passed then: 2313 of 2313 test cases with `--rng-seed 4242`.
 

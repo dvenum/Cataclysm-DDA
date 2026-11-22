@@ -1092,7 +1092,7 @@ bool trapfunc::dissector( const tripoint_bub_ms &p, Creature *c, item * )
             ch->deal_damage( nullptr, bodypart_id( "hand_r" ), damage_instance( damage_cut, 10 ) );
             ch->deal_damage( nullptr, bodypart_id( "hand_l" ), damage_instance( damage_cut, 10 ) );
             ch->deal_damage( nullptr, bodypart_id( "leg_r" ), damage_instance( damage_cut, 12 ) );
-            ch->deal_damage( nullptr, bodypart_id( "leg_r" ), damage_instance( damage_cut, 12 ) );
+            ch->deal_damage( nullptr, bodypart_id( "leg_l" ), damage_instance( damage_cut, 12 ) );
             ch->deal_damage( nullptr, bodypart_id( "foot_l" ), damage_instance( damage_cut, 10 ) );
             ch->deal_damage( nullptr, bodypart_id( "foot_r" ), damage_instance( damage_cut, 10 ) );
             if( player_sees ) {
@@ -1115,7 +1115,7 @@ bool trapfunc::dissector( const tripoint_bub_ms &p, Creature *c, item * )
     c->deal_damage( nullptr, bodypart_id( "hand_r" ), damage_instance( damage_cut, 10 ) );
     c->deal_damage( nullptr, bodypart_id( "hand_l" ), damage_instance( damage_cut, 10 ) );
     c->deal_damage( nullptr, bodypart_id( "leg_r" ), damage_instance( damage_cut, 12 ) );
-    c->deal_damage( nullptr, bodypart_id( "leg_r" ), damage_instance( damage_cut, 12 ) );
+    c->deal_damage( nullptr, bodypart_id( "leg_l" ), damage_instance( damage_cut, 12 ) );
     c->deal_damage( nullptr, bodypart_id( "foot_l" ), damage_instance( damage_cut, 10 ) );
     c->deal_damage( nullptr, bodypart_id( "foot_r" ), damage_instance( damage_cut, 10 ) );
 

@@ -55,7 +55,7 @@
       { "part": "torso", "ignored": 30 }
     ],
     "integrated_armor": [ "integrated_bark_skin" ],
-    "flags": [ "TOUGH_FEET", "BARKY" ]
+    "flags": [ "TOUGH_FEET", "BARKY", "BRUISE_IMMUNE" ]
   },
   {
     "type": "mutation",
@@ -518,6 +518,7 @@
         "condition": { "and": [ "is_day", "u_is_outside" ] },
         "values": [
           { "value": "REGEN_HP", "multiply": 0.5 },
+          { "value": "REGEN_WOUND", "multiply": 0.5 },
           { "value": "REGEN_HP_AWAKE", "multiply": 0.2 },
           { "value": "MENDING_MODIFIER", "multiply": 1 }
         ],
@@ -544,6 +545,7 @@
         "condition": { "and": [ "is_day", "u_is_outside" ] },
         "values": [
           { "value": "REGEN_HP", "multiply": 0.5 },
+          { "value": "REGEN_WOUND", "multiply": 0.5 },
           { "value": "REGEN_HP_AWAKE", "multiply": 0.2 },
           { "value": "REGEN_MANA", "multiply": 0.5 },
           { "value": "MENDING_MODIFIER", "multiply": 1 }
@@ -1105,7 +1107,6 @@
     "category": [ "ARVORE" ],
     "purifiable": false,
     "threshreq": [ "THRESH_ARVORE" ],
-    "//": "Healing values copied from the Regeneration mutation",
     "override_look": { "id": "t_tree", "tile_category": "terrain" },
     "flags": [
       "DEAF",
@@ -1169,6 +1170,7 @@
           { "value": "SLEEPINESS_REGEN", "multiply": 0.5 },
           { "value": "MENDING_MODIFIER", "multiply": 15 },
           { "value": "REGEN_HP", "multiply": 1.5 },
+          { "value": "REGEN_WOUND", "multiply": 15 },
           { "value": "REGEN_HP_AWAKE", "multiply": 0.8 },
           { "value": "SLEEPY", "add": 150 },
           { "value": "CLIMATE_CONTROL_HEAT", "add": 150 }
@@ -1195,6 +1197,7 @@
         "condition": { "and": [ "is_day", "u_is_outside" ] },
         "values": [
           { "value": "REGEN_HP", "multiply": 0.5 },
+          { "value": "REGEN_WOUND", "multiply": 0.5 },
           { "value": "REGEN_HP_AWAKE", "multiply": 0.2 },
           { "value": "REGEN_MANA", "multiply": 0.5 },
           { "value": "MAX_MANA", "multiply": 0.5 },
@@ -1223,6 +1226,7 @@
         "condition": { "and": [ "is_day", "u_is_outside" ] },
         "values": [
           { "value": "REGEN_HP", "multiply": 0.5 },
+          { "value": "REGEN_WOUND", "multiply": 0.5 },
           { "value": "REGEN_HP_AWAKE", "multiply": 0.2 },
           { "value": "REGEN_MANA", "multiply": 0.5 },
           { "value": "MAX_MANA", "multiply": 0.5 },

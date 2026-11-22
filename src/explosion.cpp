@@ -56,6 +56,7 @@
 #include "mtype.h"
 #include "npc.h"
 #include "options.h"
+#include "perf.h"
 #include "pimpl.h"
 #include "point.h"
 #include "projectile.h"
@@ -1065,7 +1066,7 @@ void process_explosions()
     if( _explosions.empty() ) {
         return;
     }
-
+    cata_timer process_explosions_timer( "process_explosions" );
     // Need to copy and clear this vector before processing the explosions.
     // Part of processing in `_make_explosion` is handing out shrapnel damage,
     // which might kill monsters. That might have all sorts of consequences,

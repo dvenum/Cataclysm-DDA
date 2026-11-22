@@ -847,7 +847,7 @@ A `pocket_data` array replaces every pocket of the item.  An item with `copy-fro
 }
 ```
 
-Other blocking numbers are external options in `data/core/external_options.json`: `BLOCK_MIN_STAMINA` (2000: below it you can't block), `BLOCK_SIZE_MARGIN` (1: you can't block an attacker more than this many sizes bigger, without `BLOCK_HUGE_ATTACKS`), `BLOCK_REACTION_PER_SKILL` (20: percent chance per melee level to react in time), `BLOCK_STAMINA_COST_MULT` (6) and `BLOCK_COUNTER_MAX_GLASS_PERCENT` (20: no block counter with a weapon more glass than that).  The enchantment values `BLOCK_EFFECTIVENESS` and `BLOCK_STAMINA_COST` (see [MAGIC.md](MAGIC.md)) change a character's blocks.  A negative value in `block` is a load error, as is an unknown damage type in `effectiveness`.
+Other blocking numbers are external options in `data/core/external_options.json`: `BLOCK_MIN_STAMINA` (2000: below it a block warns; stamina weakens every block), `BLOCK_SIZE_MARGIN` (1: you can't block an attacker more than this many sizes bigger, without `BLOCK_HUGE_ATTACKS`), `BLOCK_REACTION_PER_SKILL` (20: readiness per melee level to shield the head or torso with another limb), `BLOCK_STAMINA_COST_MULT` (6) and `BLOCK_COUNTER_MAX_GLASS_PERCENT` (20: no block counter with a weapon more glass than that).  The enchantment values `BLOCK_EFFECTIVENESS` and `BLOCK_STAMINA_COST` (see [MAGIC.md](MAGIC.md)) change a character's blocks.  A negative value in `block` is a load error, as is an unknown damage type in `effectiveness`.
 ### Memory Cards
 
 Memory card information can be defined on any GENERIC item by adding an object named `memory_card`, this field does not support `extend`/`remove`, only override.

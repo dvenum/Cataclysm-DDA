@@ -48,6 +48,7 @@
 #include "game_inventory.h"
 #include "handle_liquid.h"
 #include "harvest.h"
+#include "iexamine_firestarters.h"
 #include "input_context.h"
 #include "input_enums.h"
 #include "input_popup.h"
@@ -907,8 +908,9 @@ class atm_menu
 
         //! Reset and repopulate the menu; with a fair bit of work this could be more efficient.
         void reset( const bool clear = true ) {
-            const int card_count   = you.amount_of( itype_cash_card );
-            const int charge_count = card_count ? you.charges_of( itype_cash_card ) : 0;
+            const int card_count = static_cast<int>( you.cache_get_items_with( "is_cash_card",
+                                   &item::is_cash_card ).size() );
+            const int charge_count = card_count ? iexamine::cash_card_money( you ) : 0;
 
             if( clear ) {
                 amenu.reset();
@@ -919,7 +921,14 @@ class atm_menu
                                            "Your current balance is: %s" ),
                                         format_money( you.cash ) );
 
-            if( you.cash >= 1000 ) {
+            // The game may have no cash cards to issue (vanilla doesn't), and every other option
+            // needs one
+            if( !item::type_is_defined( itype_cash_card ) ) {
+                add_info( purchase_card, _( "This ATM has no cash cards to issue." ) );
+                if( !card_count ) {
+                    return;
+                }
+            } else if( you.cash >= 1000 ) {
                 add_choice( purchase_card, _( "Purchase cash card?" ) );
             } else {
                 add_info( purchase_card, _( "You need $10.00 in your account to purchase a card." ) );
@@ -975,7 +984,7 @@ class atm_menu
 
         //!Deposit money from cash card into bank account.
         bool do_deposit_money() {
-            int money = you.charges_of( itype_cash_card );
+            int money = iexamine::cash_card_money( you );
 
             if( !money ) {
                 popup( _( "You can only deposit money from charged cash cards!" ) );
@@ -1037,19 +1046,48 @@ void iexamine::atm( Character &you, const tripoint_bub_ms & )
     atm_menu {you}.start();
 }
 
+int iexamine::cash_card_money( Character &you )
+{
+    int money = 0;
+    for( const item_location &card : you.cache_get_items_with( "is_cash_card",
+            &item::is_cash_card ) ) {
+        money += card->ammo_remaining();
+    }
+    return money;
+}
+
+bool iexamine::spend_cash_card_money( Character &you, int amount )
+{
+    if( amount <= 0 ) {
+        return true;
+    }
+    if( cash_card_money( you ) < amount ) {
+        return false;
+    }
+    for( item_location &card : you.cache_get_items_with( "is_cash_card", &item::is_cash_card ) ) {
+        const int balance = card->ammo_remaining();
+        const int taken = std::min( amount, balance );
+        if( taken > 0 ) {
+            card->ammo_set( card->ammo_default(), balance - taken );
+            amount -= taken;
+        }
+        if( amount == 0 ) {
+            break;
+        }
+    }
+    return true;
+}
+
 bool iexamine::vending_pay( Character &you, const int price, const bool use_bank )
 {
     // The cards pay first, then the bank: a price equal to the cards' balance was free, and on
     // a networked machine the bank paid all of any price the cards couldn't (TERR-B11)
-    const int card = you.charges_of( itype_cash_card );
+    const int card = cash_card_money( you );
     const int from_bank = use_bank ? std::max( 0, price - card ) : 0;
     if( price - from_bank > card || ( from_bank > 0 && from_bank > you.cash ) ) {
         return false;
     }
-    const int from_cards = price - from_bank;
-    if( from_cards > 0 ) {
-        you.use_charges( itype_cash_card, from_cards );
-    }
+    spend_cash_card_money( you, price - from_bank );
     you.cash -= from_bank;
     return true;
 }
@@ -1062,13 +1100,13 @@ void iexamine::vending( Character &you, const tripoint_bub_ms &examp )
     map &here = get_map();
 
     constexpr int moves_cost = to_moves<int>( 5_seconds );
-    int money = you.charges_of( itype_cash_card );
+    int money = cash_card_money( you );
     map_stack vend_items = here.i_at( examp );
 
     bool use_bank = here.has_flag_furn( "BANK_NETWORKED", examp );
 
     if( use_bank ) {
-        money = you.cash + you.charges_of( itype_cash_card );
+        money += you.cash;
     }
 
     if( vend_items.empty() ) {
@@ -2018,7 +2056,19 @@ void iexamine::locked_object( Character &you, const tripoint_bub_ms &examp )
         //~ %1$s: terrain/furniture name, %2$s: prying tool name
         you.add_msg_if_player( _( "You attempt to pry open the %1$s using your %2$s…" ),
                                target_name, best_prying.tname() );
-        iuse::crowbar( &you, &best_prying, examp );
+
+        item_location prying_tool_loc;
+        you.visit_items( [&prying_tool_loc, &best_prying]( const item_location & node ) {
+
+            if( node.get_item()->type->id == best_prying.type->id ) {
+                prying_tool_loc = node;
+                return VisitResponse::ABORT;
+            }
+
+            return VisitResponse::NEXT;
+        } );
+
+        iuse::crowbar( &you, prying_tool_loc, examp );
     } else if( action == act::pick ) {
         locked_object_pickable( you, examp );
     }
@@ -2057,12 +2107,21 @@ void iexamine::locked_object_pickable( Character &you, const tripoint_bub_ms &ex
         }
     }
 
-    std::vector<item *> picklocks = you.items_with( [&you]( const item & it ) {
+    std::vector<item_location> picklocks;
+    you.visit_items( [&picklocks, &you]( const item_location & node ) {
+
         // Don't include worn items such as hairpins
-        if( !you.is_worn( it ) ) {
-            return it.type->get_use( "PICK_LOCK" ) != nullptr;
+        if( you.is_worn( *node ) ) {
+            return VisitResponse::NEXT;
         }
-        return false;
+
+        if( node->type->get_use( "PICK_LOCK" ) == nullptr ) {
+            return VisitResponse::NEXT;
+        }
+
+        picklocks.emplace_back( node );
+
+        return VisitResponse::NEXT;
     } );
 
     if( picklocks.empty() ) {
@@ -2072,7 +2131,8 @@ void iexamine::locked_object_pickable( Character &you, const tripoint_bub_ms &ex
     }
 
     // Sort by their picklock level.
-    std::sort( picklocks.begin(), picklocks.end(), [&]( const item * a, const item * b ) {
+    std::sort( picklocks.begin(), picklocks.end(), [&]
+    ( const item_location & a, const item_location & b ) {
         int a_quality = a->get_quality( qual_LOCKPICK );
         int b_quality = b->get_quality( qual_LOCKPICK );
         // Sort by durability to spend most broken item
@@ -2082,8 +2142,8 @@ void iexamine::locked_object_pickable( Character &you, const tripoint_bub_ms &ex
         return a_quality > b_quality;
     } );
 
-    for( item *it : picklocks ) {
-        int required_moves = lockpick_activity_actor::lockpicking_moves( item_location{you, it}, you );
+    for( item_location it : picklocks ) {
+        int required_moves = lockpick_activity_actor::lockpicking_moves( it, you );
         time_duration required_time = time_duration::from_turns( required_moves / you.get_speed() );
         const std::string time_string = colorize( to_string( required_time, true ), c_light_gray );
         std::string query = string_format( _( "Pick the lock of %1$s using your %2$s?" ),
@@ -2097,9 +2157,9 @@ void iexamine::locked_object_pickable( Character &you, const tripoint_bub_ms &ex
         const use_function *iuse_fn = it->type->get_use( "PICK_LOCK" );
         you.add_msg_if_player( _( "You attempt to pick the lock of %1$s using your %2$s…" ),
                                target_name, it->tname() );
-        const ret_val<void> can_use = iuse_fn->can_call( you, *it, examp );
+        const ret_val<void> can_use = iuse_fn->can_call( you, it, examp );
         if( can_use.success() ) {
-            iuse_fn->call( &you, *it, examp );
+            iuse_fn->call( &you, it, examp );
             return;
         } else {
             you.add_msg_if_player( m_bad, can_use.str() );
@@ -3003,18 +3063,52 @@ void iexamine::aggie_plant( Character &you, const tripoint_bub_ms &examp )
     }
 }
 
-static void add_firestarter( item *it, std::multimap<int, item *> &firestarters, Character &you,
-                             const tripoint_bub_ms &examp )
+static VisitResponse add_firestarter( item_location it,
+                                      std::multimap<int, item_location> &firestarters,
+                                      Character &you, const tripoint_bub_ms &examp )
 {
-    const use_function *usef = it->type->get_use( "firestarter" );
-    if( usef != nullptr && usef->get_actor_ptr() != nullptr ) {
-        const firestarter_actor *actor = dynamic_cast<const firestarter_actor *>( usef->get_actor_ptr() );
-        if( actor->can_use( you, *it, &get_map(), examp ).success() ) {
-            firestarters.insert( std::pair<int, item *>( actor->moves_cost_fast, it ) );
-        }
+    if( !it->has_flag( flag_FIRESTARTER ) && !it->has_flag( flag_FIRE ) ) {
+        return VisitResponse::NEXT;
     }
+
+    const use_function *usef = it->type->get_use( "firestarter" );
+    if( usef == nullptr || usef->get_actor_ptr() == nullptr ) {
+        return VisitResponse::NEXT;
+    }
+
+    const firestarter_actor *actor = dynamic_cast<const firestarter_actor *>( usef->get_actor_ptr() );
+    if( actor->can_use( you, it, &get_map(), examp ).success() ) {
+        firestarters.emplace( actor->moves_cost_fast, it );
+    }
+
+    return VisitResponse::NEXT;
 }
 
+std::multimap<int, item_location> iexamine::find_firestarters( Character &you,
+        const tripoint_bub_ms &examp, const bool nearby )
+{
+    std::multimap<int, item_location> firestarters;
+    const auto add = [&firestarters, &you, &examp]( const item_location & node ) {
+        return add_firestarter( node, firestarters, you, examp );
+    };
+    you.visit_items( add );
+    if( !nearby ) {
+        return firestarters;
+    }
+    map &here = get_map();
+    for( const tripoint_bub_ms &pos : closest_points_first( you.pos_bub(), PICKUP_RANGE ) ) {
+        if( pos == examp ) {
+            // stuff in the fireplace can't light itself
+            continue;
+        }
+        const std::optional<vpart_reference> ovp = here.veh_at( pos ).cargo();
+        if( ovp.has_value() ) {
+            vehicle_cursor( ovp->vehicle(), ovp->part_index() ).visit_items( add );
+        }
+        map_cursor( pos ).visit_items( add );
+    }
+    return firestarters;
+}
 
 static void pick_firestarter_and_fire( Character &you, const tripoint_bub_ms &examp,
                                        firestarter_actor::start_type st )
@@ -3029,16 +3123,9 @@ static void pick_firestarter_and_fire( Character &you, const tripoint_bub_ms &ex
         return;
     }
 
-    // Determine the fire starter to use.
-    auto is_firestarter = []( const item & it ) {
-        return it.has_flag( flag_FIRESTARTER ) || it.has_flag( flag_FIRE );
-    };
 
-    std::multimap<int, item *> firestarters;
-
-    for( item *it : you.items_with( is_firestarter ) ) {
-        add_firestarter( it, firestarters, you, examp );
-    }
+    const std::multimap<int, item_location> firestarters = iexamine::find_firestarters( you, examp,
+            false );
 
     const bool has_bionic_firestarter = you.has_bionic( bio_lighter ) &&
                                         you.enough_power_for( bio_lighter );
@@ -3054,14 +3141,15 @@ static void pick_firestarter_and_fire( Character &you, const tripoint_bub_ms &ex
 
     // Try to start the smoking rack/kiln.
     if( !use_cbm ) {
-        for( auto &firestarter : firestarters ) {
-            item *it = firestarter.second;
+        for( const auto &firestarter : firestarters ) {
+            item_location it = firestarter.second;
             const use_function *usef = it->type->get_use( "firestarter" );
             const firestarter_actor *actor = dynamic_cast<const firestarter_actor *>( usef->get_actor_ptr() );
-            you.add_msg_if_player( _( "You attempt to start a fire with your %s…" ), it->tname() );
-            const ret_val<void> can_use = actor->can_use( you, *it, &get_map(), examp );
+            you.add_msg_if_player( _( "You attempt to start a fire with your %s…" ),
+                                   it->tname() );
+            const ret_val<void> can_use = actor->can_use( you, it, &get_map(), examp );
             if( can_use.success() ) {
-                const int charges = actor->use( &you, *it, &get_map(), examp ).value_or( 0 );
+                const int charges = actor->use( &you, it, &get_map(), examp ).value_or( 0 );
                 you.use_charges( it->typeId(), charges );
                 return;
             } else {
@@ -3597,27 +3685,19 @@ void iexamine::fireplace( Character &you, const tripoint_bub_ms &examp )
     const bool already_on_fire = here.has_nearby_fire( examp, 0 );
     const bool furn_is_deployed = !here.furn( examp ).obj().deployed_item.is_empty();
 
-    auto is_firestarter = []( const item & it ) {
-        return it.has_flag( flag_FIRESTARTER ) || it.has_flag( flag_FIRE );
-    };
     auto is_firequencher = []( const item & it ) {
         return it.damage_melee( damage_bash );
     };
 
-    std::multimap<int, item *> firestarters;
-    std::vector<item *> firequenchers = you.items_with( is_firequencher );
 
-    for( item *it : you.items_with( is_firestarter ) ) {
-        add_firestarter( it, firestarters, you, examp );
-    }
+    const std::multimap<int, item_location> firestarters = find_firestarters( you, examp, true );
+    // TODO: this doesn't work and needs fixing
+    std::vector<item *> firequenchers = you.items_with( is_firequencher );
 
     for( const tripoint_bub_ms &pos : closest_points_first( you.pos_bub(), PICKUP_RANGE ) ) {
         if( pos == examp ) {
-            // stuff in the fireplace can't light or quench itself
+            // stuff in the fireplace can't quench itself
             continue;
-        }
-        for( item_location &it : here.items_with( pos, is_firestarter ) ) {
-            add_firestarter( &*it, firestarters, you, examp );
         }
         // anything is fine, so only check if we got nothing yet
         if( firequenchers.empty() ) {
@@ -3659,14 +3739,14 @@ void iexamine::fireplace( Character &you, const tripoint_bub_ms &examp )
             g->pickup( examp );
             return;
         case 1: {
-            for( auto &firestarter : firestarters ) {
-                item *it = firestarter.second;
+            for( const auto &firestarter : firestarters ) {
+                item_location it = firestarter.second;
                 const use_function *usef = it->type->get_use( "firestarter" );
                 const firestarter_actor *actor = dynamic_cast<const firestarter_actor *>( usef->get_actor_ptr() );
                 you.add_msg_if_player( _( "You attempt to start a fire with your %s…" ), it->tname() );
-                const ret_val<void> can_use = actor->can_use( you, *it, &get_map(), examp );
+                const ret_val<void> can_use = actor->can_use( you, it, &get_map(), examp );
                 if( can_use.success() ) {
-                    const int charges = actor->use( &you, *it, &get_map(), examp ).value_or( 0 );
+                    const int charges = actor->use( &you, it, &get_map(), examp ).value_or( 0 );
                     you.use_charges( it->typeId(), charges );
                     return;
                 } else {
@@ -5478,7 +5558,7 @@ void iexamine::pay_gas( Character &you, const tripoint_bub_ms &examp )
     }
 
     if( buy_gas == choice ) {
-        int money = you.charges_of( itype_cash_card );
+        int money = cash_card_money( you );
 
         if( money < pricePerUnit ) {
             popup( str_to_illiterate_str(
@@ -5499,7 +5579,7 @@ void iexamine::pay_gas( Character &you, const tripoint_bub_ms &examp )
         if( liters <= 0 ) {
             return;
         }
-        if( liters * pricePerUnit > you.charges_of( itype_cash_card ) ) {
+        if( liters * pricePerUnit > cash_card_money( you ) ) {
             popup( str_to_illiterate_str(
                        _( "Not enough money, please refill your cash card." ) ) );
             return;
@@ -5516,7 +5596,7 @@ void iexamine::pay_gas( Character &you, const tripoint_bub_ms &examp )
 
         int cost = liters * pricePerUnit;
         money -= cost;
-        you.use_charges( itype_cash_card, cost );
+        spend_cash_card_money( you, cost );
 
         add_msg( m_info, _( "Your cash cards now hold %s." ), format_money( money ) );
         you.mod_moves( -to_moves<int>( 5_seconds ) );
@@ -5563,7 +5643,7 @@ void iexamine::pay_gas( Character &you, const tripoint_bub_ms &examp )
             // all fuel already removed from pump, so remaining amount_money simply ignored
         }
         add_msg( m_info, _( "Your cash cards now hold %s." ),
-                 format_money( you.charges_of( itype_cash_card ) ) );
+                 format_money( cash_card_money( you ) ) );
         you.mod_moves( -to_moves<int>( 5_seconds ) );
         return;
     }

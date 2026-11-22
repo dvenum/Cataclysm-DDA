@@ -1,0 +1,112 @@
+[
+  {
+    "//": "sync-89453: no body part carries MEND_ALL, so hits never roll these wounds; tests add them directly.",
+    "type": "wound",
+    "id": "audit_sync_pain_wound",
+    "name": { "str": "audit sync pain wound" },
+    "description": "A wound that always hurts 10.",
+    "whitelist_bp_with_flag": [ "MEND_ALL" ],
+    "pain": [ 10, 10 ]
+  },
+  {
+    "//": "sync-89651: a flat lift penalty.",
+    "type": "wound",
+    "id": "audit_sync_lift_wound",
+    "name": { "str": "audit sync lift wound" },
+    "description": "A wound that takes 0.1 off the lift score.",
+    "whitelist_bp_with_flag": [ "MEND_ALL" ],
+    "limb_scores": [ { "score": "lift", "value": 0.1 } ]
+  },
+  {
+    "//": "sync-89651: a lift penalty of half the score.",
+    "type": "wound",
+    "id": "audit_sync_lift_mod_wound",
+    "name": { "str": "audit sync lift mod wound" },
+    "description": "A wound that takes half the lift score.",
+    "whitelist_bp_with_flag": [ "MEND_ALL" ],
+    "limb_scores": [ { "score": "lift", "mod": 0.5 } ]
+  },
+  {
+    "//": "sync-89557: the wound audit_sync_fix treats.",
+    "type": "wound",
+    "id": "audit_sync_fix_target",
+    "name": { "str": "audit sync fix target" },
+    "description": "A wound to treat.",
+    "whitelist_bp_with_flag": [ "MEND_ALL" ]
+  },
+  {
+    "//": "sync-89557: the wound audit_sync_fix leaves.",
+    "type": "wound",
+    "id": "audit_sync_fix_result",
+    "name": { "str": "audit sync fix result" },
+    "description": "A treated wound.",
+    "whitelist_bp_with_flag": [ "MEND_ALL" ]
+  },
+  {
+    "//": "sync-89557: replaces audit_sync_fix_target with audit_sync_fix_result.",
+    "type": "wound_fix",
+    "id": "audit_sync_fix",
+    "name": "audit sync fix",
+    "description": "Treats the audit sync fix target.",
+    "time": "1 seconds",
+    "wounds_removed": [ "audit_sync_fix_target" ],
+    "wounds_added": [ "audit_sync_fix_result" ],
+    "success_msg": "Treated."
+  },
+  {
+    "//": "sync-89453: makes wound pain negative before the clamp.",
+    "type": "mutation",
+    "id": "AUDIT_SYNC_PAIN_NUMB",
+    "name": { "str": "Audit Sync Pain Numb" },
+    "points": 0,
+    "valid": false,
+    "description": "Test mutation whose PAIN multiplier is below -1.",
+    "enchantments": [ { "values": [ { "value": "PAIN", "multiply": -1.5 } ] } ]
+  },
+  {
+    "//": "sync-89557: DISTRIBUTED_DAMAGE without the rest of a slime body.",
+    "type": "mutation",
+    "id": "AUDIT_SYNC_DISTRIBUTED",
+    "name": { "str": "Audit Sync Distributed" },
+    "points": 0,
+    "valid": false,
+    "description": "Test mutation that spreads damage over the main parts.",
+    "flags": [ "DISTRIBUTED_DAMAGE" ]
+  },
+  {
+    "//": "sync-89489: a character flag that a non-flesh limb also gives.",
+    "type": "mutation",
+    "id": "AUDIT_SYNC_NON_FLESH",
+    "name": { "str": "Audit Sync Non Flesh" },
+    "points": 0,
+    "valid": false,
+    "description": "Test mutation with the NON_FLESH_LIMB flag, as a vine or bark limb gives it.",
+    "flags": [ "NON_FLESH_LIMB" ]
+  },
+  {
+    "//": "sync-88359: owned by audit_sync_monfaction_owner, and shared with its copy.",
+    "type": "MONSTER_FACTION",
+    "name": "audit_sync_owned_monfaction"
+  },
+  {
+    "//": "sync-88359: the NPC faction that owns audit_sync_owned_monfaction.",
+    "type": "faction",
+    "id": "audit_sync_monfaction_owner",
+    "name": "Audit Monfaction Owners",
+    "likes_u": 10,
+    "respects_u": 5,
+    "known_by_u": true,
+    "size": 10,
+    "power": 20,
+    "wealth": 1000,
+    "mon_faction": "audit_sync_owned_monfaction",
+    "description": "A faction that owns a monster faction."
+  },
+  {
+    "//": "sync-88359: inherits mon_faction; loading it used to log that the monfaction had two owners.",
+    "type": "faction",
+    "id": "audit_sync_monfaction_copy",
+    "copy-from": "audit_sync_monfaction_owner",
+    "name": "Audit Monfaction Copies"
+  }
+]

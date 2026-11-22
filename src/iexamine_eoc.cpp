@@ -140,8 +140,10 @@ std::optional<std::string> avatar_examine( Character &you, const tripoint_bub_ms
     if( !examined.can_examine( pos ) ) {
         return string_format( _( "There is nothing to do with the %s." ), name );
     }
+    // as game::examine: some things (security fences...) are a major offense to examine
+    const bool major_offense = here.has_flag( "FACTION_SECURITY", pos );
     if( !here.has_flag( "FREE_TO_EXAMINE", pos ) &&
-        !g->warn_player_maybe_anger_local_faction( false, true ) ) {
+        !g->warn_player_maybe_anger_local_faction( major_offense, true ) ) {
         return string_format( _( "You leave the %s alone." ), name );
     }
     examined.examine( you, pos );

@@ -30,7 +30,6 @@ static const faction_id faction_amf( "amf" );
 static const faction_id faction_no_faction( "no_faction" );
 static const faction_id faction_your_followers( "your_followers" );
 
-static const mfaction_str_id monfaction_human( "human" );
 
 faction_template::faction_template()
 {
@@ -70,8 +69,9 @@ class faction_template_entry
         faction_template templ;
 
         void load( const JsonObject &jsobj, std::string_view ) {
-            templ.load_members( jsobj, was_loaded );
+            // first: load_members tells a copy of another faction by this id
             templ.id = faction_id( id.str() );
+            templ.load_members( jsobj, was_loaded );
         }
 };
 
@@ -255,7 +255,17 @@ void faction_template::load_members( const JsonObject &jsobj, const bool was_loa
     // a copy keeps the parent's relations to the factions it doesn't list
     load_relations( jsobj );
     change_relations( jsobj, was_loaded );
-    optional( jsobj, was_loaded, "mon_faction", mon_faction, monfaction_human );
+    optional( jsobj, was_loaded, "mon_faction", mon_faction, mfaction_str_id::NULL_ID() );
+    if( jsobj.has_member( "mon_faction" ) ) {
+        mon_faction_inherited = false;
+    } else if( was_loaded ) {
+        // a copy of another faction shares its monster faction; a faction redefined from
+        // itself, or copied from an abstract one, keeps what it had
+        const faction_id parent( jsobj.get_string( "copy-from" ) );
+        if( parent != id && find( parent ) != nullptr ) {
+            mon_faction_inherited = !mon_faction.is_null();
+        }
+    }
     optional( jsobj, was_loaded, "epilogues", epilogue_data, faction_epilogue_reader {} );
     optional( jsobj, was_loaded, "mutiny_faction", mutiny_faction, faction_amf );
 }
@@ -700,6 +710,7 @@ faction *faction_manager::get( const faction_id &id, const bool complain )
                     elem.second.set_name( fac_temp->get_name() );
                     elem.second.desc = fac_temp->desc;
                     elem.second.mon_faction = fac_temp->mon_faction;
+                    elem.second.mon_faction_inherited = fac_temp->mon_faction_inherited;
                     elem.second.epilogue_data = fac_temp->epilogue_data;
                     elem.second.mutiny_faction = fac_temp->mutiny_faction;
                     for( const auto &rel_data : fac_temp->relations ) {

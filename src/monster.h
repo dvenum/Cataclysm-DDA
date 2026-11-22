@@ -112,9 +112,10 @@ class monster : public Creature
             return this;
         }
 
-        mfaction_id get_monster_faction() const override {
-            return faction.id();
-        }
+        // Get the monfaction associated with this monster
+        mfaction_id get_monster_faction() const override;
+        //Get the *NPC* faction associated with this monster's monfaction, may be null
+        faction_id get_parent_faction() const;
         void gravity_check() override;
         void gravity_check( map *here ) override;
         void poly( const mtype_id &id );
@@ -251,8 +252,11 @@ class monster : public Creature
         bool has_dest() const;
         // Returns point at the end of the monster's current plans
         tripoint_abs_ms get_dest() const;
-        // Returns the creature at the end of plans (if hostile)
+        // Returns the creature at the end of plans (if hostile; while eoc_attack, if not friendly)
         Creature *attack_target() const;
+        // Set while u_attack makes this monster use a special attack: an EOC may aim one at a
+        // creature the monster is only neutral to
+        bool eoc_attack = false; // NOLINT(cata-serialize)
         // Go towards p using the monster's pathfinding settings.
         void set_dest( const tripoint_abs_ms &p );
         // Reset our plans, we've become aimless.
@@ -406,6 +410,7 @@ class monster : public Creature
         // The monster's skill in hitting a weakpoint
         float weakpoint_skill() const;
 
+        float block_roll( const Creature *source ) override;
         bool block_hit( Creature *source, bodypart_id &bp_hit, damage_instance &d ) override;
         bool melee_attack( Creature &target );
         bool melee_attack( Creature &target, float accuracy );

@@ -95,6 +95,10 @@ void vending( Character &you, const tripoint_bub_ms &examp );
 /** Takes price from you's cash cards and, with use_bank, what they can't cover from you's bank
  * account.  Returns false, taking nothing, if that isn't enough. */
 bool vending_pay( Character &you, int price, bool use_bank );
+/** The money on the cash cards you carries (item::is_cash_card). */
+int cash_card_money( Character &you );
+/** Takes amount from you's cash cards.  Returns false, taking nothing, if they hold less. */
+bool spend_cash_card_money( Character &you, int amount );
 void iso_recycler( Character &you, const tripoint_bub_ms &examp );
 void elevator( Character &you, const tripoint_bub_ms &examp );
 void genemill( Character &you, const tripoint_bub_ms &examp );

@@ -2,16 +2,20 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <set>
 #include <utility>
 
 #include "debug.h"
 #include "debug_menu.h"
 #include "enum_conversions.h"
+#include "faction.h"
 #include "flexbuffer_json.h"
+#include "game.h"
 #include "generic_factory.h"
 #include "json.h"
 #include "options.h"
+#include "pimpl.h"
 
 // for legacy reasons "monfaction::id" is called "name" in json
 static generic_factory<monfaction> faction_factory( "MONSTER_FACTION", "name" );
@@ -186,6 +190,26 @@ void monfaction::finalize()
         // break the cycle
         base_faction = mfaction_str_id::NULL_ID();
     }
+
+    associated_faction = faction_id::NULL_ID();
+    // associate with NPC faction
+    for( const std::pair<const faction_id, faction> &npc_faction : g->faction_manager_ptr->all() ) {
+        mfaction_str_id npc_fac = npc_faction.second.mon_faction;
+        // Nasty: Avoid matching empty string.  A copy-from child shares its parent's.
+        if( npc_fac.is_empty() || npc_faction.second.mon_faction_inherited ) {
+            continue;
+        }
+        if( !npc_fac.is_null() && npc_fac == id ) {
+            // Error loudly if two factions "own" this monfaction, something has gone wrong.
+            if( !associated_faction.is_null() ) {
+                debugmsg( "Attempting to set NPC faction owner of %s for monfaction %s. Monfaction is already owned by %s.",
+                          npc_fac.c_str(), id.c_str(), associated_faction.c_str() );
+                continue;
+            }
+            associated_faction = npc_faction.first;
+        }
+    }
+
     if( !ignores_npcs_if_option.empty() && ( !get_options().has_option( ignores_npcs_if_option ) ||
             get_options().get_option( ignores_npcs_if_option ).getType() != "bool" ) ) {
         debugmsg( "MONSTER_FACTION %s: ignores_npcs_if_option \"%s\" is not a boolean option.",

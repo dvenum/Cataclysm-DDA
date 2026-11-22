@@ -31,6 +31,7 @@
 #include "game.h"
 #include "global_vars.h"
 #include "item.h"
+#include "item_location.h"
 #include "itype.h"
 #include "iuse.h"
 #include "json.h"
@@ -38,6 +39,7 @@
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "map_selector.h"
 #include "math_parser.h"
 #include "math_parser_diag_value.h"
 #include "monster.h"
@@ -738,10 +740,13 @@ TEST_CASE( "familiar_demo_item_route_saves_a_string_handle_and_issues_orders",
     actor_world world;
     const auto use = []( const std::string & id ) {
         item focus( itype_id( id ), calendar::turn );
+        // a loose item, where its user is
+        item_location focus_loc( map_cursor( &get_map(), get_avatar().pos_bub() ), &focus );
         const auto it = focus.type->use_methods.find( "effect_on_conditions" );
         REQUIRE( it != focus.type->use_methods.end() );
         REQUIRE( it->second.get_actor_ptr() );
-        it->second.get_actor_ptr()->use( &get_avatar(), focus, &get_map(), get_avatar().pos_bub() );
+        it->second.get_actor_ptr()->use( &get_avatar(), focus_loc, &get_map(),
+                                         get_avatar().pos_bub() );
     };
     use( "power_demo_familiar_focus" );
     REQUIRE( get_power_actors().inspect().size() == 1 );

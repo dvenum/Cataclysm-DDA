@@ -45,6 +45,7 @@
 #include "map.h"
 #include "map_iterator.h"
 #include "map_scale_constants.h"
+#include "map_selector.h"
 #include "mapdata.h"
 #include "messages.h"
 #include "monster.h"
@@ -74,7 +75,6 @@
 #include "weather.h"
 
 static const activity_id ACT_HEATING( "ACT_HEATING" );
-static const activity_id ACT_REPAIR_ITEM( "ACT_REPAIR_ITEM" );
 
 static const ammotype ammo_battery( "battery" );
 
@@ -364,11 +364,15 @@ void vehicle::build_electronics_menu( map &here, veh_menu &menu )
     for( const vpart_reference &arc_vp : get_any_parts( "ARCADE" ) ) {
         if( arc_vp.part().enabled ) {
             item *arc_itm = &arc_vp.part().base;
+            vehicle_cursor vc( *this, arc_vp.part_index() );
+            item_location loc( vc, arc_itm );
 
             menu.add( _( "Play arcade machine" ) )
             .hotkey( "ARCADE" )
             .enable( !!arc_itm )
-            .on_submit( [arc_itm] { iuse::portable_game( &get_avatar(), arc_itm, tripoint_bub_ms::zero ); } );
+            .on_submit( [loc]() mutable {
+                iuse::portable_game( &get_avatar(), loc, tripoint_bub_ms::zero );
+            } );
             break;
         }
     }
@@ -1831,8 +1835,11 @@ void vehicle::use_monster_capture( int part, map */*here*/, const tripoint_bub_m
         return;
     }
     item base = item( parts[part].get_base() );
+    vehicle_cursor vc( *this, part );
+    item_location loc( vc, &base );
+
     // TODO: Use map aware invoke when available
-    base.type->invoke( &get_avatar(), base, pos );
+    base.type->invoke( &get_avatar(), loc, pos );
     if( base.has_var( "contained_name" ) ) {
         parts[part].set_flag( vp_flag::animal_flag );
     } else {
@@ -2461,25 +2468,13 @@ bool vehicle::use_vehicle_tool( vehicle &veh, map *here, const tripoint_bub_ms &
     }
     const bool is_battery_tool = !ammo_type_id.is_null() && ammo_type_id->ammo->type == ammo_battery;
     if( !no_invoke ) {
-        // TODO: pass map or go abs
-        get_player_character().invoke_item( &tool, vp_pos );
+        // The tool is a stand-in for the vehicle's: its location points at it, as the use action
+        // got the item itself before use actions took a location.
+        item_location tool_loc( map_cursor( here, vp_pos ), &tool );
+        get_player_character().invoke_item( tool_loc, vp_pos );
     }
 
-    // HACK: Evil hack incoming
-    // A repair the tool started finds the tool on the vehicle (activity_handlers' weldrig_hack):
-    // any repair_item tool a vehicle provides, not only six listed ids, whose repairs started
-    // on this temporary item and failed or read it after it was gone (VINT-J09)
     player_activity &act = get_player_character().activity;
-    if( act.id() == ACT_REPAIR_ITEM && act.coords.empty() ) {
-        act.index = INT_MIN; // tell activity the item doesn't really exist
-        act.coords.push_back( here->get_abs( vp_pos ) ); // tell it to search for the tool on `pos`
-        act.str_values.push_back( tool_type.str() ); // specific tool on the rig
-        if( !act.targets.empty() ) {
-            // it pointed at `tool`, gone once this returns
-            act.targets[0] = item_location();
-        }
-    }
-
     //Hack for heat_activity_actor.
     if( act.id() == ACT_HEATING ) {
         act.coords.push_back( here->get_abs( vp_pos ) );

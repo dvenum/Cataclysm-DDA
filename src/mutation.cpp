@@ -29,6 +29,7 @@
 #include "field_type.h"
 #include "game.h"
 #include "item.h"
+#include "item_location.h"
 #include "item_uid.h"
 #include "itype.h"
 #include "magic.h"
@@ -38,8 +39,8 @@
 #include "mapdata.h"
 #include "messages.h"
 #include "monster.h"
-#include "omdata.h"
 #include "npc.h"
+#include "omdata.h"
 #include "options.h"
 #include "output.h"
 #include "overmapbuffer.h"
@@ -1065,7 +1066,8 @@ void Character::activate_cached_mutation( const trait_id &mut )
         case mutation_builtin_activation::burrow: {
             set_powered( false );
             item burrowing_item( itype_fake_burrowing );
-            invoke_item( &burrowing_item );
+            item_location loc( *this, &burrowing_item );
+            invoke_item( loc );
             return;  // handled when the activity finishes
         }
         case mutation_builtin_activation::slime_split: {
@@ -2066,7 +2068,9 @@ bool Character::mutate_towards( const trait_id &mut, const mutation_category_id 
     }
 
     for( const bionic_id &bid : get_bionics() ) {
-        if( bid->mutation_conflicts.count( mut ) != 0 ) {
+        if( bid->mutation_conflicts.count( mut ) != 0 ||
+            std::find( bid->canceled_mutations.begin(), bid->canceled_mutations.end(),
+                       mut ) != bid->canceled_mutations.end() ) {
             return handle_bio_mut_conflict( bid, mut );
         }
         // We shouldn't ever get here, because of mutation_ok

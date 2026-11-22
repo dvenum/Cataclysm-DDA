@@ -7,7 +7,6 @@
 #include <optional>
 #include <set>
 #include <tuple>
-#include <type_traits>
 #include <unordered_set>
 #include <utility>
 
@@ -120,20 +119,23 @@ bool item_pocket::item_has_uses_recursive() const
 
 item_action_map item_action_generator::map_actions_to_items( Character &you ) const
 {
-    return map_actions_to_items( you, std::vector<item *>() );
+    return map_actions_to_items( you, std::vector<item_location>() );
 }
 
 // The item, `outer` or one inside it, with a use action whose id is exactly `use` (not one only
 // of that type: a use action with an "id" has its own entry, under the id).
-static item *item_with_use_id( item &outer, const std::string &use )
+static item_location item_with_use_id( const item_location &outer, const std::string &use )
 {
-    item *ret = nullptr;
-    outer.visit_items( [&ret, &use]( item * it, item * ) {
-        if( it == nullptr ) {
-            return VisitResponse::SKIP;
-        }
-        if( it->type != nullptr && it->type->use_methods.count( use ) != 0 ) {
-            ret = it;
+    const auto has_use_id = [&use]( const item & it ) {
+        return it.type != nullptr && it.type->use_methods.count( use ) != 0;
+    };
+    if( has_use_id( *outer ) ) {
+        return outer;
+    }
+    item_location ret;
+    outer.visit_contents( [&ret, &has_use_id]( const item_location & node ) {
+        if( has_use_id( *node ) ) {
+            ret = node;
             return VisitResponse::ABORT;
         }
         return VisitResponse::NEXT;
@@ -142,7 +144,7 @@ static item *item_with_use_id( item &outer, const std::string &use )
 }
 
 item_action_map item_action_generator::map_actions_to_items( Character &you,
-        const std::vector<item *> &pseudos, const bool use_player_inventory ) const
+        const std::vector<item_location> &pseudos, const bool use_player_inventory ) const
 {
     std::set< item_action_id > unmapped_actions;
     for( const auto &ia_ptr : item_actions ) { // Get ids of wanted actions
@@ -150,10 +152,10 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
     }
 
     item_action_map candidates;
-    std::vector< item * > items;
+    std::vector<item_location> items;
     // Default behavior
     if( use_player_inventory ) {
-        items = you.inv_dump();
+        items = you.inv_dump_loc();
         items.reserve( items.size() + pseudos.size() );
         items.insert( items.end(), pseudos.begin(), pseudos.end() );
     } else {
@@ -161,7 +163,7 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
     }
 
     // A use action with an "id" of a type listed here is listed too, under its id.
-    for( item *i : items ) {
+    for( const item_location &i : items ) {
         if( !i->item_has_uses_recursive() ) {
             continue;
         }
@@ -180,7 +182,7 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
     }
 
     std::unordered_set< item_action_id > to_remove;
-    for( item *i : items ) {
+    for( item_location i : items ) {
         if( !i->item_has_uses_recursive() ) {
             continue;
         }
@@ -188,14 +190,14 @@ item_action_map item_action_generator::map_actions_to_items( Character &you,
         for( const item_action_id &use : unmapped_actions ) {
             // Actually used item can be different from the "outside item"
             // For example, sheathed knife
-            item *actual_item = item_with_use_id( *i, use );
-            if( actual_item == nullptr ) {
+            item_location actual_item = item_with_use_id( i, use );
+            if( !actual_item ) {
                 continue;
             }
 
             const use_function *func = actual_item->type->get_use( use );
             if( !( func && func->get_actor_ptr() &&
-                   func->get_actor_ptr()->can_use( you, *actual_item, &get_map(), you.pos_bub() ).success() ) ) {
+                   func->get_actor_ptr()->can_use( you, actual_item, &get_map(), you.pos_bub() ).success() ) ) {
                 continue;
             }
 
@@ -310,25 +312,25 @@ void game::item_action_menu( item_location loc )
 {
     const item_action_generator &gen = item_action_generator::generator();
     const action_map &item_actions = gen.get_item_action_map();
-    std::vector<item *> pseudos;
+    std::vector<item_location> pseudos;
     bool use_player_inventory = false;
     if( !loc ) {
         use_player_inventory = true;
         // Ugly const_cast because the menu needs non-const pointers
-        const std::vector<const item *> &pseudo_items = get_player_character().get_pseudo_items();
+        std::vector<item_location> pseudo_items = get_player_character().get_pseudo_items_locs();
         pseudos.reserve( pseudo_items.size() );
-        for( const item *pseudo : pseudo_items ) {
-            pseudos.push_back( const_cast<item *>( pseudo ) );
+        for( const item_location &pseudo : pseudo_items ) {
+            pseudos.push_back( pseudo );
         }
     } else {
         if( loc.get_item()->type->has_use() ) {
-            pseudos.push_back( const_cast< item * >( loc.get_item() ) );
+            pseudos.push_back( loc );
         }
         loc.get_item()->visit_contents( [&pseudos]( item_location node ) {
             if( node->type->use_methods.empty() ) {
                 return VisitResponse::NEXT;
             }
-            pseudos.push_back( const_cast<item *>( node.get_item() ) );
+            pseudos.push_back( node );
             return VisitResponse::NEXT;
         }, loc );
     }
@@ -364,7 +366,7 @@ void game::item_action_menu( item_location loc )
     };
     // Add mapped actions to the menu vector.
     std::transform( iactions.begin(), iactions.end(), std::back_inserter( menu_items ),
-    []( const std::pair<item_action_id, item *> &elem ) {
+    []( const auto & elem ) {
         std::string ss = elem.second->display_name();
         if( elem.second->uses_firing_requirements() ) {
             ss += "(" + elem.second->format_consumption_requirements( elem.first ) + ")";
@@ -427,7 +429,7 @@ void game::item_action_menu( item_location loc )
     }
 
     const item_action_id action = std::get<0>( menu_items[kmenu.ret] );
-    item *it = iactions[action];
+    item_location it = iactions[action];
 
     u.invoke_item( it, action );
 }
@@ -441,7 +443,7 @@ std::string use_function::get_type() const
     }
 }
 
-ret_val<void> iuse_actor::can_use( const Character &, const item &, map *,
+ret_val<void> iuse_actor::can_use( const Character &, const item_location &, map *,
                                    const tripoint_bub_ms & ) const
 {
     return ret_val<void>::make_success();

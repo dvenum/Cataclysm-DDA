@@ -1,6 +1,8 @@
 #include "wound.h"
 
 #include <algorithm>
+#include <limits>
+#include <map>
 #include <memory>
 #include <set>
 
@@ -18,7 +20,10 @@
 #include "rng.h"
 
 enum class bp_type;
-template <typename E> struct enum_traits;
+
+static const efftype_id effect_narcosis( "narcosis" );
+
+static const json_character_flag json_flag_PAIN_IMMUNE( "PAIN_IMMUNE" );
 
 static const vitamin_id vitamin_blood( "blood" );
 static const vitamin_id vitamin_redcells( "redcells" );
@@ -37,6 +42,7 @@ void wound_type::load( const JsonObject &jo, const std::string_view & )
     optional( jo, was_loaded, "weight", weight, 1 );
     optional( jo, was_loaded, "limb_scores", limb_scores );
     optional( jo, was_loaded, "limit", limit, 0 );
+    optional( jo, was_loaded, "severity", severity, wound_severity::MINOR );
 
     optional( jo, was_loaded, "mod_values", mod_values );
     optional( jo, was_loaded, "periodic_message", periodic_message );
@@ -54,12 +60,23 @@ void wound_type::load( const JsonObject &jo, const std::string_view & )
     }
 }
 
-wound::wound( wound_type_id wd ) :
+wound::wound( wound_type_id wd, const Character *who, bodypart_str_id bp,
+              dealt_damage_instance &ddi ):
     type( wd ),
     healing_time( wd->evaluate_healing_time() ),
-    // get_pain() scales by healing progress, so a new wound must start with none.
+    // get_pain() and get_hp_damage() scale by healing progress: a new wound must start with none.
     healing_progress( 0.0f ),
-    pain( wd->evaluate_pain() ),
+    pain( wd->evaluate_pain( who, bp ) ),
+    hp_damage( ddi.total_damage() ),
+    wound_progress_timer( wd->evaluate_progress_timer() )
+{}
+
+wound::wound( wound_type_id wd, const Character *who, bodypart_str_id bp, int hp_damage ):
+    type( wd ),
+    healing_time( wd->evaluate_healing_time() ),
+    healing_progress( 0.0f ),
+    pain( wd->evaluate_pain( who, bp ) ),
+    hp_damage( hp_damage ),
     wound_progress_timer( wd->evaluate_progress_timer() )
 {}
 
@@ -199,9 +216,9 @@ void wound_fix::check_consistency()
 
 void wound_fix::check() const
 {
-    for( const auto &[skill_id, lvl] : skills ) {
-        if( !skill_id.is_valid() ) {
-            debugmsg( "wound_fix %s requires unknown skill '%s'", id.str(), skill_id.str() );
+    for( const wound_skill &sk : skills ) {
+        if( !sk.skill.is_valid() ) {
+            debugmsg( "wound_fix %s requires unknown skill '%s'", id.str(), sk.skill.str() );
         }
     }
     for( const wound_type_id &wd_id : wounds_removed ) {
@@ -230,11 +247,6 @@ void wound_fix::finalize_all()
     wound_fix_factory.finalize();
 }
 
-template<>
-struct enum_traits<wound_mod_value_type> {
-    static constexpr wound_mod_value_type last = wound_mod_value_type::LAST;
-};
-
 namespace io
 {
 template<>
@@ -250,8 +262,25 @@ std::string enum_to_string<wound_mod_value_type>( wound_mod_value_type data )
         case wound_mod_value_type::LAST:
             break;
     }
-    cata_fatal( "Invalid character_stat" );
+    cata_fatal( "Invalid wound_mod_value_type" );
 }
+
+template<>
+std::string enum_to_string<wound_severity>( wound_severity data )
+{
+    switch( data ) {
+        // *INDENT-OFF*
+    case wound_severity::MINOR: return "MINOR";
+    case wound_severity::MAJOR: return "MAJOR";
+    case wound_severity::CRITICAL: return "CRITICAL";
+
+        // *INDENT-ON*
+        case wound_severity::LAST:
+            break;
+    }
+    cata_fatal( "Invalid wound_severity" );
+}
+
 } // namespace io
 
 void wound_fix::finalize()
@@ -278,12 +307,21 @@ void wound_limb_score::deserialize( const JsonObject &jo )
 {
     mandatory( jo, false, "score", score );
     optional( jo, false, "value", value, 0.f );
+    optional( jo, false, "mod", mod, 0.f );
 }
 
 void wound_progress::deserialize( const JsonObject &jo )
 {
     mandatory( jo, false, "id", id );
     optional( jo, false, "chance", chance, numeric_bound_reader<int> {0, 100} );
+}
+
+void wound_skill::deserialize( const JsonObject &jo )
+{
+    mandatory( jo, false, "skill", skill );
+    mandatory( jo, false, "level", level );
+    optional( jo, false, "time_save", time_save, 1.f );
+    optional( jo, false, "is_mandatory", is_mandatory, true );
 }
 
 void wound_proficiency::deserialize( const JsonObject &jo )
@@ -412,16 +450,22 @@ bool wound_type::allowed_by_whitelist_flags( const Character &who ) const
 
 bool wound_type::assign_bleeding_wound() const
 {
+    bool uses_blood_vitamins = false;
+    bool drips_blood = false;
     for( const wound_mod_values &mv : mod_values ) {
         if( mv.vitamin.has_value() ) {
             const vitamin_id vit = *mv.vitamin;
             if( vit == vitamin_blood || vit == vitamin_redcells ) {
-                return true;
+                uses_blood_vitamins = true;
             }
+        }
+
+        if( mv.type == wound_mod_value_type::BLEED ) {
+            drips_blood = true;
         }
     }
 
-    return false;
+    return uses_blood_vitamins && drips_blood;
 }
 
 bool wound_type::is_bleeding_wound() const
@@ -429,9 +473,21 @@ bool wound_type::is_bleeding_wound() const
     return _is_bleeding_wound;
 }
 
-int wound_type::evaluate_pain() const
+int wound_type::evaluate_pain( const Character *who, bodypart_str_id bp ) const
 {
-    return rng( pain_.first, pain_.second );
+    float ret = static_cast<float>( rng( pain_.first, pain_.second ) );
+
+    if( who != nullptr ) {
+        const double with_enchantments =
+            who->enchantment_cache->modify_value( enchant_vals::mod::PAIN, ret );
+        ret = std::max( 0.0f, static_cast<float>( with_enchantments ) );
+    }
+
+    if( bp != bodypart_str_id::NULL_ID() ) {
+        ret *= bp->pain_mod;
+    }
+
+    return ret;
 }
 
 time_duration wound_type::evaluate_healing_time() const
@@ -543,7 +599,6 @@ bool wound_type::can_be_applied( const Character *who, const bp_wounds &pt_wd,
     return true;
 }
 
-
 void wound::serialize( JsonOut &jsout ) const
 {
     jsout.start_object();
@@ -552,6 +607,7 @@ void wound::serialize( JsonOut &jsout ) const
     jsout.member( "healing_progress", healing_progress );
     jsout.member( "wound_progress_timer", wound_progress_timer );
     jsout.member( "pain", pain );
+    jsout.member( "hp_damage", hp_damage );
     jsout.end_object();
 }
 
@@ -561,6 +617,7 @@ void wound::deserialize( const JsonObject &jsin )
     jsin.read( "healing_time", healing_time );
     jsin.read( "healing_progress", healing_progress );
     jsin.read( "wound_progress_timer", wound_progress_timer );
+    jsin.read( "hp_damage", hp_damage );
     jsin.read( "pain", pain );
 }
 
@@ -583,9 +640,21 @@ void wound::mod_pain( const int mod )
     pain += mod;
 }
 
-int wound::get_pain() const
+int wound::get_pain( const Character *who ) const
 {
-    return pain * ( 1 - healing_percentage() );
+    float ret = pain * ( 1.f - healing_percentage() );
+
+    if( who != nullptr && ( who->has_flag( json_flag_PAIN_IMMUNE ) ||
+                            who->has_effect( effect_narcosis ) ) ) {
+        return 0;
+    }
+
+    return ret;
+}
+
+int wound::get_pain_raw() const
+{
+    return pain;
 }
 
 time_duration wound::get_healing_time() const
@@ -598,15 +667,30 @@ float wound::get_healing_progress() const
     return healing_progress;
 }
 
+int wound::get_hp_damage() const
+{
+    return hp_damage * ( 1.f - healing_percentage() );
+}
+
 wound_update_ret wound::update_wound( const Character *who, const time_duration time_passed )
 {
-    if( healing_time == calendar::INDEFINITELY_LONG_DURATION ) {
+    if( healing_time == calendar::INDEFINITELY_LONG_DURATION && !wound_progress_timer ) {
         return wound_update_ret::DO_NOTHING;
     }
 
     const float time = to_seconds<float>( time_passed );
 
     healing_progress += time * get_wound_healing_modifier( who );
+
+    // Some saves have uninitialized healing_progress, so it can be all sorts of bananas values
+    // < 0 won't ever heal, and anything that doesn't fit in time_duration (int) causes UB when
+    // doing the conversion
+    // Feel free to remove after 0.K
+    if( healing_progress < 0 ||
+        healing_progress >= static_cast<float>( std::numeric_limits<int>::max() ) ) {
+        debugmsg( "Wound '%s' has invalid healing progress?", type->id.str() );
+        return wound_update_ret::REMOVE;
+    }
 
     const time_duration heal_progress = time_duration::from_seconds( healing_progress );
 
@@ -619,14 +703,21 @@ wound_update_ret wound::update_wound( const Character *who, const time_duration 
     return wound_update_ret::DO_NOTHING;
 }
 
+bool wound::treatable_by( const Character &c ) const
+{
+    return std::any_of( type->fixes.begin(), type->fixes.end(), [&c]( const wound_fix_id & fix_id ) {
+        return fix_id->doable_by( c ).first;
+    } );
+}
+
 float wound::get_wound_healing_modifier( const Character *who ) const
 {
     float mod = 1.f;
 
     // -200 health is 0.5x to healing, +200 is 1.5x
-    mod = mod + ( who->get_lifestyle() / 400.f );
+    mod = mod + std::clamp( who->get_lifestyle() / 400.f, -0.5f, 0.5f );
 
     mod = who->enchantment_cache->modify_value( enchant_vals::mod::REGEN_WOUND, mod );
 
-    return mod;
+    return std::max( 0.0f, mod );
 }

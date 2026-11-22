@@ -1,14 +1,19 @@
+#include <functional>
 #include <string>
 
 #include "avatar.h"
 #include "bodypart.h"
 #include "calendar.h"
 #include "cata_catch.h"
+#include "cata_scope_helpers.h"
 #include "coordinates.h"
 #include "item.h"
+#include "item_location.h"
 #include "iuse.h"
 #include "iuse_actor.h"
+#include "map.h"
 #include "map_helpers.h"
+#include "map_selector.h"
 #include "player_helpers.h"
 #include "pocket_type.h"
 #include "point.h"
@@ -32,30 +37,39 @@ static const skill_id skill_firstaid( "firstaid" );
 TEST_CASE( "use-b02_papr_blower_tick_without_carrier", "[audit]" )
 {
     clear_map();
+    map &here = get_map();
     const tripoint_bub_ms pos( 60, 60, 0 );
+    const on_out_of_scope clear_tile( [&here, &pos]() {
+        here.i_clear( pos );
+    } );
 
     SECTION( "empty filter shuts the blower off" ) {
-        item blower( itype_basic_papr_belt_on );
+        item &blower = here.add_item( pos, item( itype_basic_papr_belt_on ) );
+        REQUIRE( blower.typeId() == itype_basic_papr_belt_on );
         REQUIRE( blower.active );
         REQUIRE( blower.ammo_remaining_in_pocket( "papr_blower_filter" ) == 0 );
 
         // Same call map item processing makes for a blower lying on the ground.
-        iuse::papr_blower( nullptr, &blower, pos );
+        item_location blower_loc( map_cursor( &here, pos ), &blower );
+        iuse::papr_blower( nullptr, blower_loc, pos );
 
         CHECK_FALSE( blower.active );
         CHECK( blower.typeId() == itype_basic_papr_belt_off );
     }
 
     SECTION( "low filter keeps running without a carrier to warn" ) {
-        item blower( itype_basic_papr_belt_on );
+        item unplaced( itype_basic_papr_belt_on );
         item filter( itype_gasfilter_med );
         filter.ammo_set( filter.ammo_current(), 5 );
-        REQUIRE( blower.put_in( filter, pocket_type::MAGAZINE_WELL ).success() );
+        REQUIRE( unplaced.put_in( filter, pocket_type::MAGAZINE_WELL ).success() );
+        item &blower = here.add_item( pos, unplaced );
+        REQUIRE( blower.typeId() == itype_basic_papr_belt_on );
         REQUIRE( blower.ammo_remaining_in_pocket( "papr_blower_filter" ) == 5 );
         // Enough absorbed gas to consume one filter charge this tick.
         blower.set_var( "gas_absorbed", 60 );
 
-        iuse::papr_blower( nullptr, &blower, pos );
+        item_location blower_loc( map_cursor( &here, pos ), &blower );
+        iuse::papr_blower( nullptr, blower_loc, pos );
 
         CHECK( blower.ammo_remaining_in_pocket( "papr_blower_filter" ) == 4 );
         CHECK( blower.active );

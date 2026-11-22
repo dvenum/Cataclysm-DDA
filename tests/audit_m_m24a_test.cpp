@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <climits>
 #include <functional>
 #include <list>
 #include <map>
@@ -10,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "activity_handlers.h"
+#include "activity_actor_definitions.h"
 #include "avatar.h"
 #include "calendar.h"
 #include "cata_catch.h"
@@ -688,24 +687,15 @@ TEST_CASE( "vint-j09_any_vehicle_repair_tool_is_found_on_the_vehicle", "[audit][
     const tripoint_bub_ms pos = veh.bub_part_pos( here, veh.part( idx ) );
     REQUIRE( here.veh_at( pos ).part_with_tool( here, itype_test_m24a_mending_kit ).has_value() );
 
-    // as repair_item_actor::use starts it for a tool that is nowhere
-    u.assign_activity( ACT_REPAIR_ITEM, 0, INT_MIN, INT_MIN );
-    u.activity.str_values.emplace_back( "repair_metal" );
-    u.activity.targets.emplace_back();
-    REQUIRE( vehicle::use_vehicle_tool( veh, &here, pos, itype_test_m24a_mending_kit, true ) );
-    CHECK( u.activity.id() == ACT_REPAIR_ITEM );
-    CHECK( u.activity.index == INT_MIN );
-    REQUIRE( u.activity.coords.size() == 1 );
-    CHECK( u.activity.coords[0] == here.get_abs( pos ) );
-    REQUIRE( u.activity.str_values.size() == 2 );
-    CHECK( u.activity.str_values[1] == itype_test_m24a_mending_kit.str() );
-
-    // the repair finds the tool on the vehicle (no "Empty main tool" or "Lost tool" error); a
-    // shirt isn't something it mends, so one attempt ends it
+    // as repair_item_actor::use starts it for a tool a vehicle provides: the tool is the
+    // vehicle's, at its tile, and the repair finds it there (no "Invalid tool" or "Lost tool"
+    // error); a shirt isn't something it mends, so one attempt ends it
     item shirt( itype_tshirt );
     REQUIRE( u.wield( shirt ) );
-    u.activity.values.push_back( 1 ); // repeat_type::ONCE
-    u.activity.targets.emplace_back( u.get_wielded_item() );
-    ::repair_item_finish( &u.activity, &u, true );
+    u.assign_activity( repair_item_activity_actor( u.get_wielded_item(), item_location::nowhere,
+                       std::make_pair( itype_test_m24a_mending_kit, pos ), "repair_metal",
+                       repair_stage::ONCE, true ) );
+    REQUIRE( u.activity.id() == ACT_REPAIR_ITEM );
+    u.process_activity_until_invalid();
     CHECK( u.activity.is_null() );
 }

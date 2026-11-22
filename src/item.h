@@ -386,6 +386,10 @@ class item
         bool is_money( const std::set<ammotype> &ammo ) const;
     public:
 
+        /**
+         * A card that stores money: an item whose magazine holds the "money" ammo type, such as
+         * Aftershock's cash card. Vanilla has none (#89166 made its cash cards obsolete).
+         */
         bool is_cash_card() const;
 
         bool is_estorage() const;
@@ -587,6 +591,7 @@ class item
                                bool debug ) const;
         void qualities_info( std::vector<iteminfo> &info, const iteminfo_query *parts, int batch,
                              bool debug ) const;
+        void use_methods_info( std::vector<iteminfo> &info, const iteminfo_query *parts, int, bool ) const;
         void bionic_info( std::vector<iteminfo> &info, const iteminfo_query *parts, int batch,
                           bool debug ) const;
         void melee_combat_info( std::vector<iteminfo> &info, const iteminfo_query *parts, int batch,
@@ -1497,7 +1502,9 @@ class item
         */
         bool activation_success() const;
 
-        /** Modifiy melee weapon damage to account for item's damage. */
+        /** Multiplier for attack speed from item's faults. Always 1.0 if faults aren't present. */
+        double attack_time_modifier_from_faults() const;
+        /** Modifiy melee weapon damage to account for item's damage, faults. */
         float damage_adjusted_melee_weapon_damage( float value, const damage_type_id &dt ) const;
         /** Modifiy gun damage to account for item's damage. */
         float damage_adjusted_gun_damage( float value ) const;
@@ -3117,6 +3124,8 @@ class item
          */
         const item *get_usable_item( const std::string &use_name ) const;
         item *get_usable_item( const std::string &use_name );
+        item_location get_usable_item_loc( const item_location &loc, const std::string &use_name ) const;
+
 
         /**
          * Returns name of deceased being if it had any or empty string if not

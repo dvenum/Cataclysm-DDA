@@ -692,7 +692,7 @@
   {
     "type": "EXTERNAL_OPTION",
     "name": "BLOCK_MIN_STAMINA",
-    "//": "Blocking: with less stamina than this you can't block a melee hit.",
+    "//": "Blocking: below this much stamina a block warns that you're close to exhaustion (low stamina weakens every block).",
     "stype": "int",
     "value": 2000
   },
@@ -706,7 +706,7 @@
   {
     "type": "EXTERNAL_OPTION",
     "name": "BLOCK_REACTION_PER_SKILL",
-    "//": "Blocking: percent chance per level of melee skill (times the reaction limb score) to react in time to block.",
+    "//": "Blocking: readiness per level of melee skill, in percent (times the reaction limb score), that with dodge lets a character turn a hit to the head or torso onto another limb.",
     "stype": "float",
     "value": 20
   },

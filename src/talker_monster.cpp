@@ -296,8 +296,11 @@ void talker_monster::attack_target( Creature &t, bool allow_special,
             return;
         }
         nesting++;
-        on_out_of_scope end_nesting( []() {
+        const bool was_eoc_attack = me_mon->eoc_attack;
+        me_mon->eoc_attack = true;
+        on_out_of_scope end_nesting( [mon = me_mon, was_eoc_attack]() {
             nesting--;
+            mon->eoc_attack = was_eoc_attack;
         } );
         // Special attack actors aim at the creature at the monster's destination
         me_mon->set_dest( t.pos_abs() );

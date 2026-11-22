@@ -244,9 +244,9 @@ TEST_CASE( "grab_counter_needs_stamina_reach_and_wits", "[grapple][martial_arts]
         CHECK( grabber.has_effect( effect_grabbing ) );
     }
     SECTION( "out of reach: nothing" ) {
-        monster &far = spawn_grabber( you_pos + tripoint( 2, 0, 0 ) );
-        you.on_grabbed( far, body_part_arm_l.id(), 20 );
-        CHECK_FALSE( far.has_effect( effect_hit_by_player ) );
+        monster &far_mon = spawn_grabber( you_pos + tripoint( 2, 0, 0 ) );
+        you.on_grabbed( far_mon, body_part_arm_l.id(), 20 );
+        CHECK_FALSE( far_mon.has_effect( effect_hit_by_player ) );
         CHECK( you.get_moves() == 100 );
     }
     SECTION( "asleep: nothing" ) {
@@ -535,8 +535,8 @@ TEST_CASE( "grapple_throw_needs_stamina_for_its_distance", "[grapple]" )
     // The cost of a full throw is that of its full force; a shorter one costs less
     CHECK( full_cost == grapple::throw_stamina_cost( you, mon, grapple::throw_force( you, mon ) ) );
     CHECK( grapple::throw_stamina_cost_at( you, mon, 2 ) < full_cost );
-    const tripoint_bub_ms near = mon.pos_bub() + tripoint::east;
-    const tripoint_bub_ms far = mon.pos_bub() + tripoint( 3, 0, 0 );
+    const tripoint_bub_ms near_pos = mon.pos_bub() + tripoint::east;
+    const tripoint_bub_ms far_pos = mon.pos_bub() + tripoint( 3, 0, 0 );
 
     SECTION( "enough for a shove, not for a full throw" ) {
         you.set_stamina( full_cost - 1 );
@@ -544,17 +544,17 @@ TEST_CASE( "grapple_throw_needs_stamina_for_its_distance", "[grapple]" )
         // Targeting opens...
         CHECK_FALSE( grapple::throw_refusal( you, mon ) );
         // ...but the far tile is refused, with the reason
-        const std::optional<std::string> refusal = grapple::throw_target_refusal( you, mon, far );
+        const std::optional<std::string> refusal = grapple::throw_target_refusal( you, mon, far_pos );
         REQUIRE( refusal );
         CHECK( *refusal == "You're too exhausted to throw the speed 100 monster that far." );
-        CHECK_FALSE( grapple::throw_direction_refusal( you, mon, far ) );
-        CHECK_FALSE( grapple::throw_held_creature( you, mon, far ) );
+        CHECK_FALSE( grapple::throw_direction_refusal( you, mon, far_pos ) );
+        CHECK_FALSE( grapple::throw_held_creature( you, mon, far_pos ) );
         CHECK( you.grabbed_creature() == &mon );
         // The shove goes, and costs what a shove costs
-        CHECK_FALSE( grapple::throw_target_refusal( you, mon, near ) );
+        CHECK_FALSE( grapple::throw_target_refusal( you, mon, near_pos ) );
         const int stamina = you.get_stamina();
-        REQUIRE( grapple::throw_held_creature( you, mon, near ) );
-        CHECK( mon.pos_bub() == near );
+        REQUIRE( grapple::throw_held_creature( you, mon, near_pos ) );
+        CHECK( mon.pos_bub() == near_pos );
         CHECK( you.get_stamina() == stamina - shove_cost );
     }
     SECTION( "not even enough for a shove" ) {

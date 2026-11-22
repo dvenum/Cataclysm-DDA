@@ -291,9 +291,10 @@ TEST_CASE( "use-j09_smoke_action_lights_a_modded_smokable_with_its_own_puffs", "
     u.set_thirst( 100 );
 
     item herb( itype_test_m13b_herb_cig );
+    item_location herb_loc( u, &herb );
     const use_function *smoke = herb.get_use( "smoke" );
     REQUIRE( smoke != nullptr );
-    const std::optional<int> used = smoke->call( &u, herb, &here, u.pos_bub() );
+    const std::optional<int> used = smoke->call( &u, herb_loc, &here, u.pos_bub() );
     REQUIRE( used.has_value() );
     CHECK( *used == 1 );
     CHECK( u.get_hunger() == 99 );
@@ -308,7 +309,7 @@ TEST_CASE( "use-j09_smoke_action_lights_a_modded_smokable_with_its_own_puffs", "
     CHECK( cig.active );
     CHECK( cig.item_counter == to_turns<int>( 2_minutes ) );
     // one at a time
-    CHECK_FALSE( smoke->call( &u, herb, &here, u.pos_bub() ).has_value() );
+    CHECK_FALSE( smoke->call( &u, herb_loc, &here, u.pos_bub() ).has_value() );
 
     // its own puff, about one turn in ten
     cig.item_counter = 10000;

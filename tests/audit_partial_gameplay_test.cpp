@@ -23,6 +23,7 @@
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "map_selector.h"
 #include "math_parser_diag_value.h"
 #include "melee.h"
 #include "messages.h"
@@ -164,7 +165,7 @@ TEST_CASE( "use-b08_consume_uses_up_an_item_with_no_charges", "[audit][iuse_acto
         item_location token = you.i_add( item( itype_test_gp_useb08_token ) );
         REQUIRE( token );
         REQUIRE( you.has_amount( itype_test_gp_useb08_token, 1 ) );
-        CHECK( you.invoke_item( token.get_item(), "effect_on_conditions" ) );
+        CHECK( you.invoke_item( token, "effect_on_conditions" ) );
         CHECK( num_var( you, "test_gp_useb08_uses" ) == 1 );
         CHECK_FALSE( you.has_amount( itype_test_gp_useb08_token, 1 ) );
     }
@@ -172,7 +173,8 @@ TEST_CASE( "use-b08_consume_uses_up_an_item_with_no_charges", "[audit][iuse_acto
         const tripoint_bub_ms spot = you.pos_bub() + tripoint_rel_ms::east;
         item &token = here.add_item( spot, item( itype_test_gp_useb08_token ) );
         REQUIRE( here.i_at( spot ).size() == 1 );
-        CHECK( you.invoke_item( &token, "effect_on_conditions", spot ) );
+        item_location token_loc( map_cursor( &here, spot ), &token );
+        CHECK( you.invoke_item( token_loc, "effect_on_conditions", spot ) );
         CHECK( num_var( you, "test_gp_useb08_uses" ) == 1 );
         CHECK( here.i_at( spot ).empty() );
     }
@@ -180,7 +182,7 @@ TEST_CASE( "use-b08_consume_uses_up_an_item_with_no_charges", "[audit][iuse_acto
         item_location pebbles = you.i_add( item( itype_test_gp_useb08_pebble, calendar::turn, 3 ) );
         REQUIRE( pebbles );
         REQUIRE( pebbles->charges == 3 );
-        CHECK_FALSE( you.invoke_item( pebbles.get_item(), "effect_on_conditions" ) );
+        CHECK_FALSE( you.invoke_item( pebbles, "effect_on_conditions" ) );
         CHECK( num_var( you, "test_gp_useb08_uses" ) == 1 );
         REQUIRE( pebbles );
         CHECK( pebbles->charges == 2 );
@@ -188,7 +190,7 @@ TEST_CASE( "use-b08_consume_uses_up_an_item_with_no_charges", "[audit][iuse_acto
     SECTION( "an action without consume leaves it" ) {
         item_location keepsake = you.i_add( item( itype_test_gp_useb08_keepsake ) );
         REQUIRE( keepsake );
-        CHECK_FALSE( you.invoke_item( keepsake.get_item(), "effect_on_conditions" ) );
+        CHECK_FALSE( you.invoke_item( keepsake, "effect_on_conditions" ) );
         CHECK( num_var( you, "test_gp_useb08_uses" ) == 1 );
         CHECK( you.has_amount( itype_test_gp_useb08_keepsake, 1 ) );
     }

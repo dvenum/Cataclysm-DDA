@@ -1881,7 +1881,7 @@ void vehicles::finalize_prototypes()
         blueprint.name = proto.name.translated();
         // VINT-J01: each vehicle built from it gets a copy, which EOCs can change
         for( const std::string &topic : proto.chat_topics ) {
-            if( !talk_topic_exists( topic ) ) {
+            if( !talk_topic_all::talk_topic_exists( topic ) ) {
                 debugmsg( "vehicle prototype %s has unknown chat topic %s", proto.id.str(), topic );
             }
         }

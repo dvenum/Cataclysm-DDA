@@ -102,11 +102,13 @@ TEST_CASE( "use-b06_cutting_planks_keeps_the_log_until_the_cut_is_done", "[audit
     map &here = get_map();
     const tripoint_bub_ms pos = they.pos_bub();
     const avatar_and_tile_cleanup cleanup{ pos };
-    item saw( itype_saw );
+    they.set_wielded_item( item( itype_saw ) );
+    item_location saw = they.get_wielded_item();
+    REQUIRE( saw );
     here.add_item( pos, item( itype_log ) );
     REQUIRE( count_on_tile( pos, itype_log ) == 1 );
 
-    REQUIRE( iuse::lumber( &they, &saw, pos ) == 1 );
+    REQUIRE( iuse::lumber( &they, saw, pos ) == 1 );
     REQUIRE( they.has_activity( ACT_CHOP_PLANKS ) );
 
     SECTION( "a cancelled cut leaves the log" ) {
@@ -203,7 +205,8 @@ TEST_CASE( "use-b08_eoc_use_action_finds_the_item_where_it_is", "[audit][iuse_ac
     REQUIRE( actor != nullptr );
 
     // Its EOC removes the item it was used from.
-    actor->use( &they, rune, &here, pos );
+    item_location rune_loc( map_cursor( &here, pos ), &rune );
+    actor->use( &they, rune_loc, &here, pos );
     CHECK( count_on_tile( pos, itype_audit_use_b08_rune ) == 0 );
 }
 
@@ -227,7 +230,8 @@ TEST_CASE( "use-b09_transforming_worn_armor_updates_its_coverage_for_morale",
     REQUIRE( they.has_morale( morale_perm_constrained ) < 0 );
 
     const itype *lowered = blindfold.type;
-    REQUIRE( lowered->invoke( &they, blindfold, they.pos_bub() ).has_value() );
+    item_location blindfold_loc( they, &blindfold );
+    REQUIRE( lowered->invoke( &they, blindfold_loc, they.pos_bub() ).has_value() );
     REQUIRE( blindfold.typeId() == itype_blindfold_up );
     REQUIRE( they.is_worn( blindfold ) );
     // raised, it covers the head only
@@ -278,9 +282,11 @@ struct water_painter {
 // spot" message was given.
 std::pair<bool, bool> try_fishing( avatar &they )
 {
-    item rod( itype_fishing_rod_basic );
+    they.set_wielded_item( item( itype_fishing_rod_basic ) );
+    item_location rod = they.get_wielded_item();
+    REQUIRE( rod );
     Messages::clear_messages();
-    const std::optional<int> used = iuse::fishing_rod( &they, &rod, they.pos_bub() );
+    const std::optional<int> used = iuse::fishing_rod( &they, rod, they.pos_bub() );
     const bool fishing = they.has_activity( ACT_FISH );
     they.cancel_activity();
     CHECK( used.has_value() == fishing );

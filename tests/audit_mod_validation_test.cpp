@@ -222,7 +222,7 @@ TEST_CASE( "use-j01_eoc_use_action_condition_charges_cancel_and_target", "[audit
     u.set_moves( 200 );
 
     SECTION( "the EOC picks the charges to spend and sees the target tile" ) {
-        u.invoke_item( rune.get_item(), method, target );
+        u.invoke_item( rune, method, target );
         CHECK( globvars.get_global_value( "test_use_rune_runs" ) == 1 );
         CHECK( rune->ammo_remaining() == 17 );
         CHECK( u.get_moves() == 100 );
@@ -232,14 +232,14 @@ TEST_CASE( "use-j01_eoc_use_action_condition_charges_cancel_and_target", "[audit
     }
     SECTION( "zero charges spends nothing but keeps the time spent" ) {
         globvars.set_global_value( "test_use_rune_charges", 0 );
-        u.invoke_item( rune.get_item(), method, target );
+        u.invoke_item( rune, method, target );
         CHECK( globvars.get_global_value( "test_use_rune_runs" ) == 1 );
         CHECK( rune->ammo_remaining() == 20 );
         CHECK( u.get_moves() == 100 );
     }
     SECTION( "cancel spends nothing and refunds the time" ) {
         globvars.set_global_value( "test_use_rune_cancel", 1 );
-        u.invoke_item( rune.get_item(), method, target );
+        u.invoke_item( rune, method, target );
         CHECK( globvars.get_global_value( "test_use_rune_runs" ) == 1 );
         CHECK( rune->ammo_remaining() == 20 );
         CHECK( u.get_moves() == 200 );
@@ -248,10 +248,10 @@ TEST_CASE( "use-j01_eoc_use_action_condition_charges_cancel_and_target", "[audit
         globvars.set_global_value( "test_use_rune_allowed", 0 );
         const use_function *use = rune->type->get_use( method );
         REQUIRE( use != nullptr );
-        const ret_val<void> allowed = use->can_call( u, *rune, target );
+        const ret_val<void> allowed = use->can_call( u, rune, target );
         CHECK_FALSE( allowed.success() );
         CHECK( allowed.str() == "The rune is dormant." );
-        u.invoke_item( rune.get_item(), method, target );
+        u.invoke_item( rune, method, target );
         CHECK( globvars.get_global_value( "test_use_rune_runs" ) == 0 );
         CHECK( rune->ammo_remaining() == 20 );
     }
@@ -278,7 +278,7 @@ TEST_CASE( "use-j01_eoc_use_action_clamps_huge_charges", "[audit][iuse][eoc]" )
     REQUIRE( rune->ammo_remaining() == 20 );
     u.set_moves( 200 );
     const std::string msg = capture_debugmsg_during( [&]() {
-        u.invoke_item( rune.get_item(), "effect_on_conditions", u.pos_bub() );
+        u.invoke_item( rune, "effect_on_conditions", u.pos_bub() );
     } );
     CAPTURE( msg );
     CHECK( contains( msg, "_charges" ) );
@@ -308,7 +308,7 @@ TEST_CASE( "use-j01_eoc_use_action_cancel_refunds_npc_moves", "[audit][iuse][eoc
     rune->ammo_set( itype_match, 20 );
     REQUIRE( rune->ammo_remaining() == 20 );
     guy.set_moves( 200 );
-    guy.invoke_item( rune.get_item(), "effect_on_conditions" );
+    guy.invoke_item( rune, "effect_on_conditions" );
     CHECK( globvars.get_global_value( "test_use_rune_runs" ) == 1 );
     CHECK( rune->ammo_remaining() == 20 );
     CHECK( guy.get_moves() == 200 );

@@ -2565,6 +2565,7 @@ int game::inventory_item_menu( item_location locThisItem,
 // Returns true if input requires breaking out into a game action.
 bool game::handle_mouseview( input_context &ctxt, std::string &action )
 {
+    cata_timer handle_mousemove_timer( "handle_mousemove" );
     std::optional<tripoint_bub_ms> liveview_pos;
 
     do {
@@ -4032,6 +4033,7 @@ std::vector<monster *> game::get_fishable_monsters( std::unordered_set<tripoint_
 
 void game::mon_info_update( )
 {
+    cata_timer mon_info_update_timer( "mon_info_update" );
     const map &here = get_map();
     const tripoint_bub_ms pos = u.pos_bub( here );
 
@@ -4281,6 +4283,7 @@ void game::mon_info_update( )
 
 void game::cleanup_dead()
 {
+    cata_timer cleanup_dead_timer( "cleanup_dead" );
     map &here = get_map();
 
     // Dead monsters need to stay in the tracker until everything else that needs to die does so
@@ -5662,7 +5665,7 @@ bool game::npc_menu( npc &who )
                 u.i_rem( &used );
             }
         } else {
-            bool did_use = u.invoke_item( &used, heal_string, who.pos_bub() );
+            bool did_use = u.invoke_item( loc, heal_string, who.pos_bub() );
             if( did_use ) {
                 // Note: exiting a body part selection menu counts as use here
                 u.mod_moves( -300 );
@@ -5872,10 +5875,12 @@ void game::examine( const tripoint_bub_ms &examp, bool with_pickup )
 
     const tripoint_bub_ms player_pos = u.pos_bub();
 
+    // Normally examining terrain or furniture is a "minor" offense, but some might be flagged differently.
+    const bool extra_alarming_action = here.has_flag( "FACTION_SECURITY", examp );
     if( here.has_furn( examp ) ) {
         if( !u.cant_do_mounted() ) {
             if( !here.has_flag( "FREE_TO_EXAMINE", examp ) &&
-                !warn_player_maybe_anger_local_faction( false, true ) ) {
+                !warn_player_maybe_anger_local_faction( extra_alarming_action, true ) ) {
                 return; // player declined to mess with faction's stuff
             }
             xfurn_t.examine( u, examp );
@@ -5883,7 +5888,7 @@ void game::examine( const tripoint_bub_ms &examp, bool with_pickup )
     } else {
         if( xter_t.can_examine( examp ) && !u.is_mounted() ) {
             if( !here.has_flag( "FREE_TO_EXAMINE", examp ) &&
-                !warn_player_maybe_anger_local_faction( false, true ) ) {
+                !warn_player_maybe_anger_local_faction( extra_alarming_action, true ) ) {
                 return; // player declined to mess with faction's stuff
             }
             xter_t.examine( u, examp );
@@ -7040,12 +7045,10 @@ void game::butcher( const std::optional<tripoint_bub_ms> &p )
     };
 
     std::vector< item * > salvage_tools = u.items_with( salvage_filter );
-    int salvage_tool_index = INT_MIN;
-    item *salvage_tool = nullptr;
+    item_location salvage_tool = item_location::nowhere;
     const salvage_actor *salvage_iuse = nullptr;
     if( !salvage_tools.empty() ) {
-        salvage_tool = salvage_tools.front();
-        salvage_tool_index = u.get_item_position( salvage_tool );
+        salvage_tool = item_location( u, salvage_tools.front() );
         item *usable = salvage_tool->get_usable_item( salvage_string );
         salvage_iuse = dynamic_cast<const salvage_actor *>(
                            usable->get_use( salvage_string )->get_actor_ptr() );
@@ -7064,7 +7067,7 @@ void game::butcher( const std::optional<tripoint_bub_ms> &p )
         if( it->is_corpse() ) {
             corpses.push_back( it );
         } else {
-            if( ( salvage_tool_index != INT_MIN ) && salvage_iuse->valid_to_cut_up( nullptr, *it ) ) {
+            if( salvage_tool.valid() && salvage_iuse->valid_to_cut_up( nullptr, *it ) ) {
                 salvageables.push_back( it );
             }
             if( u.can_disassemble( *it, crafting_inv ).success() ) {
@@ -7229,7 +7232,7 @@ void game::butcher( const std::optional<tripoint_bub_ms> &p )
         case BUTCHER_OTHER:
             switch( indexer_index ) {
                 case MULTISALVAGE:
-                    u.assign_activity( longsalvage_activity_actor( salvage_tool_index ) );
+                    u.assign_activity( longsalvage_activity_actor( salvage_tool ) );
                     break;
                 case MULTIBUTCHER: {
                     const std::optional<butcher_type> bt = butcher_submenu( corpses );
@@ -9207,17 +9210,14 @@ bool game::grabbed_furn_move( const tripoint_rel_ms &dp )
     if( src_items > 0 ) { // Move the stuff inside.
         if( dst_item_ok && src_item_ok ) {
             // Assume contents of both cells are legal, so we can just swap contents.
-            // Upstream CleverRaven/Cataclysm-DDA#89419: the destination's items go to the
-            // furniture's old tile and its old tile's items to the destination. Before, the loop
-            // walked the old tile it was inserting into, so every second item was lost.
             std::list<item> temp;
-            map_stack ms = here.i_at( fpos ); // the tile the furniture leaves
-            map_stack dest = here.i_at( fdest ); // the tile it moves to
+            map_stack ms = here.i_at( fpos ); // Think of it as Tile A
+            map_stack dest = here.i_at( fdest ); // Respecitvely Tile B. Destination.
             std::move( ms.begin(), ms.end(),
                        std::back_inserter( temp ) );
             here.i_clear( fpos );
-            for( item &dest_item : dest ) {
-                ms.insert( dest_item );
+            for( item &item_iter : dest ) {
+                ms.insert( item_iter );
             }
             here.i_clear( fdest );
             for( item &cur_item : temp ) {

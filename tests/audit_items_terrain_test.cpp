@@ -195,9 +195,10 @@ TEST_CASE( "use-b03_break_stick_costs_stamina_and_time", "[audit][iuse]" )
     SECTION( "too weak to try: no stamina is gained" ) {
         u.set_str_bonus( 4 - u.get_str_base() );
         REQUIRE( u.get_str() == 4 );
-        item stick( itype_stick_long );
+        item_location stick = u.i_add( item( itype_stick_long ) );
+        REQUIRE( stick );
 
-        CHECK_FALSE( iuse::break_stick( &u, &stick, u.pos_bub() ).has_value() );
+        CHECK_FALSE( iuse::break_stick( &u, stick, u.pos_bub() ).has_value() );
         CHECK( u.get_stamina() == half_stamina );
     }
 
@@ -209,7 +210,7 @@ TEST_CASE( "use-b03_break_stick_costs_stamina_and_time", "[audit][iuse]" )
         REQUIRE( stick );
         u.set_moves( 100 );
 
-        u.invoke_item( stick.get_item(), "BREAK_STICK", u.pos_bub(), 100 );
+        u.invoke_item( stick, "BREAK_STICK", u.pos_bub(), 100 );
 
         CHECK( stick );
         CHECK( u.get_moves() < 100 );
@@ -223,7 +224,7 @@ TEST_CASE( "use-b03_break_stick_costs_stamina_and_time", "[audit][iuse]" )
         item_location stick = u.i_add( item( itype_stick_long ) );
         REQUIRE( stick );
 
-        const std::optional<int> used = iuse::break_stick( &u, stick.get_item(), u.pos_bub() );
+        const std::optional<int> used = iuse::break_stick( &u, stick, u.pos_bub() );
 
         CHECK( used == 0 );
         CHECK( u.get_stamina() < half_stamina );

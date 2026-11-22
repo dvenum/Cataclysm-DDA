@@ -27,6 +27,8 @@
 #include <utility>
 #include <vector>
 
+#include <char8_t-remediation/char8_t-remediation.h>
+
 #include "achievement.h"
 #include "action.h"
 #include "activity_tracker.h"
@@ -440,8 +442,8 @@ bool _trim_mapbuffer( std::filesystem::path const &dep, rdi_t &iter,
 bool _trim_overmapbuffer( std::filesystem::path const &dep, tripoint_range<tripoint> const &oms )
 {
     std::string const fname = dep.extension() == zzip_suffix ?  // NOLINT(cata-u8-path)
-                              dep.filename().replace_extension( "" ).generic_u8string() : // NOLINT(cata-u8-path)
-                              dep.filename().generic_u8string();
+                              from_u8string( dep.filename().replace_extension( "" ).generic_u8string() ) : // NOLINT(cata-u8-path)
+                              from_u8string( dep.filename().generic_u8string() );
 
     std::string::size_type const seenpos = fname.find( ".seen." );
     if( seenpos != std::string::npos ) {
@@ -1649,7 +1651,7 @@ static void change_spells( Character &character )
 
     // keep the same spell selected
     auto spell_middle_or_id = [&]( const spell_id & spellid ) -> void {
-        if( spellid.is_empty() )
+        if( spellid.is_empty() || !spellid.is_valid() )
         {
             spell_selected = 0;
             return;
@@ -3456,7 +3458,7 @@ static void display_talk_topic()
         npc_menu.query();
         if( npc_menu.ret >= 0 && npc_menu.ret < npc_count ) {
             npc *selected_npc = visible_npcs[npc_menu.ret];
-            std::vector<std::string> dialogue_ids = get_all_talk_topic_ids();
+            std::vector<std::string> dialogue_ids = talk_topic_all::get_all_talk_topic_ids();
             std::sort( dialogue_ids.begin(), dialogue_ids.end(), localized_compare );
             uilist talk_topic_menu;
             talk_topic_menu.text = _( "Choose talk topic to display:" );

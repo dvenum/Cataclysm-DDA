@@ -32,6 +32,7 @@
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "map_selector.h"
 #include "math_parser_diag_value.h"
 #include "messages.h"
 #include "monster.h"
@@ -427,7 +428,7 @@ TEST_CASE( "use-j01_eoc_use_action_gets_method_and_item_pos", "[audit][iuse][eoc
         item_location marker = u.i_add( item( itype_test_usej01_marker ) );
         REQUIRE( marker );
         const tripoint_bub_ms target = u.pos_bub() + tripoint_rel_ms::east * 2;
-        u.invoke_item( marker.get_item(), method, target );
+        u.invoke_item( marker, method, target );
         CHECK( globvars.get_global_value( "usej01_method" ).str() == method );
         CHECK( globvars.get_global_value( "usej01_item_pos" ).tripoint() == u.pos_abs() );
         CHECK( globvars.get_global_value( "usej01_use_location" ).tripoint() ==
@@ -437,9 +438,10 @@ TEST_CASE( "use-j01_eoc_use_action_gets_method_and_item_pos", "[audit][iuse][eoc
     SECTION( "an item on the ground is where it lies" ) {
         const tripoint_bub_ms spot = u.pos_bub() + tripoint_rel_ms::north;
         item &placed = here.add_item( spot, item( itype_test_usej01_marker ) );
+        item_location placed_loc( map_cursor( &here, spot ), &placed );
         const use_function *use = placed.type->get_use( method );
         REQUIRE( use != nullptr );
-        use->call( &u, placed, &here, spot );
+        use->call( &u, placed_loc, &here, spot );
         CHECK( globvars.get_global_value( "usej01_method" ).str() == method );
         CHECK( globvars.get_global_value( "usej01_item_pos" ).tripoint() == here.get_abs( spot ) );
     }

@@ -32,6 +32,7 @@
 #include "global_vars.h"
 #include "incapacitation.h"
 #include "item.h"
+#include "item_location.h"
 #include "item_uid.h"
 #include "itype.h"
 #include "iuse.h"
@@ -42,6 +43,7 @@
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "map_selector.h"
 #include "math_parser_diag_value.h"
 #include "mattack_common.h"
 #include "monster.h"
@@ -564,11 +566,12 @@ TEST_CASE( "ability_point_self_and_item_invocation_use_explicit_target_contracts
     SECTION( "native item EOC supplies a point instead of treating the item as a creature" ) {
         map &here = get_map();
         item &token = here.add_item( target.pos_bub(), item( itype_test_ability_token ) );
+        item_location token_loc( map_cursor( &here, target.pos_bub() ), &token );
         const auto *use = token.type->get_use( "effect_on_conditions" );
         REQUIRE( use );
         const auto *actor = dynamic_cast<const effect_on_conditions_actor *>( use->get_actor_ptr() );
         REQUIRE( actor );
-        actor->use( &get_avatar(), token, &here, target.pos_bub() );
+        actor->use( &get_avatar(), token_loc, &here, target.pos_bub() );
         const auto rows = g->abilities().inspect_all();
         REQUIRE( rows.size() == 1 );
         id = rows.front().id;

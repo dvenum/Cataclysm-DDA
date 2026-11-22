@@ -139,6 +139,12 @@
           }
         ],
         [
+          "EOC_LEVELER_UNDINE_SUMMON_WATER_SPRITE",
+          {
+            "math": [ "( u_spell_level('summon_water_sprite') >= 0 ) * ( u_spell_level('summon_water_sprite') < 35 ) * 8" ]
+          }
+        ],
+        [
           "EOC_LEVELER_UNDINE_CLOUD_OF_STEAM",
           {
             "math": [ "( u_spell_level('cloud_of_steam_undine') >= 0 ) * ( u_spell_level('cloud_of_steam_undine') < 35 ) * 7" ]
@@ -372,8 +378,7 @@
         "type": "good"
       },
       { "math": [ "u_spell_exp('summon_water_sprite') += paraclesian_passive_spell_exp(1)" ] }
-    ],
-    "false_effect": [ { "run_eocs": "EOC_UNDINE_SPELL_EXPERIENCE_INCREASER_SELECTOR" } ]
+    ]
   },
   {
     "type": "effect_on_condition",

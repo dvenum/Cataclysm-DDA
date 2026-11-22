@@ -264,6 +264,18 @@ using terminating_effect = struct terminating_effect_t {
     bodypart_id bp;
 };
 
+enum class melee_hit_quality { glancing, good, solid };
+
+// Which hit spreads of a melee attack count as dodged (deal_melee_attack runs on_dodge for them)
+enum class melee_dodge_rule : int {
+    // A partly dodged hit still lands: only a full miss (hit spread -25 or less) is dodged
+    partial,
+    // A grab or disarm takes hold or it doesn't: any negative hit spread is dodged
+    all_or_nothing,
+    // The attack can't be dodged: nothing is
+    undodgeable,
+};
+
 class Creature : public viewer
 {
         // Reserved-injury settlement validates retained identity and clears stale killers on rescue.
@@ -475,9 +487,40 @@ class Creature : public viewer
         float get_crit_factor( const bodypart_id &bp ) const;
 
         int size_melee_penalty() const;
+
+        // defense
+        float last_dodge = 0.0f;
+        float last_block = 0.0f;
+        int last_hit_spread = 0;
+        // The blow those rolls were against, before the block cut it down: a worn shield that
+        // blocks it wears by it.  Callers of block_hit set it.
+        damage_instance last_blow;
+        // Whether those rolls were made (deal_melee_attack): a hit no defense was rolled against
+        // isn't shielded with a limb either (deflect_hit_part)
+        bool melee_defense_rolled = false;
+        // Forgets the last defense rolls, for a hit no block was rolled against (a hardcoded
+        // attack's dodge_check, a hit passed on to a rider): block_hit then doesn't block it, and
+        // deal_melee_hit doesn't let a limb shield it
+        void clear_melee_defense();
+        virtual float block_roll( const Creature * ) {
+            return 0.0f;
+        }
         // begins a melee attack against the creature
-        // returns hit - dodge (>=0 = hit, <0 = miss)
-        virtual int deal_melee_attack( Creature *source, int hitroll );
+        // returns hit - dodge - block
+        int deal_melee_attack( Creature *source, int hitroll, bool allow_block = true,
+                               melee_dodge_rule dodge_rule = melee_dodge_rule::partial );
+
+        // damage multiplier represnting partial dodge (hitroll-dodge).
+        // 0=complete miss, 1=square hit
+        static float melee_damage_mult( int hit_spread );
+        static bool melee_attack_hit( int hit_spread );
+
+        // For messaging after partial dodge
+        static melee_hit_quality melee_hit_quality_of( int hit_spread );
+        static std::string hit_quality_label( int hit_spread );
+
+        // For deflections
+        bodypart_id deflect_hit_part( const bodypart_id &bp, bool can_attack_high ) const;
 
         // Distance == 1 and on the same z-level or with a clear shot up/down.
         // If allow_zlev is false, don't allow attacking up/down at all.

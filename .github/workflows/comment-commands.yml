@@ -11,11 +11,11 @@ env:
 
 jobs:
   issue-comment-job:
-    if: ${{ !github.event.issue.pull_request }}
+    if: ${{ github.repository == 'CleverRaven/Cataclysm-DDA' && !github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -60,7 +60,7 @@ jobs:
           gh issue reopen "$ISSUE_NUMBER"
 
   pr-comment-job:
-    if: ${{ github.event.issue.pull_request }}
+    if: ${{ github.repository == 'CleverRaven/Cataclysm-DDA' && github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -69,7 +69,7 @@ jobs:
       actions: write
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 

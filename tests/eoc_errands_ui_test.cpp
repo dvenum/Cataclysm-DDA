@@ -178,9 +178,9 @@ TEST_CASE( "eoc_examine_by_an_npc", "[eoc][iexamine][errands_ui]" )
         CHECK_THAT( reason(), Catch::Matchers::Contains( "nothing to do" ) );
     }
     SECTION( "a tile out of reach" ) {
-        const tripoint_bub_ms far = guy.pos_bub() + tripoint_rel_ms( 3, 0, 0 );
-        here.furn_set( far, furn_test_f_eoc );
-        examine( guy, far );
+        const tripoint_bub_ms far_pos = guy.pos_bub() + tripoint_rel_ms( 3, 0, 0 );
+        here.furn_set( far_pos, furn_test_f_eoc );
+        examine( guy, far_pos );
         CHECK( result() == "refused" );
         CHECK_THAT( reason(), Catch::Matchers::Contains( "out of reach" ) );
         CHECK( global_string( "this" ).empty() );

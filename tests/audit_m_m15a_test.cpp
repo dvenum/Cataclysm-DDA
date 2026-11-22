@@ -188,7 +188,7 @@ TEST_CASE( "hlth-j04_wound_events", "[audit][wound][event]" )
     const bodypart_id arm_l( body_part_arm_l );
 
     SECTION( "gained, then healed by itself" ) {
-        u.apply_wound( arm_l, wound_audit_m15a_heals );
+        u.add_wound( arm_l, wound_audit_m15a_heals, 0 );
         const std::vector<cata::event> gained = events.of( event_type::character_gains_wound );
         REQUIRE( gained.size() == 1 );
         CHECK( gained[0].get<cata_variant_type::character_id>( "character" ) == u.getID() );
@@ -204,7 +204,7 @@ TEST_CASE( "hlth-j04_wound_events", "[audit][wound][event]" )
     }
 
     SECTION( "progressed by its timer, then removed" ) {
-        u.apply_wound( arm_l, wound_audit_m15a_worsens );
+        u.add_wound( arm_l, wound_audit_m15a_worsens, 0 );
         CHECK( seconds_until_gone( u, arm_l, wound_audit_m15a_worsens, 50 ) > 0 );
         CHECK( u.has_wound( wound_audit_m15a_worse, arm_l.id() ) );
         const std::vector<cata::event> worse = events.of( event_type::character_wound_progresses );
@@ -477,7 +477,7 @@ TEST_CASE( "hlth-j10_stomach_and_wound_math", "[audit][math_parser]" )
     const bodypart_id arm_l( body_part_arm_l );
     CHECK( eval_math( d, "u_wound_healing('audit_m15a_slow')" ) == -1 );
     CHECK( eval_math( d, "u_wound_pain('audit_m15a_slow')" ) == -1 );
-    u.apply_wound( arm_l, wound_audit_m15a_slow );
+    u.add_wound( arm_l, wound_audit_m15a_slow, 0 );
     CHECK( eval_math( d, "u_wound_healing('audit_m15a_slow')" ) == Approx( 0 ) );
     CHECK( eval_math( d, "u_wound_pain('audit_m15a_slow', 'bodypart': 'arm_l')" ) == 4 );
     CHECK( eval_math( d, "u_wound_healing('audit_m15a_slow', 'bodypart': 'arm_r')" ) == -1 );

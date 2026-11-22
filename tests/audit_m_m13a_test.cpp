@@ -104,9 +104,10 @@ TEST_CASE( "use-j05_drug_durations_follow_the_drug_duration_enchantment", "[audi
                                        R"({ "activation_message": "You take the test drug.", )"
                                        R"("effects": [ { "id": "test_m13a_drugged", "duration": "10 m" } ] })" );
     item pill( itype_test_m13a_quick_pill );
+    item_location pill_loc( you, &pill );
     const auto dose = [&]() {
         you.remove_effect( effect_test_m13a_drugged );
-        REQUIRE( drug.use( &you, pill, &here, you.pos_bub() ) == 1 );
+        REQUIRE( drug.use( &you, pill_loc, &here, you.pos_bub() ) == 1 );
         return you.get_effect_dur( effect_test_m13a_drugged );
     };
 
@@ -152,6 +153,7 @@ TEST_CASE( "use-j05_drugs_remove_effects_place_fields_and_take_their_time",
     avatar &you = get_avatar();
     map &here = get_map();
     item pill( itype_test_m13a_quick_pill );
+    item_location pill_loc( you, &pill );
 
     SECTION( "remove_effects" ) {
         const consume_drug_iuse drug = load_drug(
@@ -159,7 +161,7 @@ TEST_CASE( "use-j05_drugs_remove_effects_place_fields_and_take_their_time",
                                            R"("remove_effects": [ "test_m13a_ailment" ] })" );
         you.add_effect( effect_test_m13a_ailment, 1_hours );
         REQUIRE( you.has_effect( effect_test_m13a_ailment ) );
-        REQUIRE( drug.use( &you, pill, &here, you.pos_bub() ) == 1 );
+        REQUIRE( drug.use( &you, pill_loc, &here, you.pos_bub() ) == 1 );
         CHECK_FALSE( you.has_effect( effect_test_m13a_ailment ) );
     }
     SECTION( "one field on the user's own tile" ) {
@@ -167,7 +169,7 @@ TEST_CASE( "use-j05_drugs_remove_effects_place_fields_and_take_their_time",
                                            R"({ "activation_message": "You take the test drug.", )"
                                            R"("fields_produced": { "fd_weedsmoke": 2 }, "field_count": 1, "field_radius": 0 })" );
         REQUIRE( here.get_field( you.pos_bub(), field_fd_weedsmoke ) == nullptr );
-        REQUIRE( drug.use( &you, pill, &here, you.pos_bub() ) == 1 );
+        REQUIRE( drug.use( &you, pill_loc, &here, you.pos_bub() ) == 1 );
         CHECK( here.get_field( you.pos_bub(), field_fd_weedsmoke ) != nullptr );
     }
     SECTION( "consume_time" ) {
@@ -322,7 +324,7 @@ TEST_CASE( "use-j07_activating_an_item_sends_character_activates_item", "[audit]
 
     SECTION( "a use that goes through" ) {
         get_event_bus().subscribe( &catcher );
-        CHECK_FALSE( you.invoke_item( widget.get_item(), "test_m13a_press" ) );
+        CHECK_FALSE( you.invoke_item( widget, "test_m13a_press" ) );
         get_event_bus().unsubscribe( &catcher );
         CHECK( num_var( you, "test_m13a_uses" ) == 1 );
         REQUIRE( catcher.activations.size() == 1 );
@@ -337,7 +339,7 @@ TEST_CASE( "use-j07_activating_an_item_sends_character_activates_item", "[audit]
     }
     SECTION( "a cancelled use" ) {
         get_event_bus().subscribe( &catcher );
-        CHECK_FALSE( you.invoke_item( widget.get_item(), "test_m13a_refuse" ) );
+        CHECK_FALSE( you.invoke_item( widget, "test_m13a_refuse" ) );
         get_event_bus().unsubscribe( &catcher );
         CHECK( catcher.activations.empty() );
         CHECK( num_var( you, "test_m13a_activations" ) == 0 );

@@ -71,7 +71,7 @@ void dialogue_topic_override::load( const JsonObject &jo, std::string_view )
 
 void dialogue_topic_override::check() const
 {
-    if( !topic.empty() && !talk_topic_exists( topic ) ) {
+    if( !topic.empty() && !talk_topic_all::talk_topic_exists( topic ) ) {
         debugmsg( R"(dialogue_topic_override "%s" opens the topic "%s", which doesn't exist)",
                   id.str(), topic );
     }

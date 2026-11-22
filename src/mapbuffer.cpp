@@ -16,6 +16,8 @@
 #include <utility>
 #include <vector>
 
+#include <char8_t-remediation/char8_t-remediation.h>
+
 #include "cata_path.h"
 #include "cata_utility.h"
 #include "debug.h"
@@ -96,7 +98,7 @@ static const std::unordered_set<std::string> *segment_listing( const tripoint_ab
                 return nullptr;
             }
             for( const std::filesystem::path &entry : z->get_entries() ) {
-                listing.insert( entry.generic_u8string() );
+                listing.insert( from_u8string( entry.generic_u8string() ) );
             }
         }
     } else {
@@ -104,7 +106,7 @@ static const std::unordered_set<std::string> *segment_listing( const tripoint_ab
         try {
             if( std::filesystem::is_directory( dir ) ) {
                 for( const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator( dir ) ) {
-                    listing.insert( entry.path().filename().generic_u8string() );
+                    listing.insert( from_u8string( entry.path().filename().generic_u8string() ) );
                 }
             }
         } catch( const std::filesystem::filesystem_error & ) {
@@ -359,7 +361,7 @@ void mapbuffer::save_quad(
                         ( PATH_INFO::world_base_save_path() / "maps.dict" ).get_unrelative_path() );
         if( !z ) {
             throw std::runtime_error( "Failed opening compressed save file " +
-                                      zzip_name.get_unrelative_path().generic_u8string() );
+                                      zzip_name.generic_u8string() );
         }
     };
 
@@ -441,7 +443,7 @@ void mapbuffer::save_quad(
             fout << s;
         } );
     }
-    note_quad_file( om_addr, quad_file.generic_u8string(), true );
+    note_quad_file( om_addr, from_u8string( quad_file.generic_u8string() ), true );
 
     if( all_uniform && reverted_to_uniform ) {
         bool deleted = false;
@@ -451,7 +453,7 @@ void mapbuffer::save_quad(
             deleted = std::filesystem::remove( filename.get_unrelative_path() );
         }
         if( deleted ) {
-            note_quad_file( om_addr, quad_file.generic_u8string(), false );
+            note_quad_file( om_addr, from_u8string( quad_file.generic_u8string() ), false );
         }
     }
     if( z ) {
@@ -506,7 +508,7 @@ submap *mapbuffer::unserialize_submaps( const tripoint_abs_sm &p )
             try {
                 deserialize( jsin );
             } catch( std::exception &err ) {
-                debugmsg( _( "Failed to read from \"%1$s\": %2$s" ), zzip_name.generic_u8string() + ":" + file_name,
+                debugmsg( _( "Failed to read from \"%1$s:%2$s\": %3$s" ), zzip_name.generic_u8string(), file_name,
                           err.what() );
                 return false;
             }

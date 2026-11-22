@@ -16,12 +16,14 @@
 #include "flexbuffer_json.h"
 #include "global_vars.h"
 #include "item.h"
+#include "item_location.h"
 #include "itype.h"
 #include "iuse.h"
 #include "json_loader.h"
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "map_selector.h"
 #include "mapdata.h"
 #include "math_parser_diag_value.h"
 #include "monster.h"
@@ -192,8 +194,9 @@ TEST_CASE( "interactivity_removed_ground_item_is_not_consumed_again_after_its_EO
     const tripoint_bub_ms destination = origin + tripoint_rel_ms::east;
     get_globals().set_global_value( "twelve_item_destination", here.get_abs( destination ) );
     item &source = here.add_item( origin, item( itype_test_twelve_relocating_item ) );
+    item_location source_loc( map_cursor( &here, origin ), &source );
     // The EOC teleports by making a new item and removing the original reference.
-    const std::optional<int> consumed = source.type->invoke( &u, source, &here, origin );
+    const std::optional<int> consumed = source.type->invoke( &u, source_loc, &here, origin );
     REQUIRE( consumed.has_value() );
     CHECK( *consumed == 0 );
     CHECK( here.i_at( origin ).empty() );
@@ -319,12 +322,13 @@ TEST_CASE( "interactivity_emissions_use_the_emitter_not_the_avatar",
     }
     SECTION( "two identical item emitters have independent state" ) {
         item &source = here.add_item( destination, item( itype_test_twelve_emitter ) );
+        item_location source_loc( map_cursor( &here, destination ), &source );
         source.set_var( "twelve_intensity", 2.0 );
-        source.type->drop_action.call( nullptr, source, &here, destination );
+        source.type->drop_action.call( nullptr, source_loc, &here, destination );
         CHECK( here.get_field_intensity( destination, smoke ) == 2 );
         here.remove_field( destination, smoke );
         source.set_var( "twelve_intensity", 1.0 );
-        source.type->drop_action.call( nullptr, source, &here, destination );
+        source.type->drop_action.call( nullptr, source_loc, &here, destination );
     }
     CHECK( here.get_field_intensity( destination, smoke ) == expected );
 }

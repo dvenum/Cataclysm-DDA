@@ -44,6 +44,8 @@ static const json_character_flag json_flag_ATTUNEMENT( "ATTUNEMENT" );
 static const json_character_flag json_flag_HERITAGE( "HERITAGE" );
 static const json_character_flag json_flag_PERK( "PERK" );
 
+static const material_id material_all( "all" );
+
 static const mutation_category_id mutation_category_ANY( "ANY" );
 
 static const trait_group::Trait_group_tag Trait_group_EMPTY_GROUP( "EMPTY_GROUP" );
@@ -331,7 +333,10 @@ static mut_attack load_mutation_attack( const JsonObject &jo )
     jo.read( "attack_text_npc", ret.attack_text_npc );
     jo.read( "required_mutations", ret.required_mutations );
     jo.read( "blocker_mutations", ret.blocker_mutations );
-    jo.read( "hardcoded_effect", ret.hardcoded_effect );
+    if( jo.has_member( "hardcoded_effect" ) ) {
+        jo.throw_error_at( "hardcoded_effect",
+                           "hardcoded mutation attacks are gone: give the attack base_damage or strength_damage" );
+    }
 
     if( jo.has_string( "body_part" ) ) {
         ret.bp = bodypart_str_id( jo.get_string( "body_part" ) );
@@ -346,10 +351,8 @@ static mut_attack load_mutation_attack( const JsonObject &jo )
         jo.throw_error( "Attack message unset" );
     }
 
-    if( !ret.hardcoded_effect && ret.base_damage.empty() && ret.strength_damage.empty() ) {
+    if( ret.base_damage.empty() && ret.strength_damage.empty() ) {
         jo.throw_error( "Damage unset" );
-    } else if( ret.hardcoded_effect && ( !ret.base_damage.empty() || !ret.strength_damage.empty() ) ) {
-        jo.throw_error( "Damage and hardcoded effect are both set (must be one, not both)" );
     }
 
     if( ret.chance <= 0 ) {
@@ -1138,6 +1141,18 @@ void mutation_branch::check_consistency()
             if( !allergy.second.is_valid() ) {
                 debugmsg( "mutation %s has a food allergy with undefined morale type %s",
                           mid.c_str(), allergy.second.c_str() );
+            }
+        }
+        for( const auto &absorb : mdata.vitamin_absorb_multi ) {
+            if( absorb.first != material_all && !absorb.first.is_valid() ) {
+                debugmsg( "mutation %s has vitamins_absorb_multi for undefined material %s (use a "
+                          "material, or \"all\")", mid.c_str(), absorb.first.c_str() );
+            }
+            for( const std::pair<const vitamin_id, double> &vit : absorb.second ) {
+                if( !vit.first.is_valid() ) {
+                    debugmsg( "mutation %s has vitamins_absorb_multi for undefined vitamin %s",
+                              mid.c_str(), vit.first.c_str() );
+                }
             }
         }
         for( const effect_on_condition_id &eoc : mdata.eat_eocs ) {

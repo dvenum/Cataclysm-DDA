@@ -212,6 +212,7 @@ static const std::map<std::string, std::pair<std::string, std::map<std::string, 
     static const std::map<std::string, std::pair<std::string, std::map<std::string, std::string>>> opt
     = {
         {"DELETE_WORLD", { "WORLD_END", { {"no", "keep" }, {"yes", "delete"} } } },
+        {"EXPLOSIVE_COMBAT_EXERTION", { "COMBAT_EXERTION", { {"true", "explosive" }, {"false", "normal"} } } },
         {"MONSTER_UPGRADE_FACTOR", { "EVOLUTION_INVERSE_MULTIPLIER", {} }} //TODO: Remove after stable after world option reserialising is added, value migration done in migrateOptionValue instead
     };
     return opt;
@@ -1419,7 +1420,7 @@ std::vector<options_manager::id_and_option> options_manager::get_lang_options()
             { "en", R"(English)" },
             { "ace", R"(Bahsa Acèh)" },
             { "ar", R"(العربية)" },
-            { "be", R"(Беларуская)" },
+            { "be", R"(Беларуская мова)" },
             { "bg", R"(български език)" },
             { "ca", R"(Català)" },
             { "cs", R"(Český Jazyk)" },
@@ -1436,7 +1437,7 @@ std::vector<options_manager::id_and_option> options_manager::get_lang_options()
             { "fil_PH", R"(Wikang Pilipino)" },
             { "fr", R"(Français)" },
             { "ga_IE", R"(Gaeilge)" },
-            { "he", R"(עִבְרִית)" },
+            { "he", R"(עברית)" },
             { "hu", R"(Magyar)" },
             { "id", R"(Bahasa Indonesia)" },
             { "is", R"(Íslenska)" },
@@ -1456,7 +1457,7 @@ std::vector<options_manager::id_and_option> options_manager::get_lang_options()
             { "sv", R"(Svenska)" },
             { "th_TH", R"(ภาษาไทย)" },
             { "tr", R"(Türkçe)" },
-            { "uk_UA", R"(Українська)" },
+            { "uk_UA", R"(Українська мова)" },
             { "vi", R"(tiếng Việt)" },
             { "zh_CN", R"(中文 (中国))" },
             { "zh_TW", R"(中文 (台灣))" },
@@ -3029,9 +3030,13 @@ void options_manager::add_options_world_default()
              to_translation( "If true, being held while enough monsters press in around you squeezes the breath out of you, and eventually crushes you.  The thresholds are external options (CROWD_CRUSH_*)." ),
              true
            );
-        add( "EXPLOSIVE_COMBAT_EXERTION", page_id, to_translation( "Explosive combat exertion" ),
-             to_translation( "If true, melee attacks, dodges, grabs and throws count as explosive exercise, above extreme: fighting burns more calories, and a weary character slows down more while fighting.  A rested character can then exert themselves up to explosive." ),
-             false
+        add( "COMBAT_EXERTION", page_id, to_translation( "Combat exertion" ),
+             to_translation( "How hard melee attacks, dodges, grabs and throws count as exercise.  Normal: extreme exercise.  Explosive (as in Cataclysm-TLG): a little above extreme; fighting burns more calories, a rested character can exert themselves up to explosive, and a weary one slows down more while fighting.  Combat: fighting burns calories about 50 times as fast as extreme exercise, so a fresh fighter tires within minutes; weariness slows you down as with normal." ),
+        {
+            { "normal", to_translation( "Normal" ) },
+            { "explosive", to_translation( "Explosive" ) },
+            { "combat", to_translation( "Combat" ) }
+        }, "normal"
            );
     } );
 

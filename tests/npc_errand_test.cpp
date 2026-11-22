@@ -1023,9 +1023,9 @@ TEST_CASE( "u_pickup_item_then_wield_it", "[npc][eoc][errand]" )
     SECTION( "after a walk, from true_eocs" ) {
         guy.set_wielded_item( item() );
         forget_errand_globals();
-        item_location far = place_item( errand_origin + tripoint( 7, 0, 0 ), itype_hammer );
+        item_location far_item = place_item( errand_origin + tripoint( 7, 0, 0 ), itype_hammer );
         apply_to_item( R"({ "u_pickup_item": "npc", "walk": true,
-            "true_eocs": [ "EOC_TEST_ERRAND_WIELD_IT" ] })", guy, far );
+            "true_eocs": [ "EOC_TEST_ERRAND_WIELD_IT" ] })", guy, far_item );
         run_until_walk_ends( guy, 20 );
         CHECK( result() == "true" );
         REQUIRE( guy.get_wielded_item() );

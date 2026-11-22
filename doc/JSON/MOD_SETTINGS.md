@@ -168,7 +168,7 @@ Mod settings are new values for mods. A mod can also change the built-in world o
   { "type": "WORLD_OPTION", "name": "SPAWN_DENSITY", "default": 2 }
   ```
 
-  `name` is a world option ([OPTIONS.md](OPTIONS.md)); `default` is a value it takes: `true` or `false`, a number in its range, or one of its values as a string. Anything else is a load error. The old shape, `{ "options": [ ... ] }`, which forced options on, is a load error too.
+  `name` is a world option ([OPTIONS.md](OPTIONS.md)); `default` is a value it takes: `true` or `false`, a number in its range, or one of its values as a string. Anything else is a load error. A renamed option's old name still works, with its old values: `EXPLOSIVE_COMBAT_EXERTION` with `true` or `false` reads as `COMBAT_EXERTION` with `"explosive"` or `"normal"`. The old shape, `{ "options": [ ... ] }`, which forced options on, is a load error too.
 
   A world created with the mod starts with that value, on every way a world is created: the world creation screens, Play Now, the tutorial. An option the player chose keeps the player's value. When the mod list changes at world creation, the options not chosen move to the new list's defaults (with no mod giving one, the built-in default), and the chosen ones stay. An option counts as chosen:
 

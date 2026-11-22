@@ -12,7 +12,6 @@
 #include <utility>
 #include <vector>
 
-#include "../src/temp_crafting_inventory.h"
 #include "avatar.h"
 #include "calendar.h"
 #include "cata_catch.h"
@@ -33,6 +32,7 @@
 #include "ret_val.h"
 #include "skill.h"
 #include "string_formatter.h"
+#include "temp_crafting_inventory.h"
 #include "type_id.h"
 #include "units.h"
 #include "visitable.h"

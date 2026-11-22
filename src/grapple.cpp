@@ -781,10 +781,11 @@ bool grapple::attempt_grab( Character &grabber, Creature &target, std::optional<
                 accuracy_penalty = -8.0f;
             }
         }
+        // Only a dodge stops a grab, not a block, and a partly dodged grab misses
         const int hitspread = z->deal_melee_attack( &grabber,
         static_cast<int>( melee::hit_roll_against( *z, [&grabber, accuracy_penalty] {
             return grabber.hit_roll() + accuracy_penalty;
-        } ) ) );
+        } ) ), false, tolerate ? melee_dodge_rule::undodgeable : melee_dodge_rule::all_or_nothing );
         if( hitspread < 0 && !tolerate ) {
             grabber.add_msg_player_or_npc(
                 m_warning, _( "You reach for %s, but fail to make contact!" ),
@@ -829,7 +830,7 @@ bool grapple::attempt_grab( Character &grabber, Creature &target, std::optional<
         const int hitspread = target.deal_melee_attack( &grabber,
         static_cast<int>( melee::hit_roll_against( target, [&grabber] {
             return grabber.hit_roll();
-        } ) ) );
+        } ) ), false, melee_dodge_rule::all_or_nothing );
         if( hitspread < 0 ) {
             grabber.add_msg_player_or_npc(
                 m_warning, _( "You reach for %s, but fail to make contact!" ),

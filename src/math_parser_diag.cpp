@@ -1676,7 +1676,9 @@ double wound_pain_eval( const_dialogue const &d, char scope, std::vector<diag_va
                         diag_kwargs const &kwargs )
 {
     const wound *wd = find_wound( d, scope, params, kwargs );
-    return wd == nullptr ? -1 : wd->get_pain();
+    // find_wound found the wound on this character, so it is one
+    return wd == nullptr ? -1 :
+           wd->get_pain( d.const_actor( is_beta( scope ) )->get_const_character() );
 }
 
 double hp_eval( const_dialogue const &d, char scope, std::vector<diag_value> const &params,

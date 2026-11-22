@@ -339,6 +339,8 @@ Some armor flags, such as `WATCH` and `ALARMCLOCK` are compatible with other ite
 - ```NON_FLESH_LIMB``` The bodypart is immune to a number of effects like poisoning or infection.
 - ```NONSTANDARD_BLOCK``` This limb is different enough that martial arts' arm/leg blocks aren't applicable - blocking with this limb is unlocked by reaching the MA's `nonstandard_block` level, unless the limb also has `ALWAYS_BLOCK`.  Either block flag is **required** for non-arm / non-leg limbs to be eligible to block.
 - ```PARTIAL_BIONIC_LIMB``` This limb is at least in part mechanical.
+- ```PLANT_LIMB``` The bodypart is purely vegetal, used for wound targeting.
+- ```VINE_LIMB``` The bodypart is a vine, used for wound targeting.
 - ```WINGS_2``` You can slow your fall, effectively reducing the height of falls by 2 levels, and ignore pit-like traps if two instances of the flag are present.  Nothing may hold you in place for that (downed, webbed, snared, caught in a bear trap, crushed, grabbed, in a pit or under an `EFFECT_IMPEDING` effect), and you may not be stunned; asking doesn't make you struggle against what holds you.
 - ```WING_ARMS``` Counts as a wing for `Character::can_fly` if two instances of the flag are present.
 
@@ -558,6 +560,7 @@ These branches are the valid `dreams` from [dreams.json](/data/json/dreams.json)
 - ```CARNIVORE_OK``` Can be eaten by characters with the Carnivore mutation at 50% kcal reduction.
 - ```CANT_HEAL_EVERYONE``` This med can't be used by everyone, it requires a special mutation.  See `can_heal_with` in mutation.
 - ```CORROSIVE``` when consumed using the `BLECH` function, causes the same penalties as `ACID` but is not affected by `ACIDPROOF` or `ACIDBLOOD` traits.
+- ```CRYOGENIC_ROT``` The item cannot be preserved without specialized cryogenic devices. Used in Aftershock.
 - ```EATEN_COLD``` Morale bonus for eating cold.
 - ```EATEN_HOT``` Morale bonus for eating hot.
 - ```EDIBLE_FROZEN``` Being frozen doesn't prevent eating it.  No morale bonus.
@@ -660,7 +663,7 @@ These are checked by hardcode for monsters (introducing new flags will require C
 - ```EFFECT_LIMB_SCORE_MOD_LOCAL``` Same as `EFFECT_LIMB_SCORE_MOD`, but limb score is modified only if effect is applied to body part, that has said score; effect, that apply -50% vision debuff, won't have effect if applied to leg with this flag.
 - ```GRAB``` This effect is a grab, creatures will attempt to break it as such (see `character_escape.cpp`).  When a character holds the creature, the effect's source is that character (see [Grab attacks](MONSTER_SPECIAL_ATTACKS.md#characters-grabbing-creatures)).
 - ```GRAB_FILTER``` This effect is a grab filter effect, assigning grabs to their grabbing monster or character.  Handles targeted grab removal on grab break, as well as potentially acting as a filter for monster attack logic.  Bodypart `grabbing_effects` should have it defined.
-- ```NO_GRAB``` A creature with this flag can't start a grab: the `grab`, `grab_2` and `grab_3` monster attacks check it, and so does a character's grab (for characters any character flag counts, not only effect flags).
+- ```NO_GRAB``` A creature with this flag can't start a grab: every monster grab attack checks it (including a monster's own copy of `grab` with its own condition), and so does a character's grab (for characters any character flag counts, not only effect flags).
 - ```PAINKILLER``` A character under an effect with this flag has taken a painkiller: an NPC doesn't take another (see the comestible `npc_use` in [ITEM.md](ITEM.md)).  Vanilla's `pkill1_*`, `pkill2`, `pkill3` and `pkill_l` have it.
 
 
@@ -710,6 +713,7 @@ Can also be used as `pre_flags` for `construction`.
 - ```ELEVATOR``` Terrain with this flag will move player, NPCs, monsters, and items up and down when player activates nearby `elevator controls`.
 - ```EMPTY_SPACE``` Terrain without anything solid in it, including a floor, implying there should be no roof supporting terrain beneath it. It also should imply containment is broken (releasing air out, water etc. in, but that's currently not implemented).
 - ```EXAMINE_FROM_ABOVE``` Furniture can be <kbd>e</kbd> examined from a ledge above.  If deployed furniture is taken down it will be placed on the ledge.
+- ```FACTION_SECURITY``` This terrain/furniture is some sort of security measure, and interacting with it is extra upsetting to the local faction.
 - ```FIRE_CONTAINER``` Stops fire from spreading (brazier, wood stove, etc).
 - ```FISHABLE``` You can try to catch fish here.
 - ```FLAMMABLE_ASH``` Burns to ash rather than rubble.
@@ -734,6 +738,7 @@ Can also be used as `pre_flags` for `construction`.
 - ```LIQUIDCONT``` Furniture that contains liquid, allows for contents to be accessed in some checks even if `SEALED`.
 - ```LIQUID``` Terrain is liquid (e.g. water, lava, etc.), blocking movement without being a wall.
 - ```LOCKED``` Is locked, requiring either external control or lockpicking to open.
+- ```NO_DECONSTRUCT``` This terrain/furniture has a base `item` defined, but cannot be disassembled into this item
 - ```MINEABLE``` Can be mined with a pickaxe/jackhammer.
 - ```MOUNTABLE``` Suitable for guns with the `MOUNTED_GUN` flag.
 - ```NANOFAB_TABLE``` This is a nanofabricator, and it can generate items out of specific blueprints.  Hardcoded

@@ -151,11 +151,11 @@ TEST_CASE( "eoc-j03_talk_topic_references_are_checked", "[audit][npc_talk]" )
     CHECK_FALSE( contains( messages, "\"TALK_DONE\"" ) );
     CHECK_FALSE( contains( messages, "\"TALK_NONE\"" ) );
     // the built-in and mission topics count as existing
-    CHECK( talk_topic_exists( "TALK_NONE" ) );
-    CHECK( talk_topic_exists( "TALK_MISSION_OFFER" ) );
-    CHECK_FALSE( talk_topic_exists( "TALK_AUDIT_M01B_NOWHERE" ) );
+    CHECK( talk_topic_all::talk_topic_exists( "TALK_NONE" ) );
+    CHECK( talk_topic_all::talk_topic_exists( "TALK_MISSION_OFFER" ) );
+    CHECK_FALSE( talk_topic_all::talk_topic_exists( "TALK_AUDIT_M01B_NOWHERE" ) );
     // the topics the trial test in npc_talk_test leads to exist now
-    CHECK( talk_topic_exists( "TALK_TEST_TRUE_CONDITION_NEXT" ) );
+    CHECK( talk_topic_all::talk_topic_exists( "TALK_TEST_TRUE_CONDITION_NEXT" ) );
 }
 
 // EOC-J04: deactivate_condition is only read for a RECURRING EOC without a false_effect, and

@@ -1,0 +1,63 @@
+[
+  {
+    "type": "MONSTER",
+    "id": "mon_test_sync_override_grabber",
+    "copy-from": "mon_test_counter_grabber",
+    "name": { "str": "override test grabber", "//~": "NO_I18N" },
+    "description": {
+      "str": "A grabber whose own copy of the grab attack replaces its condition, as the skeletal hulk's does.",
+      "//~": "NO_I18N"
+    },
+    "special_attacks": [ { "id": "grab", "cooldown": 0, "move_cost": 0, "condition": { "not": { "u_has_effect": "downed" } } } ]
+  },
+  {
+    "type": "MONSTER",
+    "id": "mon_test_sync_blocker",
+    "copy-from": "mon_test_counter_grabber",
+    "name": { "str": "blocking test monster", "//~": "NO_I18N" },
+    "description": { "str": "A monster that always tries to block.", "//~": "NO_I18N" },
+    "special_attacks": [  ],
+    "block": { "chance": 100, "effectiveness": 30, "count": 1 }
+  },
+  {
+    "type": "MONSTER",
+    "id": "mon_test_sync_clumsy_grabber",
+    "copy-from": "mon_test_counter_grabber",
+    "name": { "str": "clumsy test grabber", "//~": "NO_I18N" },
+    "description": { "str": "A grabber whose hit roll is about an unskilled character's dodge roll.", "//~": "NO_I18N" },
+    "melee_skill": 4
+  },
+  {
+    "type": "monster_attack",
+    "attack_type": "melee",
+    "id": "test_sync_undodgeable_jab",
+    "cooldown": 0,
+    "move_cost": 0,
+    "dodgeable": false,
+    "damage_max_instance": [ { "damage_type": "bash", "amount": 1 } ],
+    "hit_dmg_u": "%1$s jabs your %2$s!",
+    "hit_dmg_npc": "%1$s jabs <npcname>'s %2$s!",
+    "miss_msg_u": "%s jabs at you, but you dodge!",
+    "miss_msg_npc": "%s jabs at <npcname>, but they dodge!",
+    "no_dmg_msg_u": "%1$s jabs your %2$s!",
+    "no_dmg_msg_npc": "%1$s jabs <npcname>'s %2$s!"
+  },
+  {
+    "type": "MONSTER",
+    "id": "mon_test_sync_undodgeable_jabber",
+    "copy-from": "mon_test_counter_grabber",
+    "name": { "str": "undodgeable test jabber", "//~": "NO_I18N" },
+    "description": { "str": "A monster with a clumsy jab that can't be dodged.", "//~": "NO_I18N" },
+    "melee_skill": 0,
+    "special_attacks": [ { "id": "test_sync_undodgeable_jab" } ]
+  },
+  {
+    "type": "martial_art",
+    "id": "test_style_sync_dodge_count",
+    "name": { "str": "Test Dodge Counting Style", "//~": "NO_I18N" },
+    "description": { "str": "Counts its user's dodges.", "//~": "NO_I18N" },
+    "initiate": [ "You count your dodges.", "%s counts their dodges." ],
+    "allow_all_weapons": true,
+    "ondodge_eocs": [ { "id": "EOC_TEST_SYNC_DODGE_COUNT", "effect": [ { "math": [ "u_sync_dodges++" ] } ] } ]
+  }
+]

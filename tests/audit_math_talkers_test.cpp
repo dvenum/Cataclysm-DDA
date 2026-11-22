@@ -509,20 +509,20 @@ TEST_CASE( "math-b11_a_refused_move_changes_nothing", "[audit][math_parser]" )
         REQUIRE( u.is_mounted() );
         const monster *const mount = u.mounted_creature.get();
         const tripoint_abs_ms start = u.pos_abs();
-        const tripoint_abs_ms far = start + tripoint::east * 200;
-        REQUIRE_FALSE( here.inbounds( here.get_bub( far ) ) );
+        const tripoint_abs_ms far_pos = start + tripoint::east * 200;
+        REQUIRE_FALSE( here.inbounds( here.get_bub( far_pos ) ) );
         // Make the far spot solid, and put it back afterwards.
         tinymap far_map;
-        far_map.load( project_to<coords::omt>( far ), false );
-        const tripoint_omt_ms far_at = far_map.get_omt( far );
+        far_map.load( project_to<coords::omt>( far_pos ), false );
+        const tripoint_omt_ms far_at = far_map.get_omt( far_pos );
         const ter_id far_ter = far_map.ter( far_at );
         const furn_id far_furn = far_map.furn( far_at );
         far_map.ter_set( far_at, ter_t_rock.id() );
-        const on_out_of_scope restore_far( [far, far_ter, far_furn]() {
+        const on_out_of_scope restore_far( [far_pos, far_ter, far_furn]() {
             tinymap m;
-            m.load( project_to<coords::omt>( far ), false );
-            m.ter_set( m.get_omt( far ), far_ter );
-            m.furn_set( m.get_omt( far ), far_furn );
+            m.load( project_to<coords::omt>( far_pos ), false );
+            m.ter_set( m.get_omt( far_pos ), far_ter );
+            m.furn_set( m.get_omt( far_pos ), far_furn );
         } );
 
         // (mounting may have shifted the map already)

@@ -1278,8 +1278,13 @@ void Character::regen( int rate_multiplier )
         int healing_apply = roll_remainder( rate_multiplier * heal_rate );
         if( healing_apply > 0 ) {
             for( const bodypart_id &healed_part : get_all_body_parts() ) {
-                int part_healing = std::min( healing_apply,
-                                             get_part_hp_max( healed_part ) - get_part_hp_cur( healed_part ) );
+                int hp_max = get_part_hp_max( healed_part );
+
+                for( const wound &wd : get_part( healed_part )->get_wounds() ) {
+                    hp_max -= wd.get_hp_damage();
+                }
+
+                int part_healing = std::min( healing_apply, hp_max - get_part_hp_cur( healed_part ) );
                 if( part_healing > 0 ) {
                     mod_part_healed_total( healed_part, part_healing );
                     heal( healed_part, part_healing );
@@ -1300,7 +1305,14 @@ void Character::regen( int rate_multiplier )
     // include healing effects
     for( const bodypart_id &bp : get_all_body_parts( get_body_part_flags::only_main ) ) {
         float healing = healing_rate_medicine( rest, bp ) * to_turns<int>( 5_minutes );
-        int healing_apply = roll_remainder( healing );
+
+        int hp_max = get_part_hp_max( bp );
+        for( const wound &wd : get_part( bp )->get_wounds() ) {
+            hp_max -= wd.get_hp_damage();
+        }
+        // Not below 0: above the wounds' cap (after a bandage, say) this would take HP away
+        int healing_apply = std::max( 0, std::min( roll_remainder( healing ),
+                                      hp_max - get_part_hp_cur( bp ) ) );
         mod_part_healed_total( bp, healing_apply );
         heal( bp, healing_apply );
         if( get_part_damage_bandaged( bp ) > 0 ) {
@@ -1457,15 +1469,21 @@ int Character::weariness_transition_level() const
 
 float Character::melee_exertion_level() const
 {
-    static const std::string explosive_combat_exertion( "EXPLOSIVE_COMBAT_EXERTION" );
-    return get_option<bool>( explosive_combat_exertion ) ? EXPLOSIVE_EXERCISE : EXTRA_EXERCISE;
+    static const std::string combat_exertion( "COMBAT_EXERTION" );
+    const std::string level = get_option<std::string>( combat_exertion );
+    if( level == "explosive" ) {
+        return EXPLOSIVE_EXERCISE;
+    } else if( level == "combat" ) {
+        return COMBAT_EXERCISE;
+    }
+    return EXTRA_EXERCISE;
 }
 
 float Character::maximum_exertion_level() const
 {
     switch( weariness_level() ) {
         case 0:
-            // Fresh, you can go all out (Cataclysm-TLG); combat only does with the option on.
+            // Fresh, you can go all out: as hard as fighting is set to strain you.
             return melee_exertion_level();
         case 1:
             return ACTIVE_EXERCISE;
@@ -1488,6 +1506,11 @@ float Character::exertion_adjusted_move_multiplier( float level ) const
     // will cause incorrect behavior
     if( level <= 0 ) {
         level = activity_history.activity( in_sleep_state() );
+    }
+    // We penalize COMBAT_EXERCISE as if it were EXTRA_EXERCISE, and so the throws scaled down
+    // from it too.
+    if( level > EXPLOSIVE_EXERCISE ) {
+        level = EXTRA_EXERCISE;
     }
     const float max = maximum_exertion_level();
     if( level < max ) {
@@ -2694,18 +2717,43 @@ bool Character::has_wounds( const bodypart_str_id &part ) const
     return get_part( part )->has_wounds();
 }
 
-void Character::apply_wound( bodypart_id bp, wound_type_id wd )
+const std::vector<wound> &Character::wounds_on( const bodypart_str_id &part ) const
+{
+    return get_part( part )->get_wounds();
+}
+
+void Character::apply_wound( bodypart_id bp, wound_type_id wd, dealt_damage_instance &ddi )
+{
+    apply_wound( bp, wound( wd, this, bp.id(), ddi ), ddi );
+}
+
+void Character::apply_wound( bodypart_id bp, wound wd, dealt_damage_instance &ddi )
 {
     // Nothing on a part the body doesn't have (an EOC of an earlier wound event may remove one)
     const auto body_bp = body.find( bp.id() );
     if( body_bp == body.end() ) {
         return;
     }
-    const std::optional<wound_change> done = body_bp->second.add_or_worsen_wound( wd );
+    const std::optional<wound_change> done = body_bp->second.add_or_worsen_wound( wd, this, ddi );
     morale->on_stat_change( "perceived_pain", get_perceived_pain() );
     if( done ) {
         send_wound_events( { *done } );
     }
+}
+
+void Character::add_wound( const bodypart_id &bp, const wound_type_id wd, const int hp_damage )
+{
+    const auto part = body.find( bp.id() );
+    if( part == body.end() ) {
+        return;
+    }
+    part->second.add_wound( wd, *this, hp_damage );
+    morale->on_stat_change( "perceived_pain", get_perceived_pain() );
+    wound_change gained;
+    gained.what = wound_change::kind::gained;
+    gained.bp = bp.id();
+    gained.wound = wd;
+    send_wound_events( { gained } );
 }
 
 void Character::remove_wounds_of_type( const bodypart_id &bp, const wound_type_id wd )
@@ -2777,7 +2825,7 @@ void Character::update_wounds( time_duration time_passed )
                     switch( mod_val.type ) {
                         case wound_mod_value_type::PAIN: {
                             // The caps bound this wound's own pain, as documented.
-                            const int pain_mod = wound_mod_within_caps( wd.get_pain(),
+                            const int pain_mod = wound_mod_within_caps( wd.get_pain_raw(),
                                                  mod_val.amount, mod_val.cap_min,
                                                  mod_val.cap_max );
                             if( pain_mod != 0 ) {
@@ -2827,13 +2875,8 @@ void Character::update_wounds( time_duration time_passed )
 
 bool Character::is_bleeding( const bodypart_id bp ) const
 {
-    for( const wound &wd : get_part( bp )->get_wounds() ) {
-        if( wd.type->is_bleeding_wound() ) {
-            return true;
-        }
-    }
-
-    return false;
+    const bodypart *part = get_part( bp );
+    return part != nullptr && part->has_bleeding_wound();
 }
 
 /*
@@ -2955,50 +2998,40 @@ static weighted_int_list<wound_type_id> populate_potential_wounds( const Charact
     return possible_wounds;
 }
 
-void Character::apply_random_wound_from_damage( bodypart_id bp, const dealt_damage_instance &d )
+void Character::apply_random_wound_from_damage( bodypart_id bp, const dealt_damage_instance &d,
+        int hp_lost )
 {
-    weighted_int_list<wound_type_id> possible_wounds;
-    weighted_int_list<wound_type_id> secondary_possible_wounds;
-
-    if( d.dealt_dams.size() > 1 ) {
-
-        // sort dealt_dams in vector, so we can compare the highest and second highest damages
-        std::vector<std::pair<damage_type_id, int>> dealt_damage;
-        dealt_damage.reserve( d.dealt_dams.size() );
-        dealt_damage.insert( dealt_damage.end(), d.dealt_dams.begin(), d.dealt_dams.end() );
-
-        std::partial_sort( dealt_damage.begin(), dealt_damage.begin() + 2, dealt_damage.end(),
-        []( const std::pair<damage_type_id, int> &a, const std::pair<damage_type_id, int> &b ) -> bool {
-            // descending
-            return a.second > b.second;
-        } );
-
-        // if second biggest damage is at least 75% as strong as main damage, two wounds will be applied
-        const float threshold = 0.75;
-        if( dealt_damage[1].second > dealt_damage[0].second * threshold ) {
-            dealt_damage_instance new_d( d );
-            new_d.dealt_dams.clear();
-            dealt_damage_instance new_secondary_d( new_d );
-
-            new_d.dealt_dams.emplace( dealt_damage[0] );
-            new_secondary_d.dealt_dams.emplace( dealt_damage[1] );
-
-            possible_wounds = populate_potential_wounds( this, bp, new_d );
-            secondary_possible_wounds = populate_potential_wounds( this, bp, new_secondary_d );
-        } else {
-            // only one would will be applied, so just pass damage instance as is
-            possible_wounds = populate_potential_wounds( this, bp, d );
+    // The wounds share hp_lost in proportion to their damage, so together they hold it back
+    int damage_left = 0;
+    for( const std::pair<const damage_type_id, int> &p : d.dealt_dams ) {
+        damage_left += std::max( p.second, 0 );
+    }
+    int hp_left = std::clamp( hp_lost, 0, damage_left );
+    for( const std::pair<const damage_type_id, int> &p : d.dealt_dams ) {
+        if( p.second <= 0 ) {
+            continue;
         }
-    } else {
-        possible_wounds = populate_potential_wounds( this, bp, d );
-    }
+        const int held_back = std::min( hp_left, p.second * hp_left / damage_left );
+        hp_left -= held_back;
+        damage_left -= p.second;
 
-    if( !possible_wounds.empty() ) {
-        apply_wound( bp, *possible_wounds.pick() );
-    }
+        dealt_damage_instance new_d;
+        new_d.set_damage( p.first, p.second );
+        new_d.bp_hit = bp;
 
-    if( !secondary_possible_wounds.empty() ) {
-        apply_wound( bp, *secondary_possible_wounds.pick() );
+        // An EOC of the last wound's event may have taken the part away
+        if( body.count( bp.id() ) == 0 ) {
+            return;
+        }
+        weighted_int_list<wound_type_id> list = populate_potential_wounds( this, bp, new_d );
+        if( !list.empty() ) {
+            wound_type_id wd_id = *list.pick();
+            dealt_damage_instance held_d;
+            held_d.set_damage( p.first, held_back );
+            held_d.bp_hit = bp;
+            wound wd( wd_id, this, bp.id(), held_d );
+            apply_wound( bp, wd, held_d );
+        }
     }
 }
 
@@ -3013,11 +3046,16 @@ dealt_damage_instance Character::deal_damage( Creature *source, bodypart_id bp,
         return dealt_damage_instance();
     }
 
+    // The struck part's wounds hold back only the HP it loses, which is less than the hit when
+    // DISTRIBUTED_DAMAGE spreads it or the part has less HP left
+    const bodypart_id hp_part = bp == bodypart_str_id::NULL_ID() ? body_part_torso : bp->main_part;
+    const int hp_before = get_part_hp_cur( hp_part );
     //damage applied here
     dealt_damage_instance dealt_dams = Creature::deal_damage( source, bp, d, attack );
     if( !participants.valid() ) {
         return dealt_dams;
     }
+    const int hp_lost = std::max( hp_before - get_part_hp_cur( hp_part ), 0 );
     //block reduction should be by applied this point
     int dam = dealt_dams.total_damage();
 
@@ -3123,7 +3161,9 @@ dealt_damage_instance Character::deal_damage( Creature *source, bodypart_id bp,
         }
     }
 
-    apply_random_wound_from_damage( bp, dealt_dams );
+    // hey, why do we pass bp, if dealt_dams should contain dealt_dams.bp_hit?
+    // because the code doesn't assign one, and i do not know if it is intentionally
+    apply_random_wound_from_damage( bp, dealt_dams, hp_lost );
 
     on_hurt( source );
     return dealt_dams;
@@ -3719,9 +3759,12 @@ bool Character::immune_to( const bodypart_id &bp, damage_unit dam ) const
 int Character::get_pain() const
 {
     int p = 0;
-    for( const std::pair<const bodypart_str_id, bodypart> &bp : get_body() ) {
-        for( const wound &wd : bp.second.get_wounds() ) {
-            p += wd.get_pain();
+    // wound::get_pain( this ) is 0 for every wound then: checked once, not per wound
+    if( !has_flag( json_flag_PAIN_IMMUNE ) && !has_effect( effect_narcosis ) ) {
+        for( const std::pair<const bodypart_str_id, bodypart> &bp : get_body() ) {
+            for( const wound &wd : bp.second.get_wounds() ) {
+                p += wd.get_pain( nullptr );
+            }
         }
     }
 

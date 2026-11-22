@@ -126,7 +126,6 @@ static const item_category_id item_category_software( "software" );
 
 static const itype_id itype_barrel_small( "barrel_small" );
 static const itype_id itype_blood( "blood" );
-static const itype_id itype_cash_card( "cash_card" );
 static const itype_id itype_corpse( "corpse" );
 static const itype_id itype_corpse_generic_human( "corpse_generic_human" );
 static const itype_id itype_craft( "craft" );
@@ -472,7 +471,7 @@ item &item::convert( const itype_id &new_type, Character *carrier )
         active = true;
     }
     if( carrier && carrier->has_item( *this ) ) {
-        carrier->on_item_acquire( form_loc_recursive( *carrier, *this ) );
+        carrier->on_item_acquire( item_location::form_loc_recursive( *carrier, *this ) );
     }
 
     item_counter = 0;
@@ -515,7 +514,9 @@ item &item::activate()
 
 bool item::activate_thrown( const tripoint_bub_ms &pos )
 {
-    return type->invoke( nullptr, *this, pos ).value_or( 0 );
+    map_cursor mc( pos );
+    item_location loc( mc, this );
+    return type->invoke( nullptr, loc, pos ).value_or( 0 );
 }
 
 item item::split( int qty )
@@ -1542,7 +1543,7 @@ void item::on_pickup( Character &p )
     contents.on_pickup( p, this );
 
     p.flag_encumbrance();
-    p.on_item_acquire( form_loc_recursive( p, *this ) );
+    p.on_item_acquire( item_location::form_loc_recursive( p, *this ) );
 }
 
 void item::update_inherited_flags()
@@ -2765,7 +2766,7 @@ bool item::is_money( const std::set<ammotype> &ammo ) const
 
 bool item::is_cash_card() const
 {
-    return typeId() == itype_cash_card;
+    return is_money();
 }
 
 bool item::is_estorage() const
@@ -3764,6 +3765,25 @@ item *item::get_usable_item( const std::string &use_name )
     return get_usable_item_helper( *this, use_name );
 }
 
+item_location item::get_usable_item_loc( const item_location &loc,
+        const std::string &use_name ) const
+{
+    // As get_usable_item: the item itself first, then its contents.
+    if( get_use_internal( use_name ) ) {
+        return loc;
+    }
+    item_location ret;
+    loc.visit_contents( [use_name, &ret]( const item_location & node ) {
+        if( node->get_use_internal( use_name ) ) {
+            ret = node;
+            return VisitResponse::ABORT;
+        }
+        return VisitResponse::NEXT;
+    } );
+
+    return ret;
+}
+
 itype_id item::typeId() const
 {
     return type ? type->get_id() : itype_id::NULL_ID();
@@ -4659,7 +4679,9 @@ bool item::process_litcig( map &here, Character *carrier, const tripoint_bub_ms 
         if( type->transform_into ) {
             type->transform_into.value().transform( carrier, *this, true );
         } else {
-            type->invoke( carrier, *this, pos, "transform" );
+            // a cigarette left on the ground burns out with no carrier
+            item_location loc = item_location::form_loc( carrier, &here, pos, *this );
+            type->invoke( carrier, loc, pos, "transform" );
         }
         if( smoke != nullptr ) {
             run_smoke_eocs( smoke->burn_out_eocs, carrier, lit );
@@ -4682,7 +4704,8 @@ bool item::process_litcig( map &here, Character *carrier, const tripoint_bub_ms 
                                             type_name() );
                 type->transform_into.value().transform( carrier, *this, true );
             } else {
-                type->invoke( carrier, *this, pos, "transform" );
+                item_location loc( *carrier, this );
+                type->invoke( carrier, loc, pos, "transform" );
             }
             active = false;
             return false;
@@ -4823,7 +4846,9 @@ bool item::process_extinguish( map &here, Character *carrier, const tripoint_bub
     if( type->transform_into ) {
         type->transform_into.value().transform( carrier, *this, true );
     } else {
-        type->invoke( carrier, *this, pos, "transform" );
+        // rain puts out a cigarette on the ground, with no carrier
+        item_location loc = item_location::form_loc( carrier, &here, pos, *this );
+        type->invoke( carrier, loc, pos, "transform" );
     }
     active = false;
     // Item remains
@@ -4930,7 +4955,8 @@ bool item::process_internal( map &here, Character *carrier, const tripoint_bub_m
         if( calendar::turn >= countdown_point ) {
             active = false;
             if( type->countdown_action ) {
-                type->countdown_action.call( carrier, *this, pos );
+                item_location loc = item_location::form_loc( carrier, &here, pos, *this );
+                type->countdown_action.call( carrier, loc, pos );
             }
             countdown_point = calendar::turn_max;
             if( type->transform_into ) {
@@ -5319,7 +5345,9 @@ bool item::on_drop( const tripoint_bub_ms &pos, map &m, Character *dropper )
         set_flag( flag_DIRTY );
     }
 
-    return type->drop_action && type->drop_action.call( dropper, *this, &m, pos ).value_or( 0 ) > 0;
+    // The item may not be on the tile yet: a drop callback can run before it is placed.
+    item_location loc( map_cursor( &m, pos ), this );
+    return type->drop_action && type->drop_action.call( dropper, loc, &m, pos ).value_or( 0 ) > 0;
 }
 
 bool item::is_upgrade() const

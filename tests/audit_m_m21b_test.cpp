@@ -306,7 +306,7 @@ TEST_CASE( "npc-j08_npc_treats_effects_its_healing_items_cure", "[audit][npc]" )
         CHECK_FALSE( need.any_wound() );
         const healing_options can = guy.has_healing_options( need );
         CHECK( can.cure.count( effect_poison ) == 1 );
-        CHECK( &guy.get_healing_item( can ) == antidote.get_item() );
+        CHECK( guy.get_healing_item( can ).get_item() == antidote.get_item() );
 
         const use_function *use = antidote->type->get_use( "heal" );
         REQUIRE( use != nullptr );

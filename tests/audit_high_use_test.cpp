@@ -138,14 +138,14 @@ TEST_CASE( "use-j02_each_spell_action_is_reached_by_its_id", "[audit][iuse][magi
 
     SECTION( "through invoke_item, each casting its own spell" ) {
         staff->ammo_set( itype_match, 20 );
-        u.invoke_item( staff.get_item(), "usej02_cast_fire" );
+        u.invoke_item( staff, "usej02_cast_fire" );
         REQUIRE( u.activity.id() == ACT_SPELLCASTING );
         REQUIRE( process_activity_bounded( u, 10, 100 ) );
         CHECK( usej02_char_var( u, "usej02_fire" ) == 1 );
         CHECK( usej02_char_var( u, "usej02_heal" ) == 0 );
         CHECK( staff->ammo_remaining() == 19 );
 
-        u.invoke_item( staff.get_item(), "usej02_cast_heal" );
+        u.invoke_item( staff, "usej02_cast_heal" );
         REQUIRE( u.activity.id() == ACT_SPELLCASTING );
         REQUIRE( process_activity_bounded( u, 10, 100 ) );
         CHECK( usej02_char_var( u, "usej02_fire" ) == 1 );
@@ -168,10 +168,10 @@ TEST_CASE( "use-j02_each_spell_action_is_reached_by_its_id", "[audit][iuse][magi
         staff->ammo_set( itype_match, 3 );
         CHECK( staff->ammo_sufficient( &u, "usej02_cast_fire" ) );
         CHECK_FALSE( staff->ammo_sufficient( &u, "usej02_cast_heal" ) );
-        CHECK_FALSE( u.invoke_item( staff.get_item(), "usej02_cast_heal" ) );
+        CHECK_FALSE( u.invoke_item( staff, "usej02_cast_heal" ) );
         CHECK( u.activity.is_null() );
         CHECK( usej02_char_var( u, "usej02_heal" ) == 0 );
-        u.invoke_item( staff.get_item(), "usej02_cast_fire" );
+        u.invoke_item( staff, "usej02_cast_fire" );
         CHECK( u.activity.id() == ACT_SPELLCASTING );
     }
 }
@@ -187,11 +187,11 @@ TEST_CASE( "use-j02_eoc_actions_see_their_own_id_as_method", "[audit][iuse][eoc]
     staff->ammo_set( itype_match, 20 );
 
     SECTION( "invoked by id" ) {
-        u.invoke_item( staff.get_item(), "usej02_mark_a" );
+        u.invoke_item( staff, "usej02_mark_a" );
         CHECK( usej02_global_str( "usej02_method" ) == "usej02_mark_a" );
         // mark_a doesn't consume
         CHECK( staff->ammo_remaining() == 20 );
-        u.invoke_item( staff.get_item(), "usej02_mark_b" );
+        u.invoke_item( staff, "usej02_mark_b" );
         CHECK( usej02_global_str( "usej02_method" ) == "usej02_mark_b" );
         // mark_b consumes one use
         CHECK( staff->ammo_remaining() == 19 );
@@ -215,9 +215,9 @@ TEST_CASE( "use-j02_eoc_actions_see_their_own_id_as_method", "[audit][iuse][eoc]
     SECTION( "an action whose ammo_scale is not met isn't used" ) {
         // mark_a needs two uses' worth of charges
         staff->ammo_set( itype_match, 1 );
-        CHECK_FALSE( u.invoke_item( staff.get_item(), "usej02_mark_a" ) );
+        CHECK_FALSE( u.invoke_item( staff, "usej02_mark_a" ) );
         CHECK( usej02_global_str( "usej02_method" ).empty() );
-        u.invoke_item( staff.get_item(), "usej02_mark_b" );
+        u.invoke_item( staff, "usej02_mark_b" );
         CHECK( usej02_global_str( "usej02_method" ) == "usej02_mark_b" );
     }
 }
@@ -232,7 +232,7 @@ TEST_CASE( "use-j02_transform_modes_spend_their_own_ammo_scale", "[audit][iuse]"
         item_location dial = u.i_add( item( itype_test_usej02_dial ) );
         REQUIRE( dial );
         dial->ammo_set( itype_match, 20 );
-        u.invoke_item( dial.get_item(), "usej02_low" );
+        u.invoke_item( dial, "usej02_low" );
         CHECK( dial->typeId() == itype_test_usej02_dial_low );
         CHECK( dial->ammo_remaining() == 19 );
     }
@@ -240,7 +240,7 @@ TEST_CASE( "use-j02_transform_modes_spend_their_own_ammo_scale", "[audit][iuse]"
         item_location dial = u.i_add( item( itype_test_usej02_dial ) );
         REQUIRE( dial );
         dial->ammo_set( itype_match, 20 );
-        u.invoke_item( dial.get_item(), "usej02_high" );
+        u.invoke_item( dial, "usej02_high" );
         CHECK( dial->typeId() == itype_test_usej02_dial_high );
         CHECK( dial->ammo_remaining() == 17 );
     }
@@ -258,7 +258,7 @@ TEST_CASE( "use-j02_item_action_menu_lists_each_action_by_id", "[audit][iuse]" )
     staff->ammo_set( itype_match, 20 );
 
     const item_action_map actions = item_action_generator::generator().map_actions_to_items( u,
-                                    std::vector<item *> { staff.get_item() }, false );
+                                    std::vector<item_location> { staff }, false );
     const std::vector<std::string> ids = {
         "usej02_cast_fire", "usej02_cast_heal", "usej02_mark_a", "usej02_mark_b"
     };
@@ -266,7 +266,7 @@ TEST_CASE( "use-j02_item_action_menu_lists_each_action_by_id", "[audit][iuse]" )
         CAPTURE( id );
         const auto found = actions.find( id );
         REQUIRE( found != actions.end() );
-        CHECK( found->second == staff.get_item() );
+        CHECK( found->second.get_item() == staff.get_item() );
     }
     CHECK( actions.count( "cast_spell" ) == 0 );
     CHECK( actions.count( "effect_on_conditions" ) == 0 );
@@ -358,7 +358,7 @@ TEST_CASE( "use-j02_vanilla_multi_use_item_is_unchanged", "[audit][iuse]" )
     item_location lighter = u.i_add( item( itype_ref_lighter ) );
     REQUIRE( lighter );
     lighter->ammo_set( itype_lamp_oil, 10 );
-    u.invoke_item( lighter.get_item(), "transform" );
+    u.invoke_item( lighter, "transform" );
     CHECK( lighter->typeId() == itype_ref_lighter_on );
     CHECK( lighter->ammo_remaining() == 9 );
 }

@@ -3911,7 +3911,7 @@ void overmap::save() const
             throw std::runtime_error(
                 string_format(
                     "Failed to open %s",
-                    zzip_path.get_unrelative_path().generic_u8string().c_str()
+                    zzip_path.generic_u8string()
                 )
             );
         }
@@ -3921,7 +3921,7 @@ void overmap::save() const
 
         if( !z->add_file( terfilename_path, s.str() ) ) {
             throw std::runtime_error( string_format( "Failed to save omap %d.%d to %s", loc.x(),
-                                      loc.y(), zzip_path.get_unrelative_path().generic_u8string().c_str() ) );
+                                      loc.y(), zzip_path.generic_u8string() ) );
         }
         cata_path tmp_path = zzip_path + ".tmp";
         if( z->compact_to( tmp_path.get_unrelative_path(), 2.0 ) ) {

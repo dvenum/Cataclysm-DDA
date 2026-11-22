@@ -498,7 +498,7 @@ class item_location::impl::item_on_person : public item_location::impl
             ch.mod_moves( -obtain_cost( ch, qty ) );
 
             on_contents_changed();
-            if( &ch.i_at( ch.get_item_position( target() ) ) == target() ) {
+            if( ch.is_worn( *target() ) || ch.get_wielded_item().get_item() == target() ) {
                 // item already in target characters inventory at base of stack
                 return item_location( ch, target() );
             }
@@ -1704,4 +1704,68 @@ item_location find_item_by_uid( int64_t uid, const item_locator_hint &hint )
     }
 
     return item_location::nowhere;
+}
+
+template<typename T>
+item_location item_location::form_loc_recursive( T &loc, item &it )
+{
+    item *parent = loc.find_parent( it );
+    if( parent != nullptr ) {
+        return item_location( form_loc_recursive( loc, *parent ), &it );
+    }
+
+    return item_location( loc, &it );
+}
+
+//explict template instantiation
+template item_location item_location::form_loc_recursive<Character>( Character &loc, item &it );
+template item_location item_location::form_loc_recursive<npc>( npc &loc, item &it );
+
+std::optional<item_location> item_location::try_form_loc( Character *you, map *here,
+        const tripoint_bub_ms &p, item &it )
+{
+    if( you != nullptr && you->has_item( it ) ) {
+        Character &who = *you;
+        return form_loc_recursive( who, it );
+    }
+    if( here ) {
+        map_cursor mc( here, p );
+        if( here != &get_map() ) {
+            // A map_cursor looks its items up on the main map, so an item on another map (a
+            // tinymap loading or generating a submap processes its active items) can't be found
+            // through one. Point at the item itself, as before use actions took a location.
+            for( const item &top : here->i_at( p ) ) {
+                if( &top == &it || top.has_item( it ) ) {
+                    return item_location( mc, &it );
+                }
+            }
+        } else if( mc.has_item( it ) ) {
+            return form_loc_recursive( mc, it );
+        }
+        const optional_vpart_position vp = here->veh_at( p );
+        if( vp ) {
+            vehicle_cursor vc( vp->vehicle(), vp->part_index() );
+            if( vc.has_item( it ) ) {
+                return form_loc_recursive( vc, it );
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+item_location item_location::form_loc( Character *you, map *here, const tripoint_bub_ms &p,
+                                       item &it )
+{
+    if( std::optional<item_location> loc = try_form_loc( you, here, p, it ) ) {
+        return *loc;
+    }
+    if( you == nullptr ) {
+        // An item processed with no carrier can be on no tile yet: map::add_item processes a
+        // temperature-tracked item, its countdown and tick actions included, before placing it.
+        // Point at the item itself, as use actions got it before they took a location.
+        return item_location( map_cursor( here != nullptr ? here : &get_map(), p ), &it );
+    }
+    debugmsg( "Couldn't find item %s to form item_location, forming dummy location to ensure minimum functionality",
+              it.display_name() );
+    return item_location( *you, &it );
 }

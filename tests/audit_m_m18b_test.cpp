@@ -141,7 +141,7 @@ struct m18b_world {
     }
 };
 
-// Wields the club, ready to block: at melee 10 the reaction roll always succeeds
+// Wields the club, ready to block: melee 10 makes the block a strong one
 void ready_to_block( avatar &you, const itype_id &club )
 {
     you.remove_weapon();
@@ -150,14 +150,15 @@ void ready_to_block( avatar &you, const itype_id &club )
     you.set_skill_level( skill_melee, 10 );
 }
 
-// Blocks the hit, rested, and returns what is left of it
+// Blocks the hit, rested, as a square melee hit with a fresh block roll, and returns what is
+// left of it: the block takes its share of every damage type through the hit spread
 damage_instance block( avatar &you, monster &attacker, const damage_instance &hit, bool &blocked )
 {
     you.set_stamina( you.get_stamina_max() );
     you.blocks_left = 10;
     bodypart_id bp_hit = body_part_arm_l;
     damage_instance dam = hit;
-    blocked = you.block_hit( &attacker, bp_hit, dam );
+    blocked = melee::roll_and_block_hit( you, &attacker, bp_hit, dam );
     return dam;
 }
 
@@ -513,9 +514,11 @@ TEST_CASE( "cmbt-j07_item_block_data", "[audit][melee]" )
     // "effectiveness": { "cut": 0 }
     CHECK( with_new.type_damage( damage_cut ) == Approx( 10.0f ) );
     CHECK( with_legacy.type_damage( damage_cut ) < 10.0f );
-    // "elemental_mult": 0.5, against the legacy fifth
-    CHECK( with_new.type_damage( damage_heat ) == Approx( 5.0f ) );
-    CHECK( with_legacy.type_damage( damage_heat ) == Approx( 2.0f ) );
+    // The part of the hit the block's spread let through, as the bash shows
+    const float landed = with_legacy.type_damage( damage_bash ) / 20.0f;
+    // and of that, "elemental_mult": 0.5, against the legacy fifth
+    CHECK( with_new.type_damage( damage_heat ) == Approx( 10.0f * landed * 0.5f ) );
+    CHECK( with_legacy.type_damage( damage_heat ) == Approx( 10.0f * landed * 0.2f ) );
 }
 
 TEST_CASE( "cmbt-j07_block_options_and_enchantments", "[audit][melee][magic]" )
@@ -532,16 +535,18 @@ TEST_CASE( "cmbt-j07_block_options_and_enchantments", "[audit][melee][magic]" )
     } );
 
     SECTION( "too little stamina" ) {
+        // Below it a block warns; low stamina weakens every block
         const int min_stamina = get_option<int>( "BLOCK_MIN_STAMINA" );
         CHECK( min_stamina == 2000 );
         REQUIRE( min_stamina < you.get_stamina_max() );
+        const damage_instance rested = block( you, attacker, hit, blocked );
+        REQUIRE( blocked );
         you.blocks_left = 10;
         you.set_stamina( min_stamina - 1 );
         bodypart_id bp_hit = body_part_arm_l;
-        damage_instance dam = hit;
-        CHECK_FALSE( you.block_hit( &attacker, bp_hit, dam ) );
-        you.set_stamina( min_stamina );
-        CHECK( you.block_hit( &attacker, bp_hit, dam ) );
+        damage_instance tired = hit;
+        melee::roll_and_block_hit( you, &attacker, bp_hit, tired );
+        CHECK( tired.type_damage( damage_bash ) > rested.type_damage( damage_bash ) );
     }
     SECTION( "BLOCK_EFFECTIVENESS raises the block score" ) {
         const damage_instance plain = block( you, attacker, hit, blocked );

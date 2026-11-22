@@ -509,12 +509,6 @@
   },
   {
     "type": "ammunition_type",
-    "id": "money",
-    "name": "cents",
-    "default": "money"
-  },
-  {
-    "type": "ammunition_type",
     "id": "plutonium",
     "name": "plutonium",
     "default": "plut_cell"
@@ -965,6 +959,12 @@
     "id": "airgun_pellet",
     "name": "airgun pellet",
     "default": "airgun_pellet_target"
+  },
+  {
+    "type": "ammunition_type",
+    "id": "pressurized_co2",
+    "name": "pressurized CO₂",
+    "default": "co2"
   },
   {
     "type": "ammunition_type",

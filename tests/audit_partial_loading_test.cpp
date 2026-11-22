@@ -96,7 +96,6 @@ static const itype_id itype_stick( "stick" );
 static const itype_id itype_string_36( "string_36" );
 static const itype_id itype_weed( "weed" );
 
-static const mfaction_str_id monfaction_human( "human" );
 static const mfaction_str_id monfaction_player( "player" );
 
 static const mission_type_id mission_MISSION_GET_ANTIBIOTICS( "MISSION_GET_ANTIBIOTICS" );
@@ -250,7 +249,9 @@ TEST_CASE( "npc-j02_faction_templates_load_through_generic_factory", "[audit][np
         CHECK( fm->epilogue_data.size() == 5 );
         CHECK( fm->relations.size() == 7 );
         CHECK( has_relation( *fm, "old_guard", npc_factions::relationship::watch_your_back ) );
-        CHECK( fm->mon_faction == monfaction_human );
+        // it names no mon_faction, as in its JSON: its NPCs count as human
+        // (npc::get_monster_faction), and it doesn't own the human monster faction
+        CHECK( fm->mon_faction.is_null() );
         CHECK( fm->likes_u == 30 );
         CHECK( fm->wealth == 75000000 );
         const faction_template *yours = faction_template::find( faction_your_followers );

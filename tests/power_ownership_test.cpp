@@ -36,6 +36,7 @@
 #include "global_vars.h"
 #include "incapacitation.h"
 #include "item.h"
+#include "item_location.h"
 #include "itype.h"
 #include "iuse.h"
 #include "iuse_actor.h"
@@ -45,6 +46,7 @@
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "map_selector.h"
 #include "math_parser.h"
 #include "math_parser_diag_value.h"
 #include "monster.h"
@@ -1068,7 +1070,8 @@ TEST_CASE( "power_demo_native_item_toggles_compose_and_charged_strikes_recover_o
         REQUIRE( method );
         const auto *actor = dynamic_cast<const effect_on_conditions_actor *>( method->get_actor_ptr() );
         REQUIRE( actor );
-        actor->use( &owner, focus, &here, position );
+        item_location focus_loc( map_cursor( &here, position ), &focus );
+        actor->use( &owner, focus_loc, &here, position );
         g->abilities().drain_starts();
     };
     use( ward, owner.pos_bub() );

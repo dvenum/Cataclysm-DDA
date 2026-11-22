@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <variant>
 
+#include <char8_t-remediation/char8_t-remediation.h>
+
 #include "catacharset.h"
 #include "event.h"
 #include "event_bus.h"
@@ -771,7 +773,7 @@ bool may_hold_settings( const cata_path &file )
     std::error_code ec;
     const std::filesystem::file_time_type time = std::filesystem::last_write_time( path, ec );
     const std::uintmax_t size = ec ? 0 : std::filesystem::file_size( path, ec );
-    const std::string key = path.generic_u8string();
+    const std::string key = from_u8string( path.generic_u8string() );
     if( !ec ) {
         const auto found = scanned.find( key );
         if( found != scanned.end() && found->second.time == time && found->second.size == size ) {
@@ -1167,14 +1169,18 @@ std::pair<std::string, std::string> read_world_option( const JsonObject &jo )
                            "WORLD_OPTION takes \"name\" and \"default\": it changes the default of a world "
                            "option instead of forcing it on (doc/JSON/MOD_SETTINGS.md)" );
     }
-    const std::string name = jo.get_string( "name" );
+    // An option renamed since (get_migrated_options) is read as the new one, its value migrated
+    // as a saved world's is
+    const std::string name_read = jo.get_string( "name" );
     options_manager &opts = get_options();
+    const std::string name = opts.migrateOptionName( name_read );
     if( !opts.has_option( name ) ) {
-        jo.throw_error_at( "name", string_format( "there's no option \"%s\"", name ) );
+        jo.throw_error_at( "name", string_format( "there's no option \"%s\"", name_read ) );
     }
     const std::string type = opts.get_option( name ).getType();
     std::string value;
-    if( type == "bool" ) {
+    // a renamed option can have been a bool, as EXPLOSIVE_COMBAT_EXERTION was
+    if( type == "bool" || ( name != name_read && jo.has_bool( "default" ) ) ) {
         value = jo.get_bool( "default" ) ? "true" : "false";
     } else if( type == "int" || type == "int_map" ) {
         value = std::to_string( jo.get_int( "default" ) );
@@ -1183,6 +1189,7 @@ std::pair<std::string, std::string> read_world_option( const JsonObject &jo )
     } else {
         value = jo.get_string( "default" );
     }
+    value = opts.migrateOptionValue( name_read, value );
     const std::string error = opts.world_option_value_error( name, value );
     if( !error.empty() ) {
         jo.throw_error_at( jo.has_member( "default" ) ? "default" : "name", error );

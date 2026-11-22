@@ -1101,9 +1101,9 @@ Character status value  | Description
 `BIONIC_POWER`          | Adds bionic power storage in millijoules ("add": 1000000 adds 1 kJ)
 `BIONIC_SURGERY_SKILL`  | Changes the surgery score of a character who installs or removes a CBM (on themselves or someone else, or running an autodoc): 4 per point of intelligence plus the weighted skills (first aid, computers and electronics for an autodoc; electronics, first aid and mechanics by hand), which the chance of success and how bad a failure gets come from.  Use `add`.  Vanilla sources: the MD trait (+3) and the Autodoc Specialist trait of the bionic professions mod (+7).  See also the `SURGICAL_TRAINING` flag.
 `BLEED_STOP_BONUS`      | Affects the `bleed` level when applying medicine.
-`BLEEEDING_RATE`        | Affects the rate you lose blood when bleeding. 
-`BLOCK_EFFECTIVENESS`   | Modifies your block score when you block a melee hit, after martial art buffs' `block_effectiveness` and before the blocking limb's `block` score: a higher score blocks more of the hit (a score of 40 blocks all of it).  Your strength, melee skill and the shield's block bonus make up the score.
-`BLOCK_STAMINA_COST`    | Modifies the stamina a block costs (the external option `BLOCK_STAMINA_COST_MULT` times `PLAYER_BASE_STAMINA_BURN_RATE`, less 5% per melee level).  `"multiply": -0.5` halves it.
+`BLEEDING_RATE`        | Affects the rate you lose blood when bleeding. 
+`BLOCK_EFFECTIVENESS`   | Modifies your block score when you block a melee hit, after martial art buffs' `block_effectiveness`: a higher score takes more off the hit's spread, so less of the hit lands (a score of 40, rested and with a full reaction score, turns even a square hit away).  Your strength, melee skill (or unarmed skill and the blocking limb's `block` score) and the shield's block bonus make up the score.
+`BLOCK_STAMINA_COST`    | Modifies the stamina a block costs (the external option `BLOCK_STAMINA_COST_MULT` times `PLAYER_BASE_STAMINA_BURN_RATE`, less 5% per melee level, times the part of the hit the block stopped).  `"multiply": -0.5` halves it.
 `BODYTEMP_SLEEP`        | Amount of warmth (in celcius) added to you when you sleep. Default is 0, so better to use `add`
 `BOOK_FUN`              | How much fun reading a book is (its `read_fun`, after the rules of the `LOVES_BOOKS`, `HATES_BOOKS`, `SPIRITUAL` and cannibal flags, rounded); `"add": 1` makes every book one point more fun, `"multiply": -1` makes books neither fun nor boring.
 `BONUS_BLOCK`           | Affects the number of blocks you can perform.

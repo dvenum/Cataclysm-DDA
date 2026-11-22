@@ -407,10 +407,7 @@ void player_activity::do_turn( Character &you )
         if( actor ) {
             actor->finish( *this, you );
         } else {
-            if( !type->call_finish( this, &you ) ) {
-                // "Finish" is never a misnomer for any activity without a finish function
-                set_to_null();
-            }
+            set_to_null();
         }
         // An activity that goes on after finish runs its hooks again when it ends.
         end_hooks.taken = false;

@@ -466,7 +466,7 @@ class bodypart
 
         std::vector<wound> wounds;
 
-        // adjust any limb "value" based on how wounded the limb is. scaled to 0-75%
+        // adjust any limb "value" based on how wounded the limb is
         float wound_adjusted_limb_value( float val, const limb_score_id &score ) const;
         // Same idea as for wounds, though not all scores get this applied. Should be applied after wounds.
         float encumb_adjusted_limb_value( const Creature &mon, float val ) const;
@@ -509,13 +509,17 @@ class bodypart
         std::vector<wound> &get_wounds();
 
         // What it did, if anything: a new wound, or one made worse (for the wound events)
-        std::optional<wound_change> add_or_worsen_wound( wound_type_id wd );
-        std::optional<wound_change> add_or_worsen_wound( const wound &wd );
+        std::optional<wound_change> add_or_worsen_wound( wound_type_id wd, const Character *who,
+                dealt_damage_instance &ddi );
+        std::optional<wound_change> add_or_worsen_wound( const wound &wd, const Character *who,
+                dealt_damage_instance &ddi );
 
         void add_wound( const wound &wd );
-        void add_wound( wound_type_id wd );
+        void add_wound( wound_type_id wd, const Character &who, int damage );
+        void add_wound( wound_type_id wd, const Character &who, dealt_damage_instance &ddi );
         bool has_wounds() const;
         bool has_wound( wound_type_id wd ) const;
+        bool has_bleeding_wound() const;
         wound *get_wound( wound_type_id wd_id );
         void remove_wound( wound wd );
         // Removes the first wound of this type; false when there was none

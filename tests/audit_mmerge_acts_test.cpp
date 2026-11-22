@@ -1,6 +1,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "iexamine_firestarters.h"
 #include "item.h"
 #include "item_location.h"
+#include "json.h"
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
@@ -318,6 +320,12 @@ TEST_CASE( "vint-j09_vehicle_repair_tool_bills_the_vehicle_once_per_use", "[vehi
                                             false ) );
         CHECK( u.activity.id() == ACT_REPAIR_ITEM );
         CHECK( static_cast<int>( veh.battery_left( here ) ) == battery_before );
+        // the repair works with the vehicle's tool, which it bills as it goes
+        std::ostringstream saved;
+        JsonOut jsout( saved );
+        u.activity.serialize( jsout );
+        CHECK( saved.str().find( R"("vp_tool")" ) != std::string::npos );
+        CHECK( saved.str().find( itype_test_mmerge_vehicle_welder.str() ) != std::string::npos );
         u.cancel_activity();
     }
     SECTION( "one repair attempt bills one use" ) {

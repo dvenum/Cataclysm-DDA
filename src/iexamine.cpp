@@ -48,6 +48,7 @@
 #include "game_inventory.h"
 #include "handle_liquid.h"
 #include "harvest.h"
+#include "iexamine_firestarters.h"
 #include "input_context.h"
 #include "input_enums.h"
 #include "input_popup.h"
@@ -3052,6 +3053,32 @@ static VisitResponse add_firestarter( item_location it,
     return VisitResponse::NEXT;
 }
 
+std::multimap<int, item_location> iexamine::find_firestarters( Character &you,
+        const tripoint_bub_ms &examp, const bool nearby )
+{
+    std::multimap<int, item_location> firestarters;
+    const auto add = [&firestarters, &you, &examp]( const item_location & node ) {
+        return add_firestarter( node, firestarters, you, examp );
+    };
+    you.visit_items( add );
+    if( !nearby ) {
+        return firestarters;
+    }
+    map &here = get_map();
+    for( const tripoint_bub_ms &pos : closest_points_first( you.pos_bub(), PICKUP_RANGE ) ) {
+        if( pos == examp ) {
+            // stuff in the fireplace can't light itself
+            continue;
+        }
+        const std::optional<vpart_reference> ovp = here.veh_at( pos ).cargo();
+        if( ovp.has_value() ) {
+            vehicle_cursor( ovp->vehicle(), ovp->part_index() ).visit_items( add );
+        }
+        map_cursor( pos ).visit_items( add );
+    }
+    return firestarters;
+}
+
 static void pick_firestarter_and_fire( Character &you, const tripoint_bub_ms &examp,
                                        firestarter_actor::start_type st )
 {
@@ -3066,11 +3093,8 @@ static void pick_firestarter_and_fire( Character &you, const tripoint_bub_ms &ex
     }
 
 
-    std::multimap<int, item_location> firestarters;
-
-    you.visit_items( [&firestarters, &you, &examp]( const item_location & node ) {
-        return add_firestarter( node, firestarters, you, examp );
-    } );
+    const std::multimap<int, item_location> firestarters = iexamine::find_firestarters( you, examp,
+            false );
 
     const bool has_bionic_firestarter = you.has_bionic( bio_lighter ) &&
                                         you.enough_power_for( bio_lighter );
@@ -3635,34 +3659,15 @@ void iexamine::fireplace( Character &you, const tripoint_bub_ms &examp )
     };
 
 
-    std::multimap<int, item_location> firestarters;
+    const std::multimap<int, item_location> firestarters = find_firestarters( you, examp, true );
     // TODO: this doesn't work and needs fixing
     std::vector<item *> firequenchers = you.items_with( is_firequencher );
 
-    you.visit_items( [&firestarters, &you, &examp]( const item_location & node ) {
-        return add_firestarter( node, firestarters, you, examp );
-    } );
-
     for( const tripoint_bub_ms &pos : closest_points_first( you.pos_bub(), PICKUP_RANGE ) ) {
         if( pos == examp ) {
-            // stuff in the fireplace can't light or quench itself
+            // stuff in the fireplace can't quench itself
             continue;
         }
-
-        const std::optional<vpart_reference> ovp = here.veh_at( pos ).cargo();
-        if( ovp.has_value() ) {
-            vehicle_cursor veh_cursor( ovp->vehicle(), ovp->part_index() );
-            veh_cursor.visit_items( [&firestarters, &you, &examp]( const item_location & node ) {
-                return add_firestarter( node, firestarters, you, examp );
-            } );
-        }
-
-        map_cursor m_cursor( pos );
-        m_cursor.visit_items( [&firestarters, &you, &examp]( const item_location & node ) {
-            return add_firestarter( node, firestarters, you, examp );
-        } );
-
-
         // anything is fine, so only check if we got nothing yet
         if( firequenchers.empty() ) {
             for( item_location &it : here.items_with( pos, is_firequencher ) ) {

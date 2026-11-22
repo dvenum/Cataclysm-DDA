@@ -386,6 +386,10 @@ class item
         bool is_money( const std::set<ammotype> &ammo ) const;
     public:
 
+        /**
+         * A card that stores money: an item whose magazine holds the "money" ammo type, such as
+         * Aftershock's cash card. Vanilla has none (#89166 made its cash cards obsolete).
+         */
         bool is_cash_card() const;
 
         bool is_estorage() const;

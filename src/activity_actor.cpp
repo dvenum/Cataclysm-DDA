@@ -4724,8 +4724,7 @@ void atm_activity_actor::do_turn( player_activity &act, Character &who )
         // find first available non-destination cash card with e-cash, re-run next turn
         for( item_location &cash_card_withdraw : cash_cards_on_hand ) {
             if( cash_card_withdraw == destination_cash_card ||
-                cash_card_withdraw->ammo_remaining() <= 0 ||
-                cash_card_withdraw->typeId() != itype_cash_card ) {
+                cash_card_withdraw->ammo_remaining() <= 0 ) {
                 continue;
             }
             // should we check for max capacity here?
@@ -4763,8 +4762,11 @@ void atm_activity_actor::finish( player_activity &act, Character &who )
         who.i_add( card );
         who.cash -= 1000;
     } else if( option_selected == deposit_money ) {
+        if( !iexamine::spend_cash_card_money( who, cash_amount ) ) {
+            add_msg( m_info, _( "Your cash cards don't hold %s." ), format_money( cash_amount ) );
+            return;
+        }
         add_msg( m_info, _( "You deposit %s into your account." ), format_money( cash_amount ) );
-        who.use_charges( itype_cash_card, cash_amount );
         who.cash += cash_amount;
     } else if( option_selected == withdraw_money ) {
         std::vector<item_location> cash_cards_on_hand = who.cache_get_items_with( "is_cash_card",

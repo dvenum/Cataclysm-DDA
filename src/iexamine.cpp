@@ -907,8 +907,9 @@ class atm_menu
 
         //! Reset and repopulate the menu; with a fair bit of work this could be more efficient.
         void reset( const bool clear = true ) {
-            const int card_count   = you.amount_of( itype_cash_card );
-            const int charge_count = card_count ? you.charges_of( itype_cash_card ) : 0;
+            const int card_count = static_cast<int>( you.cache_get_items_with( "is_cash_card",
+                                   &item::is_cash_card ).size() );
+            const int charge_count = card_count ? iexamine::cash_card_money( you ) : 0;
 
             if( clear ) {
                 amenu.reset();
@@ -919,13 +920,14 @@ class atm_menu
                                            "Your current balance is: %s" ),
                                         format_money( you.cash ) );
 
-            // Every option needs a cash card, and the game may have none (vanilla doesn't).
+            // The game may have no cash cards to issue (vanilla doesn't), and every other option
+            // needs one
             if( !item::type_is_defined( itype_cash_card ) ) {
                 add_info( purchase_card, _( "This ATM has no cash cards to issue." ) );
-                return;
-            }
-
-            if( you.cash >= 1000 ) {
+                if( !card_count ) {
+                    return;
+                }
+            } else if( you.cash >= 1000 ) {
                 add_choice( purchase_card, _( "Purchase cash card?" ) );
             } else {
                 add_info( purchase_card, _( "You need $10.00 in your account to purchase a card." ) );
@@ -981,7 +983,7 @@ class atm_menu
 
         //!Deposit money from cash card into bank account.
         bool do_deposit_money() {
-            int money = you.charges_of( itype_cash_card );
+            int money = iexamine::cash_card_money( you );
 
             if( !money ) {
                 popup( _( "You can only deposit money from charged cash cards!" ) );
@@ -1043,19 +1045,48 @@ void iexamine::atm( Character &you, const tripoint_bub_ms & )
     atm_menu {you}.start();
 }
 
+int iexamine::cash_card_money( Character &you )
+{
+    int money = 0;
+    for( const item_location &card : you.cache_get_items_with( "is_cash_card",
+            &item::is_cash_card ) ) {
+        money += card->ammo_remaining();
+    }
+    return money;
+}
+
+bool iexamine::spend_cash_card_money( Character &you, int amount )
+{
+    if( amount <= 0 ) {
+        return true;
+    }
+    if( cash_card_money( you ) < amount ) {
+        return false;
+    }
+    for( item_location &card : you.cache_get_items_with( "is_cash_card", &item::is_cash_card ) ) {
+        const int balance = card->ammo_remaining();
+        const int taken = std::min( amount, balance );
+        if( taken > 0 ) {
+            card->ammo_set( card->ammo_default(), balance - taken );
+            amount -= taken;
+        }
+        if( amount == 0 ) {
+            break;
+        }
+    }
+    return true;
+}
+
 bool iexamine::vending_pay( Character &you, const int price, const bool use_bank )
 {
     // The cards pay first, then the bank: a price equal to the cards' balance was free, and on
     // a networked machine the bank paid all of any price the cards couldn't (TERR-B11)
-    const int card = you.charges_of( itype_cash_card );
+    const int card = cash_card_money( you );
     const int from_bank = use_bank ? std::max( 0, price - card ) : 0;
     if( price - from_bank > card || ( from_bank > 0 && from_bank > you.cash ) ) {
         return false;
     }
-    const int from_cards = price - from_bank;
-    if( from_cards > 0 ) {
-        you.use_charges( itype_cash_card, from_cards );
-    }
+    spend_cash_card_money( you, price - from_bank );
     you.cash -= from_bank;
     return true;
 }
@@ -1068,13 +1099,13 @@ void iexamine::vending( Character &you, const tripoint_bub_ms &examp )
     map &here = get_map();
 
     constexpr int moves_cost = to_moves<int>( 5_seconds );
-    int money = you.charges_of( itype_cash_card );
+    int money = cash_card_money( you );
     map_stack vend_items = here.i_at( examp );
 
     bool use_bank = here.has_flag_furn( "BANK_NETWORKED", examp );
 
     if( use_bank ) {
-        money = you.cash + you.charges_of( itype_cash_card );
+        money += you.cash;
     }
 
     if( vend_items.empty() ) {
@@ -5522,7 +5553,7 @@ void iexamine::pay_gas( Character &you, const tripoint_bub_ms &examp )
     }
 
     if( buy_gas == choice ) {
-        int money = you.charges_of( itype_cash_card );
+        int money = cash_card_money( you );
 
         if( money < pricePerUnit ) {
             popup( str_to_illiterate_str(
@@ -5543,7 +5574,7 @@ void iexamine::pay_gas( Character &you, const tripoint_bub_ms &examp )
         if( liters <= 0 ) {
             return;
         }
-        if( liters * pricePerUnit > you.charges_of( itype_cash_card ) ) {
+        if( liters * pricePerUnit > cash_card_money( you ) ) {
             popup( str_to_illiterate_str(
                        _( "Not enough money, please refill your cash card." ) ) );
             return;
@@ -5560,7 +5591,7 @@ void iexamine::pay_gas( Character &you, const tripoint_bub_ms &examp )
 
         int cost = liters * pricePerUnit;
         money -= cost;
-        you.use_charges( itype_cash_card, cost );
+        spend_cash_card_money( you, cost );
 
         add_msg( m_info, _( "Your cash cards now hold %s." ), format_money( money ) );
         you.mod_moves( -to_moves<int>( 5_seconds ) );
@@ -5607,7 +5638,7 @@ void iexamine::pay_gas( Character &you, const tripoint_bub_ms &examp )
             // all fuel already removed from pump, so remaining amount_money simply ignored
         }
         add_msg( m_info, _( "Your cash cards now hold %s." ),
-                 format_money( you.charges_of( itype_cash_card ) ) );
+                 format_money( cash_card_money( you ) ) );
         you.mod_moves( -to_moves<int>( 5_seconds ) );
         return;
     }

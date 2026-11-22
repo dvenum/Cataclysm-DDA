@@ -2320,7 +2320,7 @@
     "max_coverage": 30,
     "parent": "arm_tentacle_l",
     "side": "left",
-    "opposite": "tentacle_left_base_r",
+    "opposite": "tentacle_right_base_r",
     "name_multiple": "left tentacle bases",
     "name": "left tentacle base"
   },
@@ -2330,7 +2330,7 @@
     "max_coverage": 45,
     "parent": "arm_tentacle_l",
     "side": "left",
-    "opposite": "tentacle_left_middle_r",
+    "opposite": "tentacle_right_middle_r",
     "name_multiple": "front tentacle midsections",
     "name": "left tentacle midsection"
   },
@@ -2340,7 +2340,7 @@
     "max_coverage": 25,
     "parent": "arm_tentacle_l",
     "side": "left",
-    "opposite": "tentacle_left_tip_r",
+    "opposite": "tentacle_right_tip_r",
     "name_multiple": "front tentacle tips",
     "name": "left tentacle tip"
   },
@@ -2391,7 +2391,7 @@
     "max_coverage": 20,
     "parent": "arm_tentacle_l_dual",
     "side": "left",
-    "opposite": "tentacle_left_dual_base_r",
+    "opposite": "tentacle_right_dual_base_r",
     "name_multiple": "left tentacle bases",
     "name": "left tentacle base"
   },
@@ -2401,7 +2401,7 @@
     "max_coverage": 40,
     "parent": "arm_tentacle_l_dual",
     "side": "left",
-    "opposite": "tentacle_left_dual_middle_r",
+    "opposite": "tentacle_right_dual_middle_r",
     "name_multiple": "front tentacle midsections",
     "name": "left tentacle midsection"
   },
@@ -2411,7 +2411,7 @@
     "max_coverage": 20,
     "parent": "arm_tentacle_l_dual",
     "side": "left",
-    "opposite": "tentacle_left_dual_tip_r",
+    "opposite": "tentacle_right_dual_tip_r",
     "name_multiple": "front tentacle tips",
     "name": "left tentacle tip"
   },

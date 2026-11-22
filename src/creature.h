@@ -495,8 +495,12 @@ class Creature : public viewer
         // The blow those rolls were against, before the block cut it down: a worn shield that
         // blocks it wears by it.  Callers of block_hit set it.
         damage_instance last_blow;
+        // Whether those rolls were made (deal_melee_attack): a hit no defense was rolled against
+        // isn't shielded with a limb either (deflect_hit_part)
+        bool melee_defense_rolled = false;
         // Forgets the last defense rolls, for a hit no block was rolled against (a hardcoded
-        // attack's dodge_check, a hit passed on to a rider): block_hit then doesn't block it
+        // attack's dodge_check, a hit passed on to a rider): block_hit then doesn't block it, and
+        // deal_melee_hit doesn't let a limb shield it
         void clear_melee_defense();
         virtual float block_roll( const Creature * ) {
             return 0.0f;

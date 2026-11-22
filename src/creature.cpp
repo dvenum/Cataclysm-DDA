@@ -1139,6 +1139,7 @@ void Creature::clear_melee_defense()
     last_block = 0.0f;
     last_hit_spread = 0;
     last_blow.clear();
+    melee_defense_rolled = false;
 }
 
 bool melee::roll_and_block_hit( Creature &target, Creature *source, bodypart_id &bp_hit,
@@ -1185,6 +1186,7 @@ int Creature::deal_melee_attack( Creature *source, int hitroll, bool allow_block
     last_block = block;
     last_hit_spread = hit_spread;
     last_blow.clear();
+    melee_defense_rolled = true;
 
     // If the attack missed, call the target's on_dodge event.  A partly dodged hit still lands,
     // so it doesn't count: no dodge counter, reaction or practice for an attack that got through.
@@ -1219,6 +1221,10 @@ bodypart_id Creature::deflect_hit_part( const bodypart_id &bp, bool can_attack_h
 {
     const Character *ch = as_character();
     if( ch == nullptr ) {
+        return bp;
+    }
+    // Knocked out, or dying in a fatal execution, it can't shield anything (it can't dodge either)
+    if( incapacitation::unconscious( *this ) || execution_fatal::pending( *this ) ) {
         return bp;
     }
 
@@ -1328,7 +1334,7 @@ void Creature::deal_melee_hit( Creature *source, int hit_spread, bool critical_h
     bodypart_id bp_hit = bp == nullptr ? select_body_part( -1, -1, source->can_attack_high(),
                          hit_spread ) : *bp;
     const bool blocked = block_hit( source, bp_hit, d );
-    if( !blocked ) {
+    if( !blocked && melee_defense_rolled ) {
         const bodypart_id initial_bp = bp_hit;
         bp_hit = deflect_hit_part( bp_hit, source->can_attack_high() );
         if( bp_hit != initial_bp ) {

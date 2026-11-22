@@ -1,4 +1,7 @@
 #include <algorithm>
+#include <functional>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -8,6 +11,7 @@
 #include "cata_catch.h"
 #include "cata_scope_helpers.h"
 #include "character.h"
+#include "coordinates.h"
 #include "creature.h"
 #include "debug.h"
 #include "dialogue.h"
@@ -30,6 +34,7 @@
 #include "point.h"
 #include "talker.h"
 #include "type_id.h"
+#include "units.h"
 #include "wound.h"
 
 static const effect_on_condition_id

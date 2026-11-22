@@ -1385,8 +1385,8 @@ conditional_t::func f_has_any_wound( const JsonObject &jo, std::string_view memb
 
 // A literal severity is checked as the condition loads: a typo is a load error, not an error
 // each time the condition is checked.
-static void check_wound_severity_at_load( const JsonObject &jo, std::string_view member,
-        const str_or_var &severity )
+void check_wound_severity_at_load( const JsonObject &jo, std::string_view member,
+                                   const str_or_var &severity )
 {
     if( severity.is_constant() && !severity.constant().empty() &&
         !io::enum_is_valid<wound_severity>( severity.constant() ) ) {
@@ -1395,8 +1395,8 @@ static void check_wound_severity_at_load( const JsonObject &jo, std::string_view
     }
 }
 
-static wound_severity wound_severity_at_least( const str_or_var &severity_var,
-        const_dialogue const &d )
+wound_severity wound_severity_at_least( const str_or_var &severity_var,
+                                        const_dialogue const &d )
 {
     const std::string severity_str = severity_var.evaluate( d );
     if( severity_str.empty() ) {

@@ -1,7 +1,10 @@
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
+#include <initializer_list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -10,7 +13,6 @@
 #include "calendar.h"
 #include "cata_catch.h"
 #include "cata_path.h"
-#include "character.h"
 #include "construction.h"
 #include "coordinates.h"
 #include "creature.h"
@@ -25,12 +27,13 @@
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "map_iterator.h"
 #include "mapdata.h"
+#include "math_parser_diag_value.h"
 #include "monattack.h"
 #include "monster.h"
 #include "mtype.h"
 #include "npctalk.h"
-#include "omdata.h"
 #include "overmap.h"
 #include "path_info.h"
 #include "perf.h"
@@ -38,6 +41,7 @@
 #include "point.h"
 #include "recipe.h"
 #include "requirements.h"
+#include "ret_val.h"
 #include "talker.h"
 #include "type_id.h"
 #include "units.h"
@@ -267,7 +271,8 @@ TEST_CASE( "sync-89369_generic_guns_air_pistol_uses_the_mod_magazine", "[item][m
             jo.allow_omitted_members();
             for( const std::string &id : jo.get_as_string_array( "id" ) ) {
                 CAPTURE( id );
-                CHECK( id.find_first_of( " \t" ) == std::string::npos );
+                CHECK( id.find( ' ' ) == std::string::npos );
+                CHECK( id.find( '\t' ) == std::string::npos );
             }
         }
     }
@@ -390,6 +395,7 @@ TEST_CASE( "sync-89427_warlords_get_their_own_ids", "[monster][eoc][sync]" )
     avatar &u = get_avatar();
     u.setpos( get_map(), tripoint_bub_ms( 10, 10, 0 ) );
     std::vector<monster *> warlords;
+    warlords.reserve( 64 );
     for( int i = 0; i < 64; ++i ) {
         warlords.push_back( &spawn_test_monster( mon_wells_machine.str(),
                             tripoint_bub_ms( 20 + 8 * ( i % 8 ), 20 + 8 * ( i / 8 ), 0 ) ) );

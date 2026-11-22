@@ -1,6 +1,11 @@
 #include <algorithm>
+#include <initializer_list>
+#include <map>
+#include <memory>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "activity_tracker.h"
 #include "avatar.h"
@@ -10,6 +15,7 @@
 #include "character.h"
 #include "character_attire.h"
 #include "character_martial_arts.h"
+#include "coordinates.h"
 #include "creature.h"
 #include "damage.h"
 #include "display.h"
@@ -20,8 +26,8 @@
 #include "json_loader.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
-#include "mattack_common.h"
 #include "math_parser_diag_value.h"
+#include "mattack_common.h"
 #include "melee.h"
 #include "messages.h"
 #include "mod_setting.h"
@@ -29,10 +35,12 @@
 #include "monster.h"
 #include "mtype.h"
 #include "mutation.h"
+#include "pimpl.h"
 #include "player_helpers.h"
 #include "point.h"
 #include "type_id.h"
 #include "widget.h"
+#include "wound.h"
 
 // Regression tests for the combat part of the 2026-11-21 upstream sync
 // (Audit/upstream/sync-2026-11-21/B_combat.md).

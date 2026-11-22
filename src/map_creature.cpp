@@ -53,6 +53,7 @@
 #include "point.h"
 #include "rng.h"
 #include "submap.h"
+#include "talker.h"
 #include "trap.h"
 #include "type_id.h"
 #include "vehicle.h"

@@ -289,7 +289,10 @@ jobs:
       if: ${{ env.SKIP == 'false' && runner.os == 'macOS' && matrix.tiles == 1 }}
       run: |
           HOMEBREW_NO_AUTO_UPDATE=yes HOMEBREW_NO_INSTALL_CLEANUP=yes \
-              brew install pkgconf sdl3 sdl3_image sdl3_ttf sdl3_mixer
+              brew install pkgconf readline sdl3 sdl3_image sdl3_ttf sdl3_mixer
+          # fluid-synth, which sdl3_mixer uses, names readline in its pkg-config file, and Homebrew
+          # keeps readline off pkg-config's path: without it, pkg-config can't find sdl3-mixer.
+          echo "PKG_CONFIG_PATH=$(brew --prefix readline)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
     - name: prepare
       if: ${{ env.SKIP == 'false' }}
       run: bash ./build-scripts/requirements.sh

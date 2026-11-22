@@ -1,12 +1,11 @@
+#include <initializer_list>
 #include <string>
-#include <vector>
 
 #include "avatar.h"
 #include "bodypart.h"
 #include "calendar.h"
 #include "cata_catch.h"
 #include "coordinates.h"
-#include "creature.h"
 #include "damage.h"
 #include "incapacitation.h"
 #include "map_helpers.h"
@@ -17,6 +16,7 @@
 #include "point.h"
 #include "subbodypart.h"
 #include "type_id.h"
+#include "weakpoint.h"
 
 static const damage_type_id damage_bash( "bash" );
 

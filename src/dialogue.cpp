@@ -31,6 +31,7 @@
 #include "color.h"
 #include "condition.h"
 #include "coordinates.h"
+#include "creature.h"
 #include "creature_tracker.h"
 #include "debug.h"
 #include "dialogue_chatbin.h"

@@ -16,6 +16,8 @@
 #include <utility>
 #include <vector>
 
+#include <char8_t-remediation/char8_t-remediation.h>
+
 #include "cata_path.h"
 #include "cata_utility.h"
 #include "debug.h"

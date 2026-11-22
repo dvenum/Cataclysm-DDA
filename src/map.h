@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "active_item_cache.h"
-#include "bodypart.h"
 #include "calendar.h"
 #include "cata_small_literal_vector.h"
 #include "cata_type_traits.h"

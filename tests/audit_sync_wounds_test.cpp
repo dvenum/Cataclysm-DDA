@@ -1,12 +1,13 @@
 #include <algorithm>
 #include <functional>
-#include <map>
+#include <initializer_list>
 #include <memory>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "activity_actor.h"
 #include "activity_actor_definitions.h"
 #include "activity_actor_eoc.h"
 #include "activity_handlers.h"
@@ -15,7 +16,7 @@
 #include "calendar.h"
 #include "cata_catch.h"
 #include "cata_scope_helpers.h"
-#include "character.h"
+#include "clone_ptr.h"
 #include "condition.h"
 #include "construction.h"
 #include "coordinates.h"
@@ -29,18 +30,19 @@
 #include "flag.h"
 #include "flexbuffer_json.h"
 #include "game.h"
-#include "init.h"
 #include "global_vars.h"
+#include "init.h"
 #include "item.h"
-#include "json_error.h"
 #include "json_loader.h"
 #include "map.h"
 #include "map_helpers.h"
 #include "map_helpers_tests.h"
+#include "math_parser_diag_value.h"
 #include "monfaction.h"
 #include "monster.h"
 #include "npc.h"
 #include "options_helpers.h"
+#include "pimpl.h"
 #include "player_activity.h"
 #include "player_helpers.h"
 #include "point.h"
@@ -57,11 +59,11 @@ static const construction_str_id construction_test_constr_eoc_hooks( "test_const
 static const damage_type_id damage_bash( "bash" );
 static const damage_type_id damage_cut( "cut" );
 
-static const efftype_id effect_bandaged( "bandaged" );
-static const efftype_id effect_narcosis( "narcosis" );
-
 static const effect_on_condition_id
 effect_on_condition_EOC_TEST_MON_USE_SPECIAL( "EOC_TEST_MON_USE_SPECIAL" );
+
+static const efftype_id effect_bandaged( "bandaged" );
+static const efftype_id effect_narcosis( "narcosis" );
 
 static const faction_id faction_audit_rt_mf_copy( "audit_rt_mf_copy" );
 static const faction_id faction_audit_rt_mf_owner( "audit_rt_mf_owner" );

@@ -1,13 +1,15 @@
+#include <functional>
 #include <list>
+#include <map>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "activity_actor_definitions.h"
 #include "avatar.h"
 #include "calendar.h"
 #include "cata_catch.h"
 #include "cata_scope_helpers.h"
-#include "character.h"
 #include "construction.h"
 #include "coordinates.h"
 #include "debug.h"
@@ -29,7 +31,6 @@
 #include "ret_val.h"
 #include "sleep.h"
 #include "stomach.h"
-#include "talker.h"
 #include "trap.h"
 #include "type_id.h"
 

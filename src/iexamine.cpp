@@ -3141,7 +3141,7 @@ static void pick_firestarter_and_fire( Character &you, const tripoint_bub_ms &ex
 
     // Try to start the smoking rack/kiln.
     if( !use_cbm ) {
-        for( auto &firestarter : firestarters ) {
+        for( const auto &firestarter : firestarters ) {
             item_location it = firestarter.second;
             const use_function *usef = it->type->get_use( "firestarter" );
             const firestarter_actor *actor = dynamic_cast<const firestarter_actor *>( usef->get_actor_ptr() );
@@ -3739,7 +3739,7 @@ void iexamine::fireplace( Character &you, const tripoint_bub_ms &examp )
             g->pickup( examp );
             return;
         case 1: {
-            for( auto &firestarter : firestarters ) {
+            for( const auto &firestarter : firestarters ) {
                 item_location it = firestarter.second;
                 const use_function *usef = it->type->get_use( "firestarter" );
                 const firestarter_actor *actor = dynamic_cast<const firestarter_actor *>( usef->get_actor_ptr() );

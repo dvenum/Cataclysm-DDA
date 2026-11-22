@@ -1153,6 +1153,13 @@ ifeq ($(LTO), 1)
   # match the original invocations.
   LDFLAGS += $(CXXFLAGS)
 
+  ifeq ($(CLANG), 0)
+    # GCC's link-time pass reports maybe-uninitialized false positives at source positions it
+    # has lost track of, where a #pragma can't silence them. Compiling each file still treats
+    # the warning as an error.
+    LDFLAGS += -Wno-error=maybe-uninitialized
+  endif
+
   # If GCC or CLANG, use a wrapper for AR (if it exists) else test fails to build
   ifeq ($(CLANG), 0)
     GCCAR := $(shell command -v gcc-ar 2> /dev/null)

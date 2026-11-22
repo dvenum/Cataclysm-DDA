@@ -12,9 +12,9 @@
 #include "calendar.h"
 #include "cata_catch.h"
 #include "cata_scope_helpers.h"
-#include "character.h"
 #include "coordinates.h"
 #include "debug.h"
+#include "enums.h"
 #include "iexamine.h"
 #include "iexamine_firestarters.h"
 #include "item.h"
@@ -29,11 +29,13 @@
 #include "player_helpers.h"
 #include "pocket_type.h"
 #include "point.h"
+#include "ret_val.h"
 #include "type_id.h"
 #include "units.h"
 #include "veh_utils.h"
 #include "vehicle.h"
 #include "vpart_position.h"
+#include "vpart_range.h"
 
 static const activity_id ACT_PICKAXE( "ACT_PICKAXE" );
 static const activity_id ACT_REPAIR_ITEM( "ACT_REPAIR_ITEM" );

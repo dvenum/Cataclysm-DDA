@@ -24,7 +24,6 @@
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -147,6 +146,7 @@
 #include "path_info.h"
 #include "pickup.h"
 #include "pimpl.h"
+#include "player_activity.h"
 #include "pocket_type.h"
 #include "point.h"
 #include "popup.h"

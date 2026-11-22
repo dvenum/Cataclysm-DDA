@@ -1,13 +1,17 @@
 #include <functional>
+#include <optional>
 #include <string>
 
+#include "activity_actor.h"
 #include "activity_actor_definitions.h"
 #include "avatar.h"
 #include "calendar.h"
 #include "cata_catch.h"
 #include "cata_scope_helpers.h"
+#include "clone_ptr.h"
 #include "coordinates.h"
 #include "debug.h"
+#include "enums.h"
 #include "flag.h"
 #include "global_vars.h"
 #include "iexamine.h"
@@ -26,6 +30,7 @@
 #include "point.h"
 #include "talker_npc.h"
 #include "type_id.h"
+#include "units.h"
 #include "vehicle.h"
 #include "vpart_position.h"
 

@@ -32,6 +32,10 @@
     "id": "mon_execution_expanded_attacker",
     "copy-from": "mon_execution_expanded_victim",
     "name": { "str_sp": "execution expanded attacker" },
+    "//": "Hostile: a special attack only aims at a creature its monster is hostile to (monster::attack_target).",
+    "default_faction": "zombie",
+    "aggression": 100,
+    "morale": 100,
     "special_attacks": [ [ "execution_expanded_special", 1 ] ]
   },
   {

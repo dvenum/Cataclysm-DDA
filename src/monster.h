@@ -351,6 +351,15 @@ class monster : public Creature
 
         // Combat
         bool is_fleeing( Character &u ) const;
+        struct attitude_cache_entry {
+            monster_attitude att;
+            int anger;
+            int morale;
+            int hp;
+        };
+        mutable time_point attitude_cache_turn;
+        mutable std::map<character_id, attitude_cache_entry> attitude_cache;
+        monster_attitude attitude_uncached( const Character *u ) const;
         monster_attitude attitude( const Character *u = nullptr ) const; // See the enum above
         Attitude attitude_to( const Creature &other ) const override;
         void process_triggers(); // Process things that anger/scare us

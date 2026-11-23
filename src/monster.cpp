@@ -1764,7 +1764,7 @@ Creature::Attitude monster::attitude_to( const Creature &other ) const
     return Attitude::NEUTRAL;
 }
 
-monster_attitude monster::attitude( const Character *u ) const
+monster_attitude monster::attitude_uncached( const Character *u ) const
 {
     // override for the Personal Portal Storms Mod
     // if the monster is a nether portal monster and the character is an NPC then ignore
@@ -1938,6 +1938,26 @@ monster_attitude monster::attitude( const Character *u ) const
     }
 
     return MATT_ATTACK;
+}
+
+monster_attitude monster::attitude( const Character *u ) const
+{
+    if( u == nullptr ) {
+        return attitude_uncached( nullptr );
+    }
+    if( attitude_cache_turn != calendar::turn ) {
+        attitude_cache.clear();
+        attitude_cache_turn = calendar::turn;
+    }
+    const auto it = attitude_cache.find( u->getID() );
+
+    if( it != attitude_cache.end() && it->second.anger == anger &&
+        it->second.morale == morale && it->second.hp == get_hp() ) {
+        return it->second.att;
+    }
+    const monster_attitude res = attitude_uncached( u );
+    attitude_cache[u->getID()] = { res, anger, morale, get_hp() };
+    return res;
 }
 
 int monster::hp_percentage() const

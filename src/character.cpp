@@ -2607,6 +2607,13 @@ float Character::get_vision_threshold( float light_level ) const
         return 0.01;
     }
 
+    // Cached per (turn, light level): the body walks every bodypart and worn
+    // item, and it is called once per (seer, seen) pair every turn.
+    if( vision_threshold_cache && vision_threshold_cache_light == light_level &&
+        vision_threshold_cache_turn == calendar::turn ) {
+        return *vision_threshold_cache;
+    }
+
     // As light_level goes from LIGHT_AMBIENT_MINIMAL to LIGHT_AMBIENT_LIT,
     // dimming goes from 1.0 to 2.0.
     const float dimming_from_light = 1.0f + ( ( light_level - LIGHT_AMBIENT_MINIMAL ) /
@@ -2626,8 +2633,12 @@ float Character::get_vision_threshold( float light_level ) const
     // Clamp range to 1+, so that we can always see where we are
     range = std::max( 1.0f, range * get_limb_score( limb_score_night_vis ) );
 
-    return std::min( LIGHT_AMBIENT_LOW,
-                     threshold_for_range( range ) * dimming_from_light );
+    const float result = std::min( LIGHT_AMBIENT_LOW,
+                                     threshold_for_range( range ) * dimming_from_light );
+    vision_threshold_cache = result;
+    vision_threshold_cache_light = light_level;
+    vision_threshold_cache_turn = calendar::turn;
+    return result;
 }
 
 bool Character::practice( const skill_id &id, int amount, int cap, bool suppress_warning,

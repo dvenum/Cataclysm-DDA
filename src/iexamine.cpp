@@ -2061,7 +2061,7 @@ void iexamine::locked_object_pickable( Character &you, const tripoint_bub_ms &ex
     you.visit_items( [&picklocks, &you]( const item_location & node ) {
 
         // Don't include worn items such as hairpins
-        if( !you.is_worn( *node ) ) {
+        if( you.is_worn( *node ) ) {
             return VisitResponse::NEXT;
         }
 

@@ -4297,6 +4297,8 @@ void options_manager::update_options_cache()
     if( ::has_option( "COMBAT_SPEED_MODIFIER" ) ) {
         combat_speed_modifier = ::get_option<float>( "COMBAT_SPEED_MODIFIER" );
     }
+    weary_initial_step = ::get_option<float>( "WEARY_INITIAL_STEP" );
+    weary_thresh_scaling = ::get_option<float>( "WEARY_THRESH_SCALING" );
     prevent_occlusion = ::get_option<int>( "PREVENT_OCCLUSION" );
     prevent_occlusion_retract = ::get_option<bool>( "PREVENT_OCCLUSION_RETRACT" );
     prevent_occlusion_transp = ::get_option<bool>( "PREVENT_OCCLUSION_TRANSP" );

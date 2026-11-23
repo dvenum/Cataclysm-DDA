@@ -23,6 +23,8 @@ int pixel_minimap_g;
 int pixel_minimap_b;
 int pixel_minimap_a;
 float combat_speed_modifier;
+float weary_initial_step = 0.0f;
+float weary_thresh_scaling = 1.0f;
 
 namespace cata::options
 {

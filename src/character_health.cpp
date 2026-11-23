@@ -1426,6 +1426,10 @@ std::pair<int, int> Character::weariness_transition_progress() const
 
 int Character::weariness_level() const
 {
+    if( weariness_level_cache && weariness_level_cache_turn == calendar::turn ) {
+        return *weariness_level_cache;
+    }
+
     int amount = weariness();
     int threshold = weary_threshold();
     int level = 0;
@@ -1443,6 +1447,8 @@ int Character::weariness_level() const
         }
     }
 
+    weariness_level_cache = level;
+    weariness_level_cache_turn = calendar::turn;
     return level;
 }
 

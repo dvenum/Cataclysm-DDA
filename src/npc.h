@@ -550,6 +550,9 @@ struct npc_short_term_cache {
     std::vector<dangerous_sound> sound_alerts;
     // current sound position being investigated
     tripoint_abs_ms s_abs_pos;
+    // memoize failed routings to avoid repeated A* for unreachable targets
+    tripoint_abs_ms last_path_fail_dest;
+    time_point last_path_fail = calendar::before_time_starts;
     // number of times we haven't moved when investigating a sound
     int stuck = 0;
     // Position to return to guarding

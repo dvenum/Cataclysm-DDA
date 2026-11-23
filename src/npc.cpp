@@ -2900,7 +2900,7 @@ bool npc::is_travelling() const
 Creature::Attitude npc::attitude_to( const Creature &other ) const
 {
     const auto same_as = []( const Creature * lhs, const Creature * rhs ) {
-        return &lhs == &rhs;
+        return lhs == rhs;
     };
 
     for( const weak_ptr_fast<Creature> &buddy : ai_cache.friends ) {

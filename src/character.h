@@ -4044,6 +4044,11 @@ class Character : public Creature, public visitable
         // For display purposes mainly, how far we are from the next level of weariness
         std::pair<int, int> weariness_transition_progress() const;
         int weariness_level() const;
+    private:
+        mutable std::optional<int> weariness_level_cache;
+        mutable time_point weariness_level_cache_turn;
+
+    public:
         int weariness_transition_level() const;
         int weary_threshold() const;
         int weariness() const;

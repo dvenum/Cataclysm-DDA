@@ -3578,37 +3578,49 @@ void npc::aim( const Target_attributes &target_attributes )
 
 bool npc::update_path( const tripoint_bub_ms &p, const bool no_bashing, bool force )
 {
-    if( p == pos_bub() ) {
+    map &here = get_map();
+    const tripoint_bub_ms cur = pos_bub();
+
+    if( p == cur ) {
         path.clear();
         return true;
     }
 
-    while( !path.empty() && path[0] == pos_bub() ) {
+    while( !path.empty() && path[0] == cur ) {
         path.erase( path.begin() );
     }
 
     if( !path.empty() ) {
         const tripoint_bub_ms &last = path[path.size() - 1];
-        if( last == p && ( path[0].z() != posz() || rl_dist( path[0], pos_bub() ) <= 1 ) ) {
+        if( last == p && ( path[0].z() != posz() || rl_dist( path[0], cur ) <= 1 ) ) {
             // Our path already leads to that point, no need to recalculate
             return true;
         }
     }
 
-    std::vector<tripoint_bub_ms> new_path = get_map().route( pos_bub(), pathfinding_target::point( p ),
+    const tripoint_abs_ms p_abs = here.get_abs( p );
+    if( !force && ai_cache.last_path_fail_dest == p_abs &&
+        calendar::turn < ai_cache.last_path_fail + 5_turns ) {
+        // Routing to this destination recently failed; don't run A* again yet
+        return false;
+    }
+
+    std::vector<tripoint_bub_ms> new_path = here.route( cur, pathfinding_target::point( p ),
                                             get_pathfinding_settings( no_bashing ),
                                             get_path_avoid() );
     if( new_path.empty() ) {
+        ai_cache.last_path_fail_dest = p_abs;
+        ai_cache.last_path_fail = calendar::turn;
         if( !ai_cache.sound_alerts.empty() ) {
             ai_cache.sound_alerts.erase( ai_cache.sound_alerts.begin() );
             add_msg_debug( debugmode::DF_NPC, "failed to path to sound alert %s->%s",
-                           pos_bub().to_string_writable(), p.to_string_writable() );
+                           cur.to_string_writable(), p.to_string_writable() );
         }
         add_msg_debug( debugmode::DF_NPC, "Failed to path %s->%s",
-                       pos_bub().to_string_writable(), p.to_string_writable() );
+                       cur.to_string_writable(), p.to_string_writable() );
     }
 
-    while( !new_path.empty() && new_path[0] == pos_bub() ) {
+    while( !new_path.empty() && new_path[0] == cur ) {
         new_path.erase( new_path.begin() );
     }
 

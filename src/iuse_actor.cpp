@@ -4779,7 +4779,7 @@ std::optional<int> modify_gunmods_actor::use( Character *p, item_location &it,
 
     std::vector<item_location> mods;
     it.visit_contents( [&mods]( const item_location & node ) {
-        if( !node->is_gunmod() ) {
+        if( node->is_gunmod() && node->is_transformable() ) {
             mods.emplace_back( node );
         }
         return VisitResponse::NEXT;

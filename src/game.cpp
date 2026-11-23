@@ -7089,6 +7089,15 @@ void game::reload( item_location &loc, bool prompt, bool empty )
         return;
     }
 
+    // Reloading an ammo belt always requires at least one belt linkage,
+    // regardless of the reload rating (an empty belt rates as 'good').
+    if( loc->is_ammo_belt() && loc->type->magazine->linkage &&
+        !u.has_charges( *loc->type->magazine->linkage, 1 ) ) {
+        add_msg( m_info, _( "You need at least one %s to reload the %s!" ),
+                 item::nname( *loc->type->magazine->linkage, 1 ), loc->tname() );
+        return;
+    }
+
     switch( u.rate_action_reload( *loc ) ) {
         case hint_rating::iffy:
             // TODO(multimag): remaining_ammo_capacity() is a first-loaded-mag
@@ -7098,14 +7107,6 @@ void game::reload( item_location &loc, bool prompt, bool empty )
                 loc->remaining_ammo_capacity() == 0 ) {
                 add_msg( m_info, _( "The %s is already fully loaded!" ), loc->tname() );
                 return;
-            }
-            if( loc->is_ammo_belt() ) {
-                const auto &linkage = loc->type->magazine->linkage;
-                if( linkage && !u.has_charges( *linkage, 1 ) ) {
-                    add_msg( m_info, _( "You need at least one %s to reload the %s!" ),
-                             item::nname( *linkage, 1 ), loc->tname() );
-                    return;
-                }
             }
             if( loc->is_watertight_container() && loc->is_container_full() ) {
                 add_msg( m_info, _( "The %s is already full!" ), loc->tname() );

@@ -3558,9 +3558,13 @@ bool item::reload( Character &u, item_location ammo, int qty, int pocket_index )
     if( is_magazine() ) {
         qty = std::min( qty, ammo->charges );
 
+        // Assembling an ammo belt consumes one linkage per round; abort
+        // cleanly when there aren't enough (the round stays in inventory).
         if( is_ammo_belt() && type->magazine->linkage ) {
             if( !u.use_charges_if_avail( *type->magazine->linkage, qty ) ) {
-                debugmsg( "insufficient linkages available when reloading ammo belt" );
+                add_msg( m_info, _( "You need at least one %s to reload the %s!" ),
+                         item::nname( *type->magazine->linkage, 1 ), tname() );
+                return false;
             }
         }
 

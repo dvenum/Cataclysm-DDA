@@ -2855,8 +2855,10 @@ void Character::leak_items()
 
 void Character::process_items( map *here )
 {
-    if( weapon.process( *here, this, pos_bub( *here ) ) ) {
-        weapon.spill_contents( here,  pos_bub( *here ) );
+    const tripoint_bub_ms pos = pos_bub( *here );
+
+    if( weapon.process( *here, this, pos ) ) {
+        weapon.spill_contents( here,  pos );
         remove_weapon();
     }
 
@@ -2865,8 +2867,8 @@ void Character::process_items( map *here )
         if( !it ) {
             continue;
         }
-        if( it->process( *here, this, pos_bub( *here ) ) ) {
-            it->spill_contents( here, pos_bub( *here ) );
+        if( it->process( *here, this, pos ) ) {
+            it->spill_contents( here, pos );
             removed_items.push_back( it );
         }
     }
@@ -2923,14 +2925,15 @@ void Character::search_surroundings()
     // Search for traps in a larger area than before because this is the only
     // way we can "find" traps that aren't marked as visible.
     // Detection formula takes care of likelihood of seeing within this range.
+    const tripoint_bub_ms pos = pos_bub();
     for( const tripoint_bub_ms &tp : here.points_in_radius( pos_bub(), 5 ) ) {
         const trap &tr = here.tr_at( tp );
-        if( tr.is_null() || tp == pos_bub() ) {
+        if( tr.is_null() || tp == pos ) {
             continue;
         }
         // Note that echolocation and SONAR also do this separately in echo_pulse()
         if( has_active_bionic( bio_ground_sonar ) && !knows_trap( tp ) && tr.detected_by_ground_sonar() ) {
-            const std::string direction = direction_name( direction_from( pos_bub(), tp ) );
+            const std::string direction = direction_name( direction_from( pos, tp ) );
             add_msg_if_player( m_warning, _( "Your ground sonar detected a %1$s to the %2$s!" ),
                                tr.name(), direction );
             add_known_trap( tp, tr );
@@ -2947,7 +2950,7 @@ void Character::search_surroundings()
             if( !tr.is_trivial_to_spot() ) {
                 // Only bug player about traps that aren't trivial to spot.
                 const std::string direction = direction_name(
-                                                  direction_from( pos_bub(), tp ) );
+                                                  direction_from( pos, tp ) );
                 practice_proficiency( proficiency_prof_spotting, 1_minutes );
                 // Seeing a trap set properly gives you a little bonus to trapsetting profs.
                 practice_proficiency( proficiency_prof_traps, 10_seconds );

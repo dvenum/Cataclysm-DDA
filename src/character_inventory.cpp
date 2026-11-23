@@ -2316,7 +2316,7 @@ item_location Character::find_firestarter_with_charges( const int quantity ) con
             return VisitResponse::NEXT;
         }
 
-        if( node->type->can_have_charges() ) {
+        if( !node->type->can_have_charges() ) {
             const use_function *usef = node->type->get_use( "firestarter" );
             if( usef == nullptr || usef->get_actor_ptr() == nullptr ) {
                 return VisitResponse::NEXT;
@@ -2327,7 +2327,7 @@ item_location Character::find_firestarter_with_charges( const int quantity ) con
                 ret = node;
                 return VisitResponse::ABORT;
             }
-        } else  if( node->ammo_sufficient( this, quantity ) ) {
+        } else if( node->ammo_sufficient( this, quantity ) ) {
             ret = node;
             return VisitResponse::ABORT;
         }

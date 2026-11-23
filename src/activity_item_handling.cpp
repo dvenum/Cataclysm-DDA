@@ -3684,7 +3684,7 @@ static bool mine_activity( Character &you, const tripoint_bub_ms &src_loc )
     bool powered = false;
     // is it a pickaxe or jackhammer?
     for( item_location elem : mining_inv ) {
-        if( chosen_item.valid() ) {
+        if( !chosen_item.valid() ) {
             chosen_item = elem;
             if( elem->type->can_use( "JACKHAMMER" ) ) {
                 powered = true;
@@ -3699,7 +3699,7 @@ static bool mine_activity( Character &you, const tripoint_bub_ms &src_loc )
             }
         }
     }
-    if( chosen_item.valid() ) {
+    if( !chosen_item.valid() ) {
         return false;
     }
     std::optional<int> did_we_mine = std::nullopt;

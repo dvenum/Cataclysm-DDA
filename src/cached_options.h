@@ -30,8 +30,6 @@ extern int pixel_minimap_g;
 extern int pixel_minimap_b;
 extern int pixel_minimap_a;
 extern float combat_speed_modifier;
-extern float weary_initial_step;
-extern float weary_thresh_scaling;
 
 namespace cata::options
 {

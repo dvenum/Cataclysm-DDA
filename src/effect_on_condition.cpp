@@ -6,9 +6,10 @@
 #include <iterator>
 #include <list>
 #include <memory>
-#include <unordered_map>
+#include <optional>
 #include <ostream>
 #include <queue>
+#include <unordered_map>
 
 #include "avatar.h"
 #include "calendar.h"
@@ -52,7 +53,7 @@ namespace io
         case eoc_type::NUM_EOC_TYPES: break;
         }
         cata_fatal( "Invalid eoc_type" );
-    }    
+    }
     // *INDENT-ON*
 } // namespace io
 
@@ -278,18 +279,25 @@ static void process_eocs( queued_eocs &eoc_queue, std::vector<effect_on_conditio
         queued_eoc &top = *it;
         eoc_queue.queue.pop();
 
-        dialogue nested_d{ d };
-        for( const auto &val : top.context ) {
-            nested_d.set_value( val.first, val.second );
+        // Copy the dialogue only when the queued EOC actually carries context
+        // values; with an empty context the original dialogue is equivalent.
+        std::optional<dialogue> nested_d;
+        dialogue *eoc_dlg = &d;
+        if( !top.context.empty() ) {
+            nested_d.emplace( d );
+            for( const auto &val : top.context ) {
+                nested_d->set_value( val.first, val.second );
+            }
+            eoc_dlg = &*nested_d;
         }
-        bool activated = top.eoc->activate( nested_d );
+        bool activated = top.eoc->activate( *eoc_dlg );
         if( top.eoc->type == eoc_type::RECURRING ) {
             if( activated ) { // It worked so add it back
                 it->time = calendar::turn + next_recurrence( top.eoc, d );
                 eocs_to_queue.emplace_back( it );
             } else {
                 if( !top.eoc->check_deactivate(
-                        nested_d ) ) { // It failed but shouldn't be deactivated so add it back
+                        *eoc_dlg ) ) { // It failed but shouldn't be deactivated so add it back
                     it->time = calendar::turn + next_recurrence( top.eoc, d );
                     eocs_to_queue.emplace_back( it );
                 } else { // It failed and should be deactivated for now

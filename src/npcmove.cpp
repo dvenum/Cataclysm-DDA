@@ -909,6 +909,7 @@ std::optional<int> npc_short_term_cache::closest_enemy_to_friendly_distance() co
 void npc::assess_danger()
 {
     const map &here = get_map();
+    const tripoint_bub_ms my_pos = pos_bub();
 
     float highest_priority = 1.0f;
     int hostile_count = 0; // for tallying nearby threatening enemies
@@ -939,7 +940,7 @@ void npc::assess_danger()
                                    rules.engagement == combat_engagement::NONE;
     const bool no_fighting = rules.has_flag( ally_rule::forbid_engage );
     const bool must_retreat = rules.has_flag( ally_rule::follow_close ) &&
-                              !too_close( pos_bub(), player_character.pos_bub(), follow_distance() ) &&
+                              !too_close( my_pos, player_character.pos_bub(), follow_distance() ) &&
                               !is_guarding();
 
     if( is_player_ally() ) {
@@ -988,13 +989,13 @@ void npc::assess_danger()
     const field_type_id fd_fire = ::fd_fire;
     // first, check if we're about to be consumed by fire
     // `map::get_field` uses `field_cache`, so in general case (no fire) it provides an early exit
-    for( const tripoint_bub_ms &pt : here.points_in_radius( pos_bub(), 6 ) ) {
-        if( pt == pos_bub() || !here.get_field( pt, fd_fire ) ||
+    for( const tripoint_bub_ms &pt : here.points_in_radius( my_pos, 6 ) ) {
+        if( pt == my_pos || !here.get_field( pt, fd_fire ) ||
             here.has_flag( ter_furn_flag::TFLAG_FIRE_CONTAINER,  pt ) ) {
             continue;
         }
-        int dist = rl_dist( pos_bub(), pt );
-        cur_threat_map[direction_from( pos_bub(), pt )] += 2.0f * ( NPC_MONSTER_DANGER_MAX - dist );
+        int dist = rl_dist( my_pos, pt );
+        cur_threat_map[direction_from( my_pos, pt )] += 2.0f * ( NPC_MONSTER_DANGER_MAX - dist );
         if( dist < 3 && !has_effect( effect_npc_fire_bad ) ) {
             warn_about( "fire_bad", 1_minutes );
             add_effect( effect_npc_fire_bad, 5_turns );
@@ -1008,7 +1009,7 @@ void npc::assess_danger()
         if( &guy == this ) {
             continue;
         }
-        if( !clairvoyant && !here.has_potential_los( pos_bub(), guy.pos_bub() ) ) {
+        if( !clairvoyant && !here.has_potential_los( my_pos, guy.pos_bub() ) ) {
             continue;
         }
 
@@ -1033,7 +1034,9 @@ void npc::assess_danger()
     }
 
     for( const monster &critter : g->all_monsters() ) {
-        if( !clairvoyant && !here.has_potential_los( pos_bub(), critter.pos_bub() ) ) {
+        const tripoint_bub_ms critter_pos = critter.pos_bub();
+
+        if( !clairvoyant && !here.has_potential_los( my_pos, critter_pos ) ) {
             continue;
         }
         Creature::Attitude att = critter.attitude_to( *this );
@@ -1053,18 +1056,18 @@ void npc::assess_danger()
 
         ai_cache.hostile_guys.emplace_back( g->shared_from( critter ) );
         // warn and consider the odds for distant enemies
-        int dist = rl_dist( pos_bub(), critter.pos_bub() );
+        int dist = rl_dist( my_pos, critter.pos_bub() );
         float critter_threat = evaluate_monster( critter, dist );
 
         // ignore targets behind glass even if we can see them
-        if( !clear_shot_reach( pos_bub(), critter.pos_bub(), false ) ) {
+        if( !clear_shot_reach( my_pos, critter_pos, false ) ) {
             if( is_enemy() || !critter.friendly ) {
                 // still warn about enemies behind impassable glass walls, but not as often.
                 add_msg_debug( debugmode::DF_NPC_COMBATAI,
                                "%s ignored %s because there's an obstacle in between.  Might warn about it.",
                                name, critter.type->nname() );
                 if( critter_threat > 2 * ( 8.0f + personality.bravery + rng( 0, 5 ) ) ) {
-                    warn_about( "monster", 10_minutes, critter.type->nname(), dist, critter.pos_bub() );
+                    warn_about( "monster", 10_minutes, critter.type->nname(), dist, critter_pos );
                 }
             } else {
                 add_msg_debug( debugmode::DF_NPC_COMBATAI,
@@ -1080,7 +1083,7 @@ void npc::assess_danger()
         if( is_enemy() || !critter.friendly ) {
             mem_combat.assess_enemy += critter_threat;
             if( critter_threat > ( 8.0f + personality.bravery + rng( 0, 5 ) ) ) {
-                warn_about( "monster", 10_minutes, critter.type->nname(), dist, critter.pos_bub() );
+                warn_about( "monster", 10_minutes, critter.type->nname(), dist, critter_pos );
             }
             if( preferred_close_range < dist && dist <= preferred_medium_range &&
                 critter_threat > mem_combat.my_defence_assess / 5.0f ) {
@@ -1129,7 +1132,7 @@ void npc::assess_danger()
             // because the horse the NPC is riding is still in the ai_cache.friends vector,
             // so either one would count as a friendly for this purpose.
             if( guy.lock() ) {
-                is_too_close |= too_close( critter.pos_bub(), guy.lock()->pos_bub(), def_radius );
+                is_too_close |= too_close( critter_pos, guy.lock()->pos_bub(), def_radius );
             }
         }
         // ignore distant monsters that our rules prevent us from attacking
@@ -1140,7 +1143,7 @@ void npc::assess_danger()
         // us or an ally
         float priority = std::max( critter_threat - 2.0f * ( scaled_distance - 1.0f ),
                                    is_too_close ? critter_threat : 0.0f );
-        cur_threat_map[direction_from( pos_bub(), critter.pos_bub() )] += priority;
+        cur_threat_map[direction_from( my_pos, critter_pos )] += priority;
         if( priority > highest_priority ) {
             highest_priority = priority;
             ai_cache.target = g->shared_from( critter );
@@ -1173,13 +1176,15 @@ void npc::assess_danger()
     // Warn about sufficiently risky nearby hostiles
     const auto handle_hostile = [&]( const Character & foe, float foe_threat,
     const std::string & bogey, const std::string & warning ) {
-        int dist = rl_dist( pos_bub(), foe.pos_bub() );
+        const tripoint_bub_ms foe_pos = foe.pos_bub();
+
+        int dist = rl_dist( my_pos, foe_pos );
         // ignore targets behind glass even if we can see them
-        if( !clear_shot_reach( pos_bub(), foe.pos_bub(), false ) ) {
+        if( !clear_shot_reach( my_pos, foe_pos, false ) ) {
             // still warn about enemies behind impassable glass walls, but not as often.
             // since NPC threats have a higher chance of ignoring soft obstacles, we'll ignore them here.
             if( foe_threat > 2 * ( 8.0f + personality.bravery + rng( 0, 5 ) ) ) {
-                warn_about( "monster", 10_minutes, bogey, dist, foe.pos_bub() );
+                warn_about( "monster", 10_minutes, bogey, dist, foe_pos );
             }
             return 0.0f;
         } else {
@@ -1187,7 +1192,7 @@ void npc::assess_danger()
                            name, bogey );
         }
         if( foe_threat > ( 8.0f + personality.bravery + rng( 0, 5 ) ) ) {
-            warn_about( "monster", 10_minutes, bogey, dist, foe.pos_bub() );
+            warn_about( "monster", 10_minutes, bogey, dist, foe_pos );
         }
 
         int scaled_distance = std::max( 1, ( 100 * dist ) / foe.get_speed() );
@@ -1206,7 +1211,7 @@ void npc::assess_danger()
             if( !ally ) {
                 continue;
             }
-            is_too_close |= too_close( foe.pos_bub(), ally->pos_bub(), def_radius );
+            is_too_close |= too_close( foe_pos, ally->pos_bub(), def_radius );
             if( is_too_close ) {
                 break;
             }
@@ -1216,7 +1221,7 @@ void npc::assess_danger()
             float priority = std::max( foe_threat - 2.0f * ( scaled_distance - 1 ),
                                        is_too_close ? std::max( foe_threat, NPC_DANGER_VERY_LOW ) :
                                        0.0f );
-            cur_threat_map[direction_from( pos_bub(), foe.pos_bub() )] += priority;
+            cur_threat_map[direction_from( my_pos, foe_pos )] += priority;
             if( priority > highest_priority ) {
                 warn_about( warning, 1_minutes );
                 highest_priority = priority;
@@ -1267,7 +1272,7 @@ void npc::assess_danger()
         float player_diff = std::max( evaluate_character( player_character, npc_ranged,
                                       hostile_to_player ),
                                       NPC_DANGER_VERY_LOW );
-        int dist = rl_dist( pos_bub(), player_character.pos_bub() );
+        int dist = rl_dist( my_pos, player_character.pos_bub() );
         if( hostile_to_player ) {
             add_msg_debug( debugmode::DF_NPC_COMBATAI,
                            "<color_light_gray>%s identified player as an</color> <color_red>enemy</color> <color_light_gray>of threat level %1.2f</color>",

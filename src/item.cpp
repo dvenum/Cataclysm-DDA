@@ -4905,7 +4905,7 @@ bool item::process_internal( map &here, Character *carrier, const tripoint_bub_m
         }
 
         if( is_tool() ) {
-            return process_tool( carrier, pos );
+            return process_tool( here, carrier, pos );
         }
         // All foods that go bad have temperature
         if( has_temperature() &&

@@ -3580,7 +3580,7 @@ class item
                                   link_state required_state );
         bool process_blackpowder_fouling( Character *carrier );
         bool process_gun_cooling( Character *carrier );
-        bool process_tool( Character *carrier, const tripoint_bub_ms &pos );
+        bool process_tool( map &here, Character *carrier, const tripoint_bub_ms &pos );
         bool process_decay_in_air( map &here, Character *carrier, const tripoint_bub_ms &pos,
                                    int max_air_exposure_hours,
                                    time_duration time_delta );

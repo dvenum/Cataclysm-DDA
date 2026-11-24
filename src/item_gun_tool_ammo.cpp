@@ -4364,10 +4364,8 @@ units::energy item::energy_per_second() const
     return energy_to_burn;
 }
 
-bool item::process_tool( Character *carrier, const tripoint_bub_ms &pos )
+bool item::process_tool( map &here, Character *carrier, const tripoint_bub_ms &pos )
 {
-    map &here = get_map();
-
     // FIXME: remove this once power armors don't need to be TOOL_ARMOR anymore
     if( is_power_armor() && carrier && carrier->can_interface_armor() && carrier->has_power() ) {
         return false;

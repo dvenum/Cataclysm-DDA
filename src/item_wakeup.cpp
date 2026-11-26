@@ -205,6 +205,11 @@ void clear_test_enumerate_handlers()
     test_enumerator_registry().clear();
 }
 
+bool may_have_scheduled_wakeups( const item &it )
+{
+    return it.is_craft() || test_enumerator_registry().count( it.typeId() ) > 0;
+}
+
 std::vector<desired_wakeup> enumerate_scheduled_dispatch( const item &it,
         const item_location &loc )
 {
@@ -380,6 +385,22 @@ void item_wakeup_manager::rebuild_for_item( const item_location &loc )
     clean_heap_top();
 }
 
+bool item_wakeup_manager::has_any_scheduled( const int64_t uid ) const
+{
+    const auto it = by_key_.lower_bound( { uid, item_wakeup_kind::alarm } );
+    return it != by_key_.end() && it->first.first == uid;
+}
+
+bool item_wakeup_manager::needs_reconcile() const
+{
+    return needs_reconcile_;
+}
+
+void item_wakeup_manager::mark_reconciled()
+{
+    needs_reconcile_ = false;
+}
+
 bool item_wakeup_manager::is_scheduled( int64_t uid, item_wakeup_kind kind ) const
 {
     return by_key_.count( {uid, kind} ) > 0;
@@ -471,6 +492,7 @@ void item_wakeup_manager::process( time_point now )
         if( !loc ) {
             stats_.stale_resolution++;
             stale_seen_uids_++;
+            needs_reconcile_ = true;
             if( stale_seen_uids_ >= STALE_DEBUGMSG_THRESHOLD && !stale_msg_emitted_ ) {
                 debugmsg( "item_wakeup_manager: %d stale uids unresolved",
                           stale_seen_uids_ );
@@ -493,6 +515,7 @@ void item_wakeup_manager::clear()
     stats_ = stats{};
     stale_seen_uids_ = 0;
     stale_msg_emitted_ = false;
+    needs_reconcile_ = true;
 }
 
 void item_wakeup_manager::serialize( JsonOut &jsout ) const

@@ -86,6 +86,13 @@ class item_wakeup_manager
         // Idempotent.  Hint is derived from the location internally.
         void rebuild_for_item( const item_location &loc );
 
+        // True if any wakeup kind is scheduled for this uid.
+        bool has_any_scheduled( int64_t uid ) const;
+        // True when entries may have been dropped before loaded items were reconciled.
+        bool needs_reconcile() const;
+        // Called after a full walk over the main map bubble.
+        void mark_reconciled();
+
         bool is_scheduled( int64_t uid, item_wakeup_kind kind ) const;
         std::optional<time_point> get( int64_t uid, item_wakeup_kind kind ) const;
         std::optional<scheduled_wakeup_info> peek_next_wakeup() const;
@@ -130,6 +137,7 @@ class item_wakeup_manager
         stats stats_; // NOLINT(cata-serialize)
         int stale_seen_uids_ = 0; // NOLINT(cata-serialize)
         bool stale_msg_emitted_ = false; // NOLINT(cata-serialize)
+        bool needs_reconcile_ = false; // NOLINT(cata-serialize)
 };
 
 item_wakeup_manager &get_item_wakeups();
@@ -152,6 +160,9 @@ using item_wakeup_test_enumerator =
 void register_test_enumerate_handler( const itype_id &id,
                                       item_wakeup_test_enumerator fn );
 void clear_test_enumerate_handlers();
+
+// Cheap producer check used to skip ordinary items during reconciliation.
+bool may_have_scheduled_wakeups( const item &it );
 
 // Dispatch entry called from item::enumerate_scheduled_wakeups.
 std::vector<desired_wakeup> enumerate_scheduled_dispatch( const item &it,

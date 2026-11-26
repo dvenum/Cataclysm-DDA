@@ -4663,7 +4663,8 @@ void map::load( const tripoint_abs_sm &w, const bool update_vehicle,
                             : reconcile_scope::additive );
 }
 
-void map::reconcile_loaded_items(const reconcile_scope scope, const std::vector<tripoint_rel_sm> *only_grids )
+void map::reconcile_loaded_items( const reconcile_scope scope,
+                                  const std::vector<tripoint_rel_sm> *only_grids )
 {
     item_wakeup_manager &wakeups = get_item_wakeups();
     craft_reservation_index &index = get_craft_reservations();
@@ -4672,7 +4673,18 @@ void map::reconcile_loaded_items(const reconcile_scope scope, const std::vector<
     }
 
     std::vector<int64_t> seen;
-    auto reconcile_recursive = [&wakeups, &index, &seen]( item_location loc ) -> VisitResponse {
+    auto needs_reconcile_visit = [&wakeups]( const item &it ) {
+        return may_have_scheduled_wakeups( it ) ||
+               wakeups.has_any_scheduled( it.uid().get_value() );
+    };
+    auto has_reconcile_candidate = [&needs_reconcile_visit]( const item &root ) {
+        return root.visit_items( [&needs_reconcile_visit]( const item * node, item * ) {
+            return needs_reconcile_visit( *node ) ? VisitResponse::ABORT : VisitResponse::NEXT;
+        } ) == VisitResponse::ABORT;
+    };
+    auto reconcile_recursive = [&wakeups, &index, &seen,
+                                &needs_reconcile_visit]( item_location loc ) -> VisitResponse {
+
         if( !loc.valid() )
         {
             return VisitResponse::SKIP;
@@ -4697,7 +4709,9 @@ void map::reconcile_loaded_items(const reconcile_scope scope, const std::vector<
                 }
             }
         }
-        wakeups.rebuild_for_item( loc );
+        if( needs_reconcile_visit( *loc ) ) {
+            wakeups.rebuild_for_item( loc );
+        }
         return VisitResponse::NEXT;
     };
 
@@ -4729,13 +4743,15 @@ void map::reconcile_loaded_items(const reconcile_scope scope, const std::vector<
         for( int sx = 0; sx < SEEX; ++sx ) {
             for( int sy = 0; sy < SEEY; ++sy ) {
                 const tripoint_bub_ms p( sx + grid.x() * SEEX,
-                                        sy + grid.y() * SEEY, grid.z() );
+                                         sy + grid.y() * SEEY, grid.z() );
                 const map_cursor cur( this, p );
 
                 // Pull items out rather than visiting the map_cursor:
                 // visiting it can load a tinymap and recursively reconcile again.
                 for( item &it : sm->get_items( { sx, sy } ) ) {
-                    item_location( cur, &it ).visit_items( reconcile_recursive );
+                    if( has_reconcile_candidate( it ) ) {
+                        item_location( cur, &it ).visit_items( reconcile_recursive );
+                    }
                 }
             }
         }
@@ -4761,6 +4777,12 @@ void map::reconcile_loaded_items(const reconcile_scope scope, const std::vector<
         if( rec != nullptr && rec->empty() ) {
             index.erase( token );
         }
+    }
+
+    // A tinymap may also walk all of its own grids, but only the main bubble can
+    // discharge a recovery request for the main wakeup queue.
+    if( this == &get_map() && only_grids == nullptr ) {
+        wakeups.mark_reconciled();
     }
 }
 
@@ -4954,10 +4976,13 @@ void map::shift( const point_rel_sm &sp )
     for( tripoint_rel_sm loaded_grid : loaded_grids ) {
         actualize( loaded_grid );
     }
-    if( !loaded_grids.empty() ) {
-        // A shift walks the bubble it now has, so the crafts it scrolled away from are
-        // not seen and must keep the claims their leases still cover.
-        reconcile_loaded_items( reconcile_scope::additive, &loaded_grids);
+    const bool need_full_reconcile = get_item_wakeups().needs_reconcile();
+    if( !loaded_grids.empty() || need_full_reconcile ) {
+        // A normal shift only walks newly loaded grids.  If wakeup entries were dropped
+        // while their items were already loaded, do one full recovery walk instead.
+        // Crafts this pass does not walk keep the claims their leases still cover.
+        reconcile_loaded_items( reconcile_scope::additive,
+                                need_full_reconcile ? nullptr : &loaded_grids );
     }
 }
 

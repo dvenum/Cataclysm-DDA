@@ -2126,11 +2126,11 @@ class map
             additive
         };
         /**
-         * Walk all items currently in the bubble (map tiles, vehicle parts and character
+         * Walk items currently in the bubble (map tiles, vehicle parts and character
          * inventories, recursing into containers) and rebuild the state that is keyed by
-         * item uid: wakeup entries and craft reservation records.  Run after submaps come
-         * back into range, so both re-arm from authoritative item state.  One walk rather
-         * than two, since both duties visit the same locations.
+         * item uid: wakeup entries and craft reservation records.  If only_grids is given,
+         * walk only those map grids; vehicles and characters are still walked.  A full
+         * main-map walk also clears the wakeup manager's recovery request.
          */
         void reconcile_loaded_items(const reconcile_scope scope, const std::vector<tripoint_rel_sm> *only_grids = nullptr );
         /**

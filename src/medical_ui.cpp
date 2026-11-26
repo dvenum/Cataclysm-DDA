@@ -6,6 +6,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -249,6 +250,13 @@ void medical_ui::print_debug_wound_info( const Character &you, const bodypart_id
                     tooltip += "-----\n";
                 }
 
+                if( !wd.type->armor_penalty.empty() ) {
+                    tooltip += "armor penalty applied:\n";
+                    for( const std::pair<const damage_type_id, float> &res : wd.type->armor_penalty ) {
+                        tooltip += string_format( "%s: %.0f\n", res.first.str(), wd.get_armor_penalty( res.first ) );
+                    }
+                    tooltip += "-----\n";
+                }
 
                 ImGui::SetTooltip( "%s", tooltip.c_str() );
             }
@@ -471,12 +479,10 @@ static std::string draw_speed_summary( const Character &you )
     }
 
     int pen = 0;
-    units::mass weight_cap = you.weight_capacity();
-    if( weight_cap < 1_milligram ) {
-        weight_cap = 1_milligram;
-    }
-    if( you.weight_carried() > weight_cap ) {
-        pen = 25 * ( you.weight_carried() - weight_cap ) / weight_cap;
+    // guard against division by zero
+    units::mass current_capacity = std::max( 1_gram, you.weight_capacity() );
+    if( you.weight_carried() > current_capacity ) {
+        pen = 25 * ( you.weight_carried() - current_capacity ) / current_capacity;
         pge_str = pgettext( "speed penalty", "Overburdened" );
         desc += colorize( string_format( _( "%s: -%2d%%" ), pge_str, pen ), c_red );
         desc += "\n";

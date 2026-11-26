@@ -1034,10 +1034,13 @@ void map::shift( const point_rel_sm &sp )
     for( tripoint_rel_sm loaded_grid : loaded_grids ) {
         actualize( loaded_grid );
     }
-    if( !loaded_grids.empty() ) {
-        // A shift walks the bubble it now has, so the crafts it scrolled away from are
-        // not seen and must keep the claims their leases still cover.
-        reconcile_loaded_items( reconcile_scope::additive, &loaded_grids );
+    const bool need_full_reconcile = get_item_wakeups().needs_reconcile();
+    if( !loaded_grids.empty() || need_full_reconcile ) {
+        // A normal shift only walks newly loaded grids.  If wakeup entries were dropped
+        // while their items were already loaded, do one full recovery walk instead.
+        // Crafts this pass does not walk keep the claims their leases still cover.
+        reconcile_loaded_items( reconcile_scope::additive,
+                                need_full_reconcile ? nullptr : &loaded_grids );
     }
 }
 

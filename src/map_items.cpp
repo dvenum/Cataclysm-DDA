@@ -1714,7 +1714,18 @@ void map::reconcile_loaded_items( const reconcile_scope scope,
     }
 
     std::vector<int64_t> seen;
-    auto reconcile_recursive = [&wakeups, &index, &seen]( item_location loc ) -> VisitResponse {
+    auto needs_reconcile_visit = [&wakeups]( const item &it ) {
+        return may_have_scheduled_wakeups( it ) ||
+               wakeups.has_any_scheduled( it.uid().get_value() );
+    };
+    auto has_reconcile_candidate = [&needs_reconcile_visit]( const item &root ) {
+        return root.visit_items( [&needs_reconcile_visit]( const item * node, item * ) {
+            return needs_reconcile_visit( *node ) ? VisitResponse::ABORT : VisitResponse::NEXT;
+        } ) == VisitResponse::ABORT;
+    };
+    auto reconcile_recursive = [&wakeups, &index, &seen,
+                                &needs_reconcile_visit]( item_location loc ) -> VisitResponse {
+
         if( !loc.valid() )
         {
             return VisitResponse::SKIP;
@@ -1739,7 +1750,9 @@ void map::reconcile_loaded_items( const reconcile_scope scope,
                 }
             }
         }
-        wakeups.rebuild_for_item( loc );
+        if( needs_reconcile_visit( *loc ) ) {
+            wakeups.rebuild_for_item( loc );
+        }
         return VisitResponse::NEXT;
     };
 
@@ -1777,7 +1790,9 @@ void map::reconcile_loaded_items( const reconcile_scope scope,
                 // Pull items out rather than visiting the map_cursor:
                 // visiting it can load a tinymap and recursively reconcile again.
                 for( item &it : sm->get_items( { sx, sy } ) ) {
-                    item_location( cur, &it ).visit_items( reconcile_recursive );
+                    if( has_reconcile_candidate( it ) ) {
+                        item_location( cur, &it ).visit_items( reconcile_recursive );
+                    }
                 }
             }
         }
@@ -1803,6 +1818,12 @@ void map::reconcile_loaded_items( const reconcile_scope scope,
         if( rec != nullptr && rec->empty() ) {
             index.erase( token );
         }
+    }
+
+    // A tinymap may also walk all of its own grids, but only the main bubble can
+    // discharge a recovery request for the main wakeup queue.
+    if( this == &get_map() && only_grids == nullptr ) {
+        wakeups.mark_reconciled();
     }
 }
 

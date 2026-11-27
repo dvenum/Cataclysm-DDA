@@ -607,6 +607,7 @@ void map::rebuild_vision_caches_from_scratch( const int zlev )
     avatar_fov_range = -1;
     avatar_fov_vision_parts.clear();
     camera_fov_moncams.clear();
+    camera_fov_outputs.clear();
     sunlight_scene_revisions.clear();
     cached_light_sources.clear();
     g->reset_light_level();

@@ -19,6 +19,7 @@
 #include "basecamp.h"
 #include "bodypart.h"
 #include "cached_options.h"
+#include "calendar.h"
 #include "cata_imgui.h"
 #include "cata_utility.h"
 #include "catacharset.h"

@@ -24,7 +24,6 @@
 #include "addiction.h"
 #include "bionics.h"
 #include "bodypart.h"
-#include "cached_options.h"
 #include "calendar.h"
 #include "cata_assert.h"
 #include "cata_utility.h"
@@ -1407,7 +1406,7 @@ std::pair<int, int> Character::weariness_transition_progress() const
     // Mostly a duplicate of the below function. No real way to clean this up
     int amount = weariness();
     int threshold = weary_threshold();
-    amount -= threshold * weary_initial_step;
+    amount -= threshold * get_option<float>( "WEARY_INITIAL_STEP" );
     // failsafe if threshold is zero; see #72242
     if( threshold == 0 ) {
         return { std::abs( amount ), threshold };
@@ -1415,7 +1414,7 @@ std::pair<int, int> Character::weariness_transition_progress() const
         while( amount >= 0 ) {
             amount -= threshold;
             if( threshold > 20 ) {
-                threshold *= weary_thresh_scaling;
+                threshold *= get_option<float>( "WEARY_THRESH_SCALING" );
             }
         }
     }
@@ -1434,7 +1433,7 @@ int Character::weariness_level() const
     int amount = weariness();
     int threshold = weary_threshold();
     int level = 0;
-    amount -= threshold * weary_initial_step;
+    amount -= threshold * get_option<float>( "WEARY_INITIAL_STEP" );
     // failsafe if threshold is zero; see #72242
     if( threshold == 0 ) {
         return level;
@@ -1442,7 +1441,7 @@ int Character::weariness_level() const
         while( amount >= 0 ) {
             amount -= threshold;
             if( threshold > 20 ) {
-                threshold *= weary_thresh_scaling;
+                threshold *= get_option<float>( "WEARY_THRESH_SCALING" );
             }
             ++level;
         }
@@ -1458,7 +1457,7 @@ int Character::weariness_transition_level() const
 {
     int amount = weariness();
     int threshold = weary_threshold();
-    amount -= threshold * weary_initial_step;
+    amount -= threshold * get_option<float>( "WEARY_INITIAL_STEP" );
     // failsafe if threshold is zero; see #72242
     if( threshold == 0 ) {
         return std::abs( amount );
@@ -1466,7 +1465,7 @@ int Character::weariness_transition_level() const
         while( amount >= 0 ) {
             amount -= threshold;
             if( threshold > 20 ) {
-                threshold *= weary_thresh_scaling;
+                threshold *= get_option<float>( "WEARY_THRESH_SCALING" );
             }
         }
     }
